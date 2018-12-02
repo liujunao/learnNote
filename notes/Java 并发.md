@@ -1,3 +1,9 @@
+### [JUC 推荐阅读](https://www.cnblogs.com/pony1223/category/1241236.html)  
+
+### [Java并发编程总结](http://oldblog.csdn.net/column/details/java-concurrent-prog.html) 
+
+
+
 # 一、线程状态转换
 
 <div align="center"> <img src="../pics//ace830df-9919-48ca-91b5-60b193f593d2.png" width=""/> </div><br>
@@ -159,8 +165,8 @@ public static void main(String[] args) {
 
 >  线程池可以解决两个不同问题：
 >
-> - 由于减少了每个任务调用的开销，它们通常可以在执行大量异步任务时提供增强的性能，并且还可以提供绑定和管理资源（包括执行任务集时使用的线程）的方法。
-> - 每个ThreadPoolExecutor 还维护着一些基本的统计数据，如完成的任务数。
+>  - 由于减少了每个任务调用的开销，它们通常可以在执行大量异步任务时提供增强的性能，并且还可以提供绑定和管理资源（包括执行任务集时使用的线程）的方法。
+>  - 每个ThreadPoolExecutor 还维护着一些基本的统计数据，如完成的任务数。
 
 1. 线程池：提供了一个线程队列，队列中保存着所有等待状态的线程。避免了创建与销毁额外开销，提高了响应的速度。
 
@@ -1198,8 +1204,8 @@ class ReadWriteLockDemo{
 
 >  线程八锁的关键：
 >
-> - 非静态方法的锁默认为  this,  静态方法的锁为对应的 Class 实例
-> - 某一个时刻内，只能有一个线程持有锁，无论几个方法。
+>  - 非静态方法的锁默认为  this,  静态方法的锁为对应的 Class 实例
+>  - 某一个时刻内，只能有一个线程持有锁，无论几个方法。
 
 **题目：** 判断打印的 "one" or "two" ?
 
@@ -1547,7 +1553,7 @@ class Number{
 注意：
 
  * 					  对于多线程，volatile 不具备“互斥性”
- * 					  volatile 不能保证变量的“原子性”
+    * 				  volatile 不能保证变量的“原子性”
 
 **内存可见性：** 
 
@@ -1573,8 +1579,8 @@ class Number{
 
 >  在 java.util.concurrent.atomic 包下提供了一些原子变量:
 >
-> - volatile 保证内存可见性
-> - CAS算法保证数据变量的原子性
+>  - volatile 保证内存可见性
+>  - CAS算法保证数据变量的原子性
 
 - 类的小工具包，支持在单个变量上解除锁的线程安全编程。事实上，此包中的类可将volatile 值、字段和数组元素的概念扩展到那些也提供原子条件更新操作的类。
 - 类AtomicBoolean、AtomicInteger、AtomicLong 和AtomicReference 的实例各自提供对相应类型单个变量的访问和更新。每个类也为该类型提供适当的实用工具方法。
