@@ -1,4 +1,4 @@
-一、MySQL体系结构和存储引擎
+#一、MySQL体系结构和存储引擎
 
 ## 1. mysql 体系结构
 
@@ -1865,14 +1865,795 @@ search_modifier:
 
 ## 2. 事务的实现
 
+- 事务隔离性由锁来实现
+
+- `redo log`： 称为重做日志，用来保证事务的原子性和持久性，用于恢复提交事务修改的页操作，通常是物理日志，记录的是页的物理修改操作
+
+- `undo log`： 用来保证事务的一致性，用于回滚行记录到某个特定版本，是逻辑日志，根据每行记录进行记录
+
+### 1. redo
+
+####1. 基本概念
+
+- **重做日志用来实现事务的持久性**，其由两部分组成：一是内存中的重做日志缓冲，其是易失的；二是重做日志文件，其是持久的
+
+- **InnoDB 通过Force Log at Commit 机制实现事务的持久性**，即当事务提交(COMMIT)时，必须先将该事务的所有重做日志写入到重做日志文件进行持久化，待事务的 COMMIT 操作完成才算完成
+- InnoDB 的重做日志由两部分组成：redo log和undo log
+  - redo log 用来保证事务的持久性；redo log 基本上都是顺序写的，在数据库运行时不需要对redo log 的文件进行读取操作
+  - undo log 用来帮助事务回滚及MvCC的功能；undo log是需要进行随机读写的
+
+- 每次将重做日志缓冲写入重做日志文件后，InnoDB存储引擎都需要调用一次 fsync 操作
+
+  > - 重做日志文件打开并没有使用 O_DIRECT 选项，因此重做日志缓冲先写入文件系统缓存
+  >
+  > - 为了确保重做日志写入磁盘，必须进行一次 fsync操作
+  >
+  > - 由于 fsync 的效率取决于磁盘的性能，因此磁盘的性能决定了事务提交的性能，也就是数据库的性能
+
+- 参数 `innodb_flush_log_at_trx_commit` 用来控制重做日志刷新到磁盘的策略，默认值为 1
+
+  > - 0 表示事务提交时不进行写人重做日志操作，这个操作仅在 master thread 中完成，而在 master thread 中每1秒会进行一次重做日志文件的 fync 操作
+  >
+  > - 1 表示事务提交时必须调用一次 fsync 操作
+  > - 2 表示事务提交时将重做日志写入重做日志文件，但仅写入文件系统的缓存中，不进行 fync 操作
+
+#### 2. log block
+
+- **重做日志块(redo log block)**： 在 InnoDB 存储引擎中，重做日志以 512 字节进行存储，即重做日志缓存、重做日志文件都是以块的方式进行保存，每块的大小为512字节
+
+  > - 若一个页中产生的重做日志数量大于 512 字节，则需要分割为多个重做日志块进行存储
+  >
+  > - 由于重做日志块的大小和磁盘扇区大小一样，因此重做日志的写入可以保证原子性，不需要 doublewrite 技术
+
+- 重做日志块由日志块头、日志内容、日志块尾组成（重做日志头占 12 字节，日志内容占 492 字节，重做日志尾占 8 字节）
+
+  > **日志头组成部分**：
+  >
+  > - `LOG_BLOCK_HDR_NO` ： 用来标记 log buffer 数组中 log block 的位置，其是递增并且循环使用，占 4 个字节。但是由于第一位用来判断是否是 flush bit，所以最大的值为2G
+  >
+  > - `LOG_BLOCK_HDR_DATA_LEN` ： 占 2 字节，表示 log block 所占用的大小
+  >
+  >   > 当 log blok 被写满时，该值为0x200，表示使用全部log block空间，即占用512字节
+  >
+  > - `LOG_BLOCK_FIRST_REC_GROUP`： 占用2个字节，表示 log block 中第一个日志所在的偏移量
+  >
+  >   > 如果该值的大小和 LOG_BLOCK_HDR_DATA_LEN 相同，则表示当前 log block 不包含新的日志
+  >
+  > - `LOG_BLOCK_CHECKPOINT_NO`： 占用4字节，表示该 log block 最后被写入时的检查点第4字节的值
+  >
+  > 日志尾组成：
+  >
+  > - `LOG_BLOCK_TRL_NO`：占 4 字节，其值和 LOG_BLOCK_HDR_NO 相同，并在函数 log block init 中被初始化
+
+#### 3. log group
+
+- **log group 为重做日志组**，其中有多个重做日志文件，每个 log group 中的日志文件大小是相同的，InnoDB存储引擎实际只有一个 log group
+
+- **log buffer 将内存中的 log block 刷新到磁盘**的规则：
+
+  - 事务提交时
+  - 当 log buffer 中有一半的内存空间已经被使用时
+
+  - log checkpoint 时
+
+- log group中的第一个 redo log file，**其前 2KB 的部分保存 4个512字节大小的块**，其余 redo log file 仅保留这些空间，但不保存上述信息
+
+  > |      名称       | 大小(字节) |
+  > | :-------------: | :--------: |
+  > | log file header |    512     |
+  > |   checkpoint1   |    512     |
+  > |       空        |    512     |
+  > |   checkpoint2   |    512     |
+
+#### 4. 重做日志格式
 
 
 
+通用**头部格式**由以下3部分组成：
+
+![](../pics/mysqlG7_4.png)
+
+- `redo_log_type`： 重做日志的类型
+- `space`： 表空间的ID
+- `page_no`： 页的偏移量
+
+之后的  redo log body 部分根据重做日志类型的不同会有不同的存储内容
+
+#### 5. LSN
+
+- **LSN(Log Sequence Number) 日志序列号**：InnoDB存储引擎中，LSN占用8字节，并且单调递增
+
+- **LSN 表示的含义**有：
+  - 事务写入重做日志的字节的总量
+  - checkpoint 的位置
+  - 页的版本
+
+- `Log sequence number` ： 表示当前的LSN， `Log flushed up to`： 表示刷新到重做日志文件的LSN，`Last checkpoint at`： 表示刷新到磁盘的LSN
+
+#### 6. 恢复
+
+- 由于 checkpoint 表示已经刷新到磁盘页上的LSN，因此在恢复过程中仅需恢复 checkpoint 开始的日志部分
+
+- 由于重做日志是物理日志，因此其是幂等： $f(f(x))=f(x)$ 
+
+### 2. undo
+
+####1. 概念
+
+- `undo`： **将数据回滚到修改之前的样子**
+
+  > **InnoDB 中的 MVCC 通过 undo 来完成**： 当用户读取一行记录时，若该记录已经被其他事务占用，当前事务可以通过 undo 读取之前的行版本信息，以此实现非锁定读取
+
+- undo 存放在数据库内部称为 undo 段的一个特殊段中，**undo段位于共享表空间内**
+
+-  undo log 的产生会伴随着 redo log 的产生，这是因为 undo log 也需要持久性的保护
+
+#### 2. undo 存储管理
+
+- InnoDB存储引擎有回滚段，每个回滚段记录了1024个 undo log 段，而在每个 undo log 段中进行 undo 页的申请
+
+- 共享表空间偏移量为 5 的页(0,5)记录了所有回滚段头所在的页，这个页的类型为 `FIL_PAGE_TYPE_SYS`
+
+- 参数对回滚段进行设置：
+
+  - `innodb_undo_directory`： **用于设置回滚段文件所在的路径**
+
+    > - 意味着回滚段可以存放在共享表空间以外的位置，即可以设置为独立表空间
+    >
+    > - 该参数的**默认值为 “.”**，表示当前 InnoDB 存储引擎的目录
+
+  - `innodb_undo_logs`： **用来设置回滚段的个数，默认值为128**
+
+  - `innodb_undo_tablespaces`： **用来设置构成回滚段文件的数量**，这样回滚段可以较为平均地分布在多个文件中
+
+    > 设置该参数后，会在路径 innodb_undo_directory 看到 undo 为前缀的文件，该文件就代表回滚段文件
+
+- 事务在 undo log 段分配页并写人undo log 的过程同样需要写入重做日志
+
+  > 事务提交时, InnoDB存储引擎会做以下两件事情：
+  >
+  > - 将 undo log 放入列表中，以供之后的 purge 操作
+  > - 判断 undo log 所在的页**是否可以重用**，若可以分配给下个事务使用
+
+- 事务提交后并不能马上删除 undo log 及 undo log 所在的页
+
+  > - 因为可能还有其他事务需要通过 undo log 来得到行记录之前的版本
+  >
+  > - 故**事务提交时将 undo log 放入一个链表中**
+  >
+  > - **是否可以最终删除 undo log 及 undo log 所在页由 purge 线程来判断**
+
+#### 3. undo log 格式
+
+在 InnoDB 存储引擎中，undo log分为：
+
+- `Insert undo log`： 指在 Insert 操作中产生的 undo log
+
+  > Insert 操作的记录，只对事务本身可见，对其他事务不可见(事务隔离性)，故该 undo log 可以在事务提交后直接删除
+
+- `update undo log`： 记录的是对 delete 和 update 操作产生的 undo log
+
+  > 该 undo log 可能需要提供MVCC机制，因此不能在事务提交时就进行删除，提交时放入undo log链表，等待 purge线程进行最后的删除
+
+### 3. purge
+
+- `purge`： 用于最终完成 delete 和 update 操作，这是因为 InnoDB 存储引擎支持 MVCC，所以记录不能在事务提交时立即进行处理
+
+- InnoDB存储引擎**先从 history list中找 undo log，然后再从 undo page 中找undo log**
+
+  > 设计目的： 为了**避免大量的随机读取操作，从而提高 purge的效率**
+
+- 全局动态参数 `innodb purge batch size` 用来设置每次 purge 操作需要清理的 undo page 数量
+
+  > - 该参数设置得越大，每次回收的 undo page 也就越多，这样可供重用的 undo page 就越多，减少了磁盘存储空间与分配的开销
+  >
+  > - 若该参数设置得太大，则每次需要 purge 处理更多的 undo page，从而导致CPU和磁盘IO过于集中于对 undo log的处理，使性能下降
+
+- 全局动态参数 `innodb_max_purge_lag` 用来控制 history list 的长度，若长度大于该参数时，其会“延缓”DML的操作
+
+  > - 默认值为0： 表示不对history list做任何限制
+  >
+  > - 大于 0 时：就会延缓DML的操作
+  >
+  > - 延缓算法：$delay =((length(history\_list)-innodb\_max\_purge\_lag)*10)-5$
+  >
+  >   delay 单位为毫秒，且 delay 对象是行
+
+- 全局动态参数 `innodb_max_purge_lag_delay` ： 用来控制 delay 的最大毫秒数
+
+  > 当上述计算得到的 delay 值大于该参数时，将 delay 设置为 innodb_max_purge_lag_delay，避免由于 purge 操作缓慢导致其他SQL线程出现无限制的等待
+
+### 4. group commit
+
+- `group commit`： **一次 fsync 可以刷新确保多个事务日志被写入文件**
+
+  > - 若事务为非只读事务，则每次事务提交时需要进行一次 fsync 操作，以此保证重做日志都已经写入磁盘
+  >
+  > - 当数据库发生宕机时，可以通过重做日志进行恢复，但磁盘的 fync 性能是有限的
+
+- 对于 InnoDB 存储引擎，事务提交时会进行两个阶段的操作:
+
+  - 修改内存中事务对应的信息，并且将日志写入重做日志缓冲
+
+  - 调用 fsync 将确保日志都从重做日志缓冲写入磁盘
+
+- **在开启二进制日志后，InnodB存储引擎的 group commit 功能会失效，从而导致性能的下降**
+
+  > 原因： 在开启二进制日志后，为了保证存储引擎层中的事务和二进制日志的一致性，二者之间使用了两阶段事务：
+  >
+  > - 当事务提交时 InnoDB 存储引擎进行 Prepare 操作
+  > -  MySQL 数据库上层写入二进制日志
+  > - InnoDB 存储引擎层将日志写入重做日志文件
+  >   - 修改内存中事务对应的信息，并且将日志写人重做日志缓冲
+  >   - 调用 fsync 将确保日志都从重做日志缓冲写入磁盘
+
+- `Binary Log Group Commit(BLGC)`： 在 MySQL 数据库上层进行提交时首先按顺序将其放入一个队列中，队列中的第一个事务称为 leader，其他事务称为 follower，leader 控制着 follower 的行为
+
+  > BLGC的步骤分为以下三个阶段：
+  >
+  > - **Flush 阶段**： 将每个事务的二进制日志写入内存中
+  > - **Sync 阶段**： 将内存中的二进制日志刷新到磁盘，若队列中有多个事务，那么仅一次fsync 操作就完成了二进制日志的写入
+  >
+  > - **Commit 阶段**： leader 根据顺序调用存储引擎层事务的提交，InnoDB 存储引擎支持 group commit，因此修复了原先由于锁 prepare_commit_mutex 导致 group commit失效的问题
+  >
+  > 当有一组事务在进行Commit阶段时，其他新事物可以进行 Flush阶段，从而使 group commit 不断生效
+
+- 参数 `binlog max flush queue time` ： 用来控制 Flush阶段中等待的时间，即使之前的一组事务完成提交，当前一组的事务也不马上进入Sync 阶段，而是至少需要等待一段寸间
+
+  > - **好处**： 使 group commit 的事务数量更多，这可能会导致事务的响应时间变慢
+  >
+  > - **默认值为0，且推荐设置为0**；除非用户的 MySQL 数据库系统中有着大量的连接，并且不断地在进行事务的写入或更新操作
+
+## 3. 事务控制语句
+
+- MySQL 命令行的默认设置： **事务都是自动提交**，即执行SQL语句后就会马上执行 COMMIT 操作
+
+- 事务控制语句：
+
+  - `START TRANSACTION | BEGIN`： 显式地开启一个事务
+
+    > 在存储过程中只能使用 START TRANSACTION 语句来开启一个事务
+
+  - `COMMIT`： COMMIT 会提交事务，并使得已对数据库做的所有修改成为永久性的
+
+    > - `COMMIT WORK` 用来控制事务结束后的行为是 `CHAN` 还是 `RELEASE`，如果是CHAIN 方式，那么事务就变成了链事务
+    >
+    > - 参数 `completion_type` 控制 COMMIT WORK 方式
+    >   - **默认为 0**： 表示没有任何操作，在这种设置下 COMMIT 和 COMMIT WORK 是完全等价的
+    >   - **当值为 1 时**： COMMIT WORK 等同于 COMMIT AND CHAIN，表示马上自动开启一个相同隔离级别的事务
+    >   - 当值为 2 时：  COMMIT WORK 等同于 COMMIT AND RELEASE，表示在事务提交后会自动断开与服务器的连接
+
+  - `ROLLBACK`： 回滚会结束用户的事务，并撤销正在进行的所有未提交的修改
+
+    > ROLLBACK 和 ROLLBACK WORK 与 COMMIT和 COMMIT WORK的工作一样
+
+  - `SAVEPOINT identifier`： SAVEPOINT 允许在事务中创建一个保存点，一个事务中可以有多个 SAVEPOINT
+
+    > - SAVEPOINT 记录了一个保存点，可以通过 ROLLBACK TO SAVEPOINT 来回滚到某个保存点
+    > - 若回滚到一个不存在的保存点，会抛出异常
+    > -  即使执行了 ROLLBACK TO SAVEPOINT，之后也需要显式地运行 COMMIT或 ROLLBACK 命令
+
+  - `RELEASE SAVEPOINT identifier`： 删除一个事务的保存点
+
+  - `ROLLBACK TO [SAVEPOINT] identifier`： 与 SAVEPOINT命令一起使用，可以把事务回滚到标记点
+
+  - `SET TRANSACTION`： 用来设置事务的隔离级别。
+
+    > InnoDB 提供的事务隔离级别有: 
+    >
+    > - `READ UNCOMMITTED`
+    > - `READ COMMITTED`
+    > - `REPEATABLE READ`
+    > - `SERIALIZABLE`
+
+## 4. 隐式提交的 SQL 语句
+
+**隐式提交操作**：即执行完这些语句后，会有一个隐式的 COMMIT操作
+
+- **DDL语句**： 
+
+  ```mysql
+  ALTER DATABASE...UPGRADE DATA DIRECTORY NAME
+  ALTER EVENT
+  ALTER PROCEDURE
+  ALTER TABLE
+  ALTER VIEW
+  CREATE DATABASE
+  CREATE EVENT
+  CREATE INDEX
+  CREATE PROCEDURE
+  CREATE TABLE
+  CREATE TRIGGER
+  CREATE VIEW
+  DROP DATABASE
+  DROP EVENT
+  DROP INDEX 
+  DROP PROCEDURE
+  DROP TABLE
+  DROP TRIGGER
+  DROP VIEW
+  RENAME TABLE
+  TRUNCATE TABLE
+  ```
+
+- **用来隐式地修改 MySQL 架构的操作**： 
+
+  ```mysql
+  CREATE USER
+  DROP USER 
+  GRANT
+  RENAME USER
+  REVOKE
+  SET PASSWORD
+  ```
+
+- **管理语句**：
+
+  ```mysql
+  ANALYZE TABLE
+  CACHE INDEX 
+  CHECK TABLE
+  LOAD INDEX INTO CACHE
+  OPTIMIZE TABLE
+  REPAIR TABLE
+  ```
+
+## 5. 对事务操作的统计
+
+- InnoDB 存储引擎支持事务，因此 InnoDB 存储引擎的应用**需要在考虑每秒请求数(Question Per Second QPS)的同时，关注每秒事务处理的能力(Transaction Per Second TPS)**
+
+- **计算 TPS 的方法**： `(com_commit + com_rollback)/time`
+
+  > **计算前提**： 所有的事务必须都是显式提交的，如果存在隐式地提交和回滚(默认autocommit=1)，不会计算到 com_commit 和 com_rollback 变量中
+
+- **参数 `com_commit 和 com_rollback`： 用于统计事务次数**
+
+  >  **前提**： 用户程序都是显式控制事务的提交和回滚
+
+## 6. 事务隔离级别
+
+SQL 标准定义的四个隔离级别为：
+
+- `READ UNCOMMITTED`： **称为浏览访问，仅仅针对事务而言**
+- `READ COMMITTED`： **称为游标稳定**
+- `REPEATABLE READ`： **是 2.9999° 的隔离，没有幻读的保护**
+- `SERIALIZABLE`： **称为隔离或 3° 的隔离**
+
+> - SQL 和 SQL2 标准的默认事务隔离级别是 SERIALIZABLE
+>
+> - InnoDB存储引擎默认支持的隔离级别是 REPEATABLE READ
+>
+>   > InnoDB 使用Next-Key Lock 锁的算法来避免幻读的产生
+>
+> - 在 READ COMMITTED 的事务隔离级别下，需要唯一性的约束检查及 gap lock 锁算法实现的外键约束检查
+>
+> - 隔离级别越低，事务请求的锁越少或保持锁的时间就越短
+
+- InnoDB 可以使用以下命令来设置当前会话或全局的事务隔离级别：
+
+  ```mysql
+  SET [GLOBAL | SESSION] TRANSACTION ISOLATION LEVEL
+  {
+  	READ UNCOMMITTED
+  	| READ COMMITTED
+  	| REPEATABLE READ
+  	| SERIALIZABLE
+  }
+  ```
+
+- 在 MySQL数据库启动时就设置事务的默认隔离级别，需要修改MyQL的配置文件，在[mysqld]中添加如下行：`transaction-isolation=READ-COMMITTED`
+
+- 查看当前会话的事务隔离级别： `SELECT @@tx_isolation;`
+- 查看全局的事务隔离级别： `SELECT @@global.tx_isolation;`
+
+## 7. 分布式事务
+
+- **分布式事务**： 指的是允许多个独立的事务资源参与到一个全局的事务中，事务资源通常是关系型数据库系统
+
+  > InnoDB 通过 XA 事务来支持分布式事务的实现
+
+- **在使用分布式事务时, InnoDB 存储引擎的事务隔离级别必须设置为 SERIALIZABLE**
+
+- XA 事务由一个或多个资源管理器、一个事务管理器以及一个应用程序组成
+
+  - **资源管理器： 提供访问事务资源的方法**，通常一个数据库就是一个资源管理器
+  - **事务管理器： 协调参与全局事务中的各个事务**，需要和参与全局事务的所有资源管理器进行通信
+  - **应用程序**： 定义事务的边界，指定全局事务中的操作
+
+  ![](../pics/mysqlG7_5.png)
+
+- **分布式事务使用两段式提交的方式**： 
+
+  - 在第一阶段，所有参与全局事务的节点都开始准备，告诉事务管理器它们准备好提交了
+  - 在第二阶段，事务管理器告诉资源管理器执行 ROLLBACK 还是 COMMIT。
+
+  > - 如果任何一个节点显示不能提交，则所有的节点都被告知需要回滚。
+  >
+  > - 与本地事务不同： 分布式事务需要多一次的 PREPARE 操作，待收到所有节点的同意信息后，再进行 COMMIT 或是 ROLLBACK 操作
+
+- MySQL 数据库 XA 事务的SQL语法：
+
+  ```mysql
+  XA {START | BEGIN} xid [JOIN | RESUME]
+  XA END xid [ SUSPEND [FOR MIGRATE]]
+  XA PREPARE xid
+  XA COMMIT xid [ONE PHASE]
+  XA ROLLBACK xid
+  XA RECOVER
+  ```
+
+- 分布式事务分类：
+
+  - **分布式外部事务： 资源管理器是 MySQL 数据库本身**
+
+  - **内部 XA 事务**： 在存储引擎与插件之间，又或者在存储引擎与存储引擎之间
+
+    > - 存在于 binlog 与 InnoDB 存储引擎之间
+    >
+    > - binlog 功能： 在事务提交时，先写二进制日志，再写 InnoDB 存储引擎的重做日志
+
+ ## 8. 其他事务
+
+ ### 1. 不好的事务习惯
+
+- **在循环中提交**
+
+- **使用自动提交**
+
+- **使用自动回滚**
+
+### 2. 长事务
+
+**长事务**： 就是执行时间较长的事务
+
+# 八、备份与恢复
+
+## 1. 概述
+
+**根据备份的方法不同**可以分为： 
+
+- **Hot Backup(热备)**： 指数据库运行中直接备份，对正在运行的数据库操作没有任何的影响
+
+  > 在 MySQL官方手册中称为 **Online Backup(在线备份)**
+
+- **Cold Backup(冷备)**： 指备份操作是在数据库停止的情况下，一般只需要复制相关的数据库物理文件即可
+
+  > 在 MySQL官方手册中称为 **Offline Backup(离线备份)**
+
+- **Warm Backup(温备)**： 同样是在数据库运行中进行的，但是会对当前数据库的操作有所影响，如：加一个全局读锁以保证备份数据的一致性
+
+**按照备份后文件的内容**可以分为： 
+
+- **逻辑备份**： 指备份出的文件内容是可读的，一般是文本文件
+
+  > - 内容一般是由一条条 SQL 语句或者是表内实际数据组成
+  > - 一般适用于数据库的升级、迁移等工作
+  > - **缺点**： 是恢复所需要的时间往往较长
+
+- **裸文件备份**： 指复制数据库的物理文件，既可以是在数据库运行中的复制，也可以是在数据库停止运行时直接的数据文件复制
+
+  > 这类备份的恢复时间往往较逻辑备份短很多
+
+**按照备份数据库的内容**可以分为：
+
+- **完全备份**： 指对数据库进行一个完整的备份
+- **增量备份**： 指在上次完全备份的基础上，对于更改的数据进行备份
+- **日志备份**： 指对 MySQL 数据库二进制日志的备份
+
+**MySQL数据库复制的原理**： 就是异步实时地将二进制日志重做传送并应用到从数据库
+
+## 2. 冷备
+
+- **备份方法**： 只需要**备份 MySQL 数据库的 frm 文件，共享表空间文件，独立表空间文件(*.ibd)，重做日志文件**；另外建议定期备份 MySQL 数据库的配置文件 my.cnf，这样有利于恢复的操作
+
+- **冷备的优点**是：
+  - 备份简单，只要复制相关文件即可
+  - 备份文件易于在不同操作系统，不同 MySQL版本上进行恢复
+  - 恢复相当简单，只需要把文件恢复到指定位置即可
+  - 恢复速度快，不需要执行任何SQL语句，也不需要重建索引
+
+- **冷备的缺点**是:
+
+  - InnoDB 存储引擎冷备的文件通常比逻辑文件大很多，因为表空间中存放着很多其他的数据
+
+  - 冷备也不总是可以轻易地跨平台。操作系统、MySQL的版本、文件大小写敏感、浮点数格式都是问题
+
+## 3. 热备
+
+### 1. ibbackup
+
+- `ibbackup`： 是 InnoDB存储引擎官方提供的热备工具，可以同时备份 MyISAM存储引擎和 InnoDB存储引擎表
+
+- 对于 InnoDB 存储引擎表其备份工作原理如下：
+  - 记录备份开始时，InnoDB 存储引擎重做日志文件检查点的 LSN
+  - 复制共享表空间文件以及独立表空间文件
+  - 记录复制完表空间文件后，InnoDB 存储引擎重做日志文件检查点的 LSN
+  - 复制在备份时产生的重做日志
+
+- **ibbackup 的优点**:
+  - 在线备份，不阻塞任何的SQL语句
+  - 备份性能好，备份的实质是复制数据库文件和重做日志文件
+  - 支持压缩备份，通过选项，可以支持不同级别的压缩
+  - 跨平台支持，backup可以运行在 Linux、 Windows以及主流的UNX系统平台上
+
+- **ibbackup 对 InnoDB 存储引擎表的恢复步骤为**:
+  - 恢复表空间文件
+  - 应用重做日志文件
+
+> ibackup 提供了一种高性能的热备方式，是 InnoDB存储引擎备份的首选方式，不过是收费软件
+
+### 2. XtraBackup
+
+- 二进制日志的恢复应该是 point-in-time 的恢复而不是增量备份
+
+- XtraBackup工具支持对于 InnoDB 存储引擎的增量备份
+
+  其工作原理如下：
+
+  - 首选完成一个全备，并记录下此时检查点的 LSN
+
+  - 在进行增量备份时，比较表空间中每个页的 LSN 是否大于上次备份时的LSN，如果是，则备份该页，同时记录当前检查点的 LSN
+
+## 4. 逻辑备份
+
+### 1. mysqldump
+
+- mysqldump 的语法如下： `mysqldump [arguments] >file name`
+- 如果想要备份所有的数据库，可以使用 --all-databases 选项： `mysqldump --all-databases >dump.sql`
+- 如果想要备份指定的数据库，可以使用 --databases 选项： `mysqldump --databases db1 db2 db3 >dump.sql`
+- 如果想要对 test 这个架构进行备份： `mysqldump --single-transaction test >test_backup.sql`
+
+- 可以通过使用 `mysqldump --help` 命令来查看所有的 mysqldump  参数
+
+#### 2. SELECT...INTO OUTFILE
+
+- `SELECT...INTO` 语句也是一种逻辑备份的方法，更准确地说是导出一张表中的数据
+
+- 语法： 
+
+  ```mysql
+  SELECT [column 1],[column 2] ...
+  INTO 
+  OUTFILE 'file_name'
+  [
+      {FIELDS | COLUMNS}
+      [TERMINATED BY 'string']
+      [[OPTIONALLY] ENCLOSED BY 'char']
+      [ESCAPED BY 'char']
+  ]
+  [
+      LINES
+      [STARTING BY 'string']
+      [TERMINATED BY 'string']
+  ]
+  FROM TABLE WHERE ...
+  ```
+
+  - `FIELDS [TERMINATED BY 'string']`： 表示每个列的分隔符
+
+  - `[[OPTIONALLY] ENCLOSED BY 'char']`： 表示对于字符串的包含符
+
+  - `[ESCAPED BY 'char']`： 表示转义符
+
+  - `[STARTING BY 'string']`： 表示每行的开始符号
+
+  - `[TERMINATED BY 'string']`： 表示每行的结束符号
+
+  - `file_name`： 表示导出的文件
+
+    > 但文件所在的路径的权限必须是 mysql:mysql 的，否则 MySQL会报没有权限导出
+
+## 5. 快照备份
+
+- **快照备份**： 是指通过文件系统支持的快照功能对数据库进行备份
+
+  > **备份的前提**： 是将所有数据库文件放在同一文件分区中，然后对该分区进行快照操作
+
+- LVM 使用写时复制(Copy-on- write)技术来创建快照
+
+  > - 当创建一个快照时，仅复制原始卷中数据的元数据( meta data)，并不会有数据的物理操作
+  >
+  > - **写时复制**： 当快照创建完成，原始卷上有写操作时，快照会跟踪原始卷块的改变，将要改变的数据在改变之前复制到快照预留的空间里
+  >
+  > - **快照读取**： 如果读取的数据块是创建快照后没有修改过的，那么会将读操作直接重定向到原始卷上；如果要读取的是已经修改过的块，则将读取保存在快照中该块在原始卷上改变之前的数据
+  >
+  > - 采用写时复制机制保证了读取快照时得到的数据与快照创建时一致
+  >
+  > ![](../pics/mysqlG8_1.png)
+
+## 6. 二进制日志备份与恢复
+
+- 推荐的二进制日志的服务器配置：
+
+  ```sql
+  [mysqld]
+  log-bin=mysql-bin
+  sync_binlog = 1
+  innodb_support_xa = 1
+  ```
+
+- 在备份二进制日志文件前，可以通过 `FLUSH LOGS` 命令来生成一个新的二进制日志文件，然后备份之前的二进制日志
+- mysqlbinlog 用于恢复二进制日志，使用方法：`mysqlbinlog [options] log_file ...`
+
+## 7. 复制
+
+- **复制(replication)**： 就是一个完全备份加上二进制日志备份的还原
+
+  > 是MySQL数据库提供的一种高可用高性能的解决方案，一般用来建立大型的应用
+
+- replication 的工作原理分为以下3个步骤：
+
+  - 主服务器(master)把数据更改记录到二进制日志(binlog)中
+  - 从服务器(save)把主服务器的二进制日志复制到自己的中继日志(relay log)中
+
+  - 从服务器重做中继日志中的日志，把更改应用到自己的数据库上，以达到数据的最终一致性
+
+- **不同点**： 
+
+  - 二进制日志的还原操作基本上实时进行
+  - 复制是异步实时，因为存在主从服务器之间的执行延时
+
+- 复制可以用来作为备份，但功能不仅限于备份，其**主要功能**如下： 
+
+  - **数据分布**： 由于 MySQL 数据库提供的复制并不需要很大的带宽要求，因此可以在不同的数据中心之间实现数据的复制
+  - **读取的负载平衡**： 通过建立多个从服务器，可将读取平均地分布到这些从服务器中，并且减少了主服务器的压力
+  - **数据库备份**： 复制对备份很有帮助，但是从服务器不是备份，不能完全代替备份
+
+  - **高可用性和故障转移**： 通过复制建立的从服务器有助于故障转移，减少故障的停机时间和恢复时间
+
+![](../pics/mysqlG8_2.png)
+
+- 命令 `SHOW SLAVE STATUS`： 可以观察当前复制的运行状态
+
+  ​				**SHOW SLAVE STATUS的主要变量**
+
+|         变量          | 说明                                                         |
+| :-------------------: | ------------------------------------------------------------ |
+|    Slave_IO_State     | 显示当前IO线程的状态                                         |
+|    Master_Log_File    | 显示当前同步的主服务器的二进制日志                           |
+|  Read_master_Log_Pos  | 显示当前同步到主服务器上二进制日志的偏移量位置,单位是字节    |
+| Relay_Master_Log_File | 当前中继日志同步的二进制日志                                 |
+|    Relay_Log_File     | 显示当前写入的中继日志                                       |
+|     Relay_Log_Pos     | 显示当前执行到中继日志的偏移量位置                           |
+|   Slave_IO_Running    | 从服务器中 IO 线程的运行状态，YES表示运行正常                |
+|   Slave_SQL_Running   | 从服务器中 SQL 线程的运行状态，YES表示运行正常               |
+|  Exec_master_Log_Pos  | 表示同步到主服务器的二进制日志偏移量的位置  `(Read_Master_Log_Pos - Exec_Master_Log_Pos)`： 表示当前SQL 线程运行的延时，单位是字节 |
+
+- 命令 `SHOW MASTER STATU`： 可以用来查看主服务器中二进制日志的状态
+
+# 九、性能调优
+
+性能调优的几种方法：
+
+- **选择合适的CPU**
+- **内存的重要性**
+- **硬盘对数据库性能的影响**
+- **合理地设置RAID**
+- **操作系统的选择也很重要**
+- **不同文件系统对数据库的影响**
+- **选择合适的基准测试工具**
 
 
 
+##1. 选择合适的CPU
+
+- **OLAP（在线分析处理）**： 多用在数据仓库或数据集市中，一般需要执行复杂的SQL语句来进行查询
+
+  > **OLAP 是 CPU 密集型操作**
+
+- **OLTP（在线事务处理）**： 多用在日常的事物处理应用中，相对于OLAP，数据库的容量较小
+
+  > InnoDB存储引擎一般都应用于OLTP的数据库应用，这种应用的特点如下: 
+  >
+  > - 用户操作的并发量大
+  > - 事务处理的时间一般比较短
+  > - 查询的语句较为简单,一般都走索引
+  >
+  > - 复杂的查询较少
+  >
+  > **OLTP 是 IO 密集型操作**
+
+##2. 内存的重要性
+
+- 内存的大小是最能直接反映数据库的性能
+
+  > 因为 InnoDB存储引擎既缓存数据，又缓存索引，并且将它们缓存于缓冲池中
+
+![](../pics/mysqlG9_1.png)
+
+- $缓冲池命中率 = \frac{Innodb\_buffer\_pool\_read\_requests}{Innodb\_buffer\_pool\_read_requests + Innodb\_buffer\_pool\_read\_ahead + Innodb\_buffer\_pool\_reads}$
+
+- $平均每次读取的字节数 = \frac{Innodb\_data\_read}{Innodb\_data\_reads}$
+
+##3. 硬盘对数据库性能的影响
+
+- **传统机械硬盘**： 一个是**寻道时间**，另一个是**转速**
+
+  > - **最大的问题**： 在于读写磁头，读写磁头的设计使硬盘可以随机访问，但机械硬盘的访问需要耗费长时间的磁头旋转和定位来查找
+  > - 可以将多块机械硬盘组成 RAID 来提高数据库的性能，也可以将数据文件分布在不同硬盘上来达到访问负载的均衡
+
+- **固态硬盘**： 是基于闪存的固态硬盘，其内部由闪存( Flash Memory)组成，闪存具有低延迟性、低功耗和防震性，可以通过并联多块闪存来进一步提高数据传输的吞吐量
+
+  > - 闪存是一个完全的电子设备，没有传统机械硬盘的读写磁头，不需要耗费大量时间的磁头旋转和定位来查找数据，所以**固态硬盘可以提供一致的随机访问时间**
+  > - 闪存中的数据是不可以更新的，只能通过扇区的覆盖重写，而在覆盖重写之前，需要执行耗时的擦除操作
+  > - 擦除操作不能在所含数据的扇区上完成，而需要在删除整个被称为擦除块的基础上完成，擦除块的尺寸通常为 128KB 或者 256KB，且每个擦除块有擦写次数的限制
+  >
+  > ![](../pics/mysqlG9_2.png)
+
+##4. 合理地设置 RAID
+
+- **RAID(独立磁盘冗余数组)**： 基本思想是把多个相对便宜的硬盘组合起来，成为一个磁盘数组，使性能达到甚至超过一个价格昂贵、容量巨大的硬盘
+
+  > - 由于将多个硬盘组合成为一个逻辑扇区，RAID 看起来就像一个单独的硬盘或逻辑存储单元，因此操作系统只会把它当作一个硬盘
+  >
+  > - RAID 的作用是：
+  >
+  >   - 增强数据集成度
+  >   - 增强容错功能
+  >
+  >   - 增加处理量或容量
+
+- 根据不同磁盘的组合方式，常见的RAID组合方式可分为RAID0、RAID1、RAID5、RAID10和RAID50： 
+
+  - `RAD0(带区集)`： **将多个磁盘合并成一个大的磁盘**，不会有冗余，并行IO，速度最快
+
+    > - 在存放数据时，其将数据按磁盘的个数进行分段，同时将这些数据写进这些盘中
+    >
+    > - 在所有的级别中，RAID0 的速度是最快的
+    > - RAID0 没有冗余功能，如果一个磁盘(物理)损坏，则所有的数据都会丢失
+    > - 受限于总线 IO 瓶颈及其他因素的影响，RAID效能会随边际递减，小于理论值： **(单一磁盘效能)×(磁盘数)**
+
+    ![](../pics/mysqlG9_3.png)
+
+  - **RAD1**： **两组以上的 N 个磁盘相互作为镜像**
+
+    > - 只要一个磁盘正常即可维持运作，可靠性最高
+    > - **RAID1 原理**： 在主硬盘上存放数据的同时也在镜像硬盘上写相同的数据；当主硬盘(物理〕损坏时，镜像硬盘则代替主硬盘的工作
+    > - 因为有镜像硬盘做数据备份，所以 **RAID1 的数据安全性在所有的 RAID 级别上来说是最好的**
+    > - **RAID1 的磁盘利用率在所有 RAID 中是最低的**
+
+    ![](../pics/mysqlG9_4.png)
+
+  - **RAID5**： 是一种存储性能、数据安全和存储成本兼顾的存储解决方案，**使用的是 Disk Striping(硬盘分区)技术**
+
+    > - RAID5至少需要三个硬盘，RAID5 不对存储的数据进行备份，而是把数据和相对应的奇偶校验信息存储到组成 RAID5 的各个磁盘上，并且奇偶校验信息和相对应的数据分别存储于不同的磁盘上
+    >
+    > - 当 RAID5 的一个磁盘数据发生损坏后，利用剩下的数据和相应的奇偶校验信息去恢复被损坏的数据
+    >
+    > - RAID5 数据读取速度快，数据写入速度慢
+
+    ![](../pics/mysqlG9_5.png)
+
+  - **RAID10 和 RAD01**：
+
+    -  RAID10 是先镜像再分区数据，将所有硬盘分为两组，视为 RAID0 的最低组合，然后将这两组各自视为 RAID1 运作
+    - RAID01 则相反，先分区再将数据镜射到两组硬盘，RAID01将所有的硬盘分为两组，变成RAID1 的最低组合，而将两组硬盘各自视为 RAID0 运作
+
+    > - 只要同一组的硬盘全部损毁，RAID01就会停止运作，而RAID10可以在牺牲 RAID0 的优势下正常运作
+    >
+    > - **RAID10 的缺点**： 需要较多的硬盘，至少拥有四个以上的偶数硬盘才能使用
+
+    ![](../pics/mysqlG9_6.png)
+
+  - **RAD50(镜像阵列条带)**： 由至少六块硬盘组成
+
+    > - 像 RAID0 一样，数据被分区成条，在同一时间内向多块磁盘写人
+    > - 像 RAID5 一样，也是以数据的校验位来保证数据的安全，且校验条带均匀分布在各个磁盘上，其目的在于提高RAID5的读写性能
+
+    ![](../pics/mysqlG9_7.png)
+
+- **RAID Write Back 功能**： 是指 RAID 控制器能够将写入的数据放入自身的缓存中，并把它们安排到后面再执
+
+  > **好处**： 不用等待物理磁盘实际写入的完成，因此写入变得更快
+
+##5. 合理的操作系统选择
 
 
 
+##6. 选择合适的数据库文件系统
 
 
+
+##7. 选择合适的基准测试工具
+
+两款优秀的基准测试工具： `sysbench 与 mysql-tpcc`

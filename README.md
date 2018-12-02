@@ -78,6 +78,10 @@
 
   存储引擎、索引、查询优化、切分、复制。
 
+- [MySQL进阶](./notes/MySQL进阶.md) 
+
+  关于 MySQL 中 InnoDB 存储引擎的详解
+
 - [Redis](./notes/Redis.md)
 
   五种数据类型、字典和跳跃表数据结构、使用场景、和 Memcache 的比较、淘汰策略、持久化、文件事件的 Reactor 模式、复制。

@@ -546,7 +546,7 @@ group by 分组的字段
       ```mysql
       SELECT last_name,department_name
       FROM departments d
-      JOIN  employees e
+      JOIN employees e
       ON e.department_id = d.department_id;
       ```
 
