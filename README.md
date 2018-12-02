@@ -26,6 +26,10 @@
 
    排序、并查集、栈和队列、红黑树、散列表。
 
+- [算法导论总结](./notes/算法导论总结.md)
+
+  对于《算法导论》书中大部分算法的总结
+
 ### :computer: 操作系统
 
 - [计算机操作系统](./notes/计算机操作系统.md)
@@ -86,6 +90,10 @@
 
   五种数据类型、字典和跳跃表数据结构、使用场景、和 Memcache 的比较、淘汰策略、持久化、文件事件的 Reactor 模式、复制。
 
+- [Redis 设计与实现](./notes/redis设计与实现.md)
+
+  对于《redis 设计与实现》的总结
+
 ### :coffee: Java
 
 - [Java 基础](./notes/Java%20基础.md)
@@ -116,7 +124,7 @@
 
 ### :coffee:javaweb
 
-- [javaweb基础](./notes/javaweb 基础.md)  
+- [javaweb基础](./notes/javaweb基础.md)  
 
   javaweb 的基础知识点
 
