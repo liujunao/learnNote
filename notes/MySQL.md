@@ -1,5 +1,3 @@
-
-
 # 一、数据库基础
 
 ## 1. 数据库的好处
@@ -2531,6 +2529,1473 @@ end repeat 【标签】;
     ```
 
 ---
+
+# 高级
+
+# 一、mysql 架构
+
+##1. 修改字符集
+
+- 查看字符集： 
+
+  - `show variables like '%char%';`
+
+  ![](../pics/mysql/mysqlG1_1.png)
+
+  - `show variables like 'collation_%';`
+
+    ![](../pics/mysql/mysqlG1_2.png)
+
+- 修改字符集
+
+  - `set variable_name=utf8`，如： `set character_set_database=utf8;`
+  - `set variables_name=utf8_general_ci`，如： `set collation_database=utf8_general_ci;`
+
+-  转换需要插入汉字的数据表编码为utf8： `alter table table_name convert to character set utf8;` 
+
+  > 这样，插入汉字就不会报错或乱码
+
+## 2. 配置文件
+
+- **二进制日志 log-bin**： 用于主从复制
+- **错误日志 log-error**： 记录严重的警告和错误信息，每次启动和关闭的详细信息，默认关闭
+- **查询日志 log**： 记录查询的 sql 语句，默认关闭
+- **数据文件**： 
+  - `frm` 文件： 存放表结构
+  - `myd` 文件： 存放表数据
+  - `myi` 文件： 存放表索引
+
+## 3. 逻辑架构
+
+![](../pics/mysqlG1_1.png)
+
+- 插件式的存储引擎架构将查询处理与其他系统任务以及数据存储提取分离
+
+- 查看存储引擎：
+
+  - `show engines;`
+
+    ![](../pics/mysql/mysqlG1_3.png)
+
+  - `show variables like '%storage_engine%';`
+
+    ![](../pics/mysql/mysqlG1_4.png)
+
+# 二、索引优化
+
+## 1. SQL 性能下降
+
+> - 等待时间长
+> - 执行时间长
+
+- 查询语句写的烂
+- 索引失效，分为单值索引和复合索引
+- 关联过多 join ( 设计缺陷或不得已的需求)
+- 服务器调优及各个参数设置(缓冲、线程数等)
+
+## 2. Join 查询
+
+### 1. SQL 执行顺序
+
+```mysql
+# SQL 语句
+SELECT 
+DISTINCT <select_list>
+FROM <left_table> 
+<join_type> JOIN <right_table> ON <join_condition>
+WHERE <where_condition>
+GROUP BY <group_by_list>
+HAVING <having_condition>
+ORDER BY <order_by_condition>
+LIMIT <limit_number>
+
+#机器阅读顺序
+1. FROM <left_table>
+2. ON <join_condition>
+3. <join_type> JOIN <right_table>
+4. WHERE <where_condition>
+5. GROUP BY <group_by_list>
+6. HAVING <having_condition>
+7. SELECT 
+8. DISTINCT <select_list>
+9. ORDER BY <order_by_condition>
+10. LIMIT <limit_number>
+```
+
+![](../pics/mysql/mysqlG2_1.png)
+
+### 2. 7 种Join查询
+
+![](../pics/mysql/mysqlG2_2.png) ![](../pics/mysql/mysqlG2_3.png) ![](../pics/mysql/mysqlG2_4.png)
+
+​                ![](../pics/mysql/mysqlG2_5.png)                                    ![](../pics/mysql/mysqlG2_6.png) 
+
+![](../pics/mysql/mysqlG2_7.png) ![](../pics/mysql/mysqlG2_8.png)
+
+## 3. 索引简介
+
+### 1. 简介
+
+- 是帮助 MySQL 高效获取数据的数据结构
+- 以索引文件的方式(`.frm`)存储在硬盘上
+
+### 2. 优势
+
+- 提高数据检索的效率，降低数据库的 IO 成本
+- 通过索引进行排序，降低排序成本，减少 CPU 消耗
+
+### 3. 劣势
+
+- 索引会增加内存消耗，因为索引表保存了主键和索引字段
+- 索引会降低更新表的速度，因为更新表时，还得向索引表中添加索引列字段
+
+### 4. 分类
+
+- **单值索引**：一个索引只包含单个列，一个表可有多个单列索引
+- **唯一索引**：索引列的值必须唯一，但允许有空值
+- **复合索引**：一个索引包含多个列
+
+### 5. 基本语法
+
+- **创建**： 
+
+  - `CREATE [UNIQUE] INDEX index_name ON table_name(column_name(length));`
+
+  - `ALTER table_name ADD [UNIQUE] INDEX [index_name] ON (column_name(length));`
+
+    > - `ALTER TABLE tbl1 ADD PRIMARY KEY(column_list);`
+    >
+    >   添加了一个主键，则索引值必须唯一且不能为NULL
+    >
+    > - `ALTER TABLE tbl2 ADD UNIQUE index_name(column_list)`
+    >
+    >   创建的索引值必须唯一(NULL 除外)
+    >
+    > - `ALTER TABLE tbl3 ADD INDEX index_name(column_list)`
+    >
+    >   添加普通索引，索引值可多次出现
+    >
+    > - `ALTER TABLE tbl4 ADD FULLTEXT indx_name(column_list)`
+    >
+    >   指定索引为 `FULLTEXT `，用于全文索引
+
+- **删除**： `DROP INDEX [index_name] ON table_name;`
+
+- **查看**： `SHOW INDEX FROM table_name\G`
+
+### 6. 索引结构
+
+- `BTree` 索引
+- `Hash` 索引
+- `full-text` 全文索引
+- `R-Tree` 索引
+
+### 7. 是否需要索引
+
+创建索引情况：
+
+> 只应为最经常查询和最经常排序的数据列建立索引
+
+- 主键自动建立唯一索引
+- 频繁作为查询条件的字段应创建索引
+- 查询中与其他表关联的字段，外键关系建立索引
+
+不适合索引情况：
+
+- 频繁更新的字段不适合创建索引
+
+- Where 条件中用不到的字段不创建索引
+
+- 表记录太少
+
+- 经常增删改的表
+
+  > - 提高了查询速度，但降低了更新表的速度
+  > - 因为更新表时，不仅要保存数据，同时要保存索引文件
+
+- 数据重重复且分布平均的字段
+
+索引选择：
+
+- 单键/组合索引选择： 在高并发下，倾向组合索引
+- 查询中排序的字段：排序字段若通过索引去访问将大大提高排序速度
+- 查询中统计或分组字段
+
+## 4. 性能分析
+
+### 1. MySQL Query Optimizer
+
+- MySQL 中专门负责优化 SELECT 语句的优化器模块
+
+  > 主要功能： 通过计算分析系统中收集到的统计信息，为客户端请求的  Query 提供最优的执行计划
+
+- 当客户端向 MySQL 请求一条 Query 时，命令解析模块完成请求分类，区分出 SELECT 并转发给 MySQL Query Optimizer 
+
+  > - MySQL Query Optimizer 首先对整条 Query 进行优化，将查询条件进行简化和转换
+  >   - 将一些常量表达式转换为常量值
+  >   - 去掉一些无用条件
+  > - 分析 Query 中的 Hint 信息来确定执行计划
+  > - 若无 Hint 信息，则会读取所涉及对象的统计信息，根据 Query 进行写相应的计算分析，然后得出执行计划
+
+### 2. MySQL 常见瓶颈
+
+- **CPU**： 在数据装入内存或从磁盘上读取数据时，CPU 可能会饱和
+- **IO**： 在装入数据远大于内存容量时，会出现磁盘 IO 瓶颈
+- **服务器硬件的性能瓶颈**： `top,free,vmstat` 可查看系统的性能状态
+
+### 3. Explain
+
+####1. 简介
+
+- 使用 `EXPLAIN` 关键字可模拟优化器执行 SQL 查询语句，从而知道 MySQL 如何处理 SQL 语句
+- 分析查询语句或表结构的性能瓶颈
+
+#### 2. 作用
+
+> 对应 “使用” 理解
+
+- 表的读取顺序
+- 数据读取操作的操作类型
+- 哪些索引可使用
+- 哪些索引被实际使用
+- 表之间的引用
+- 每张表有多少行被优化器查询
+
+#### 3. 使用
+
+`Explain + SQL 语句`
+
+结果：
+
+![](../pics/mysql/mysqlG2_9.png)
+
+- `id`： select 查询的序列号，包含一组数字，表示查询中执行select子句或操作表的顺序
+
+  > - id 相同：执行顺序由上至下
+  > - id 不同：若是子查询，id 序列号会递增，id 越大优先级越高
+  >
+  > 对应作用：**表的读取顺序**
+
+- `select_type`： 查询类型，主要用于区别普通查询、联合查询、子查询等
+
+  > - `SIMPLE`： 简单的 select 查询不包含子查询或 UINON
+  > - `PRIMARY`： 查询中包含任何复杂的子部分，最外层查询被标记为 PRIMARY
+  > - `SUBQUERY`： 在 SELECT 或 WHERE 列表中包含子查询
+  > - `DERIVED`： 在 FROM 列表中包含的子查询被标记为 DERIVED(衍生)；MySQL 会递归执行这些子查询，把结果放在临时表中
+  > - `UNION`： 若第二个 SELECT 出现在 UNION 之后，则被标记为 UNION；若 UNION 包含在 FROM 子句的子查询中，外层 SELECT 被标记为 DERIVED
+  > - `UNION RESULT`： 从 UNION 表获取结果的 SELECT
+
+- `table`： 显示这一行数据是关于哪张表的
+
+- `partitions`
+
+- `type`： 显示查询使用了何种类型，**建议参考**： [MySQL高级 之 explain执行计划详解](https://blog.csdn.net/wuseyukui/article/details/71512793)
+
+  > 最好到最差依次是： `system>const>eq_ref>ref>range>index>all`
+  >
+  > - `system`： 表只有一行记录，const 类型的特例
+  >
+  > - `const`： 表示通过索引一次就找到，用于比较 primary key 或 unique 索引
+  >
+  >   > 因为只匹配一行数据，所以很快，若将主键置于 where 列表中，MySQL 就能将查询转换为一个 const
+  >
+  > - `eq_ref`： 唯一性索引扫描，对于每个索引键，表中只有一条记录与之匹配，常见于主键或唯一索引扫描
+  >
+  > - `ref`： 非唯一性索引扫描，返回匹配某个单独值的所有行
+  >
+  >   > - 本质是也是一种索引访问，它返回所有匹配某个单独值的行
+  >   > - 可能会找到多个符合条件的行，所以应属于查找和扫描的混合体 
+  >
+  > - `range`： 只检索给定范围的行，使用一个索引来选择行
+  >
+  >   > - key 列显示使用了那个索引
+  >   > - 一般就是在where语句中出现了bettween、<、>、in等的查询
+  >   > - 这种索引列上的范围扫描比全索引扫描要好
+  >   > - 只需要开始于某个点，结束于另一个点，不用扫描全部索引 
+  >
+  > - `index`： Full Index Scan，index与ALL区别为index类型只遍历索引树
+  >
+  >   > - 这通常为ALL块，因为索引文件通常比数据文件小
+  >   > - Index与ALL虽然都是读全表，但index是从索引中读取，而ALL是从硬盘读取
+  >
+  > - `all`： Full Table Scan，遍历全表以找到匹配的行 
+
+- `possible_keys`： 查询涉及到的字段上存在索引，则该索引将被列出，但不一定被查询实际使用
+
+- `key`： 实际使用的索引，如果为NULL，则没有使用索引
+
+  > 查询中如果使用了覆盖索引，则该索引仅出现在key列表中
+
+- `key_len`： 表示索引中使用的字节数，查询中使用的索引的长度(最大可能长度)，并非实际使用长度，理论上长度越短越好
+
+  > key_len是根据表定义计算而得的，不是通过表内检索出的
+
+- `ref`： 显示索引的那一列被使用了，如果可能，是一个常量 const
+
+- `rows`： 根据表统计信息及索引选用情况，大致估算出找到所需的记录所需要读取的行数
+
+- `filtered`
+
+- `Extra`： 不适合在其他字段中显示，但是十分重要的额外信息
+
+  > - `Using filesort`： mysql 对数据使用一个外部的索引排序，而不是按照表内的索引进行排序读取，即 mysql 无法利用索引完成的排序操作称为 “文件排序”
+  >
+  > - `Using temporary`： 使用临时表保存中间结果，即 mysql 在对查询结果排序时使用了临时表，常见于order by 和 group by 
+  >
+  > - `Using index`： 表示相应的select操作中使用了**覆盖索引**，避免了访问表的数据行，效率高 
+  >
+  >   > - 如果同时出现Using where，表明索引被用来执行索引键值的查找
+  >   > - 如果没用同时出现 Using where，表明索引用来读取数据而非执行查找动作 
+  >
+  > - `Using where `： 使用了 where 过滤
+  >
+  > - `Using join buffer`： 使用了链接缓存
+  >
+  > - `Impossible WHERE`： where子句的值总是false，不能用来获取任何元组
+  >
+  > - `select tables optimized away`： 在没有 group by 子句的情况下，基于索引优化 MIN/MAX 操作或者对于MyISAM存储引擎优化COUNT（*）操作，不必等到执行阶段在进行计算，查询执行计划生成的阶段即可完成优化
+  >
+  > - `distinct`： 优化distinct操作，在找到第一个匹配的元祖后即停止找同样值得动作
+
+## 5. 索引优化
+
+### 1. 索引分析
+
+#### 1. 单表
+
+- 建表
+
+  ```mysql
+  CREATE TABLE author
+  (
+       id int(10) unsigned not null primary key auto_increment,
+       author_id int(10),
+      category_id int(10),
+      views int(10),
+      comments int(10),
+      title varchar(255),
+      content text
+  );
+  ```
+
+- 插入数据
+
+  ```mysql
+  insert into article(author_id,category_id,views,comments,title,content) values (1,1,1,1,'1','1'), (2,2,2,2,'2','2'), (1,1,3,3,'3','3');
+  ```
+
+- 查询  category_id 为 1 且 comments 大于 1 的情况下，views 最多为  author_id： 
+
+  `EXPLAIN SELECT id,author_id FROM article WHERE category_id = 1 AND comments > 1 ORDER BY views DESC LIMIT 1; `
+
+  ![](../pics/mysql/mysqlG2_10.png)
+
+  结果：type 是 ALL，即全表扫描 ==> 最坏情况；Extra 出现 Using filesort，即文件内排序 ==> 最坏情况，因此必须优化
+
+  **开始优化**：
+
+  首先查看原始索引： `show index from article;`
+
+  ![](../pics/mysql/mysqlG2_11.png)
+
+  新建索引：`create index idx_article_ccv on article(category_id,comments,views); 或 alter table article add index idx_article_ccv(category_id,comments,views);`
+
+  ![](../pics/mysql/mysqlG2_12.png)
+
+  再次查看(解决了全表扫描问题)：`EXPLAIN SELECT id,author_id FROM article WHERE category_id = 1 AND comments > 1 ORDER BY views DESC LIMIT 1; `
+
+  ![](../pics/mysql/mysqlG2_13.png)
+
+  更改语句(观察变化)： `EXPLAIN SELECT id,author_id FROM article WHERE category_id = 1 AND comments = 1 ORDER BY views DESC LIMIT 1; `
+
+  ![](../pics/mysql/mysqlG2_14.png)
+
+  **上述优化结论**：
+
+  - type 变成 range，可以忍受；但 extra 仍然为 Using filesort，不能忍受
+  - 因为根据 BTree 索引的工作原理，先排序 category_id ，若遇到相同的 category_id 则再排序 comments，若遇到相同的 comments则再排序 views
+  - 因 comments 字段在联合索引中处于中间位置且条件 comment > 1是一个范围值，所以 MySQL 无法利用索引再对后面的 views 部分进行检索，即 range 类型查询字段后的索引无效
+
+  **继续重新优化**：
+
+  删除不合适索引： `drop index idx_article_ccv on article;`
+
+  新建一个索引： `create index idx_article_cv on article(category_id,views);`
+
+  查看新的索引： `show index from article;`
+
+  ![](../pics/mysql/mysqlG2_15.png)
+
+  **查看优化结果(解决了全表查询与内排序问题，优化成功)**： `EXPLAIN SELECT id,author_id FROM article WHERE category_id = 1 AND comments > 1 ORDER BY views DESC LIMIT 1;`
+
+  ![](../pics/mysql/mysqlG2_16.png)
+
+#### 2. 双表
+
+- 建表
+
+  ```mysql
+  CREATE TABLE class
+  (
+  	id int(10) primary key auto_increment,
+      card int(10)
+  );
+  CREATE TABLE book
+  (
+      bookid int(10) PRIMARY KEY AUTO_INCREMENT,
+      card int(10)
+  );
+  ```
+
+- 插入数据
+
+  ```mysql
+  # 重复执行 20 次
+  insert into class(card) values(floor(1 + rand() * 20));
+  insert into book(card) values(floor(1 + rand() * 20));
+  ```
+
+- 查看： `select * from book inner join class on book.card=class.card;`
+
+  ![](../pics/mysql/mysqlG2_17.png)
+
+- **开始分析**：`explain select * from class left join book on book.card=class.card;`
+
+  ![](../pics/mysql/mysqlG2_18.png)
+
+  > - type 为 ALL，即全表查询
+
+  **添加索引优化**： `alter table book add index y(card);`
+
+  再次查看： `explain select * from class left join book on book.card=class.card;`
+
+  ![](../pics/mysql/mysqlG2_19.png)
+
+  **再次重新优化**：`drop index y on book;`
+
+  添加新的索引： `alter table class add index y(card);`
+
+  再次查看： `explain select * from class left join book on book.card=class.card;`
+
+  ![](../pics/mysql/mysqlG2_20.png)
+
+  两次比较的**结论**： **左连接加右表索引，右连接加左表索引**：这是由坐连接特性决定，LEFT JOIN 条件用于确定如何从右表搜索行，左边一定都有
+
+#### 3. 三表
+
+- 建表
+
+  ```mysql
+  CREATE TABLE phone
+  (
+      phoneid int(10) PRIMARY KEY AUTO_INCREMENT,
+      card int(10)
+  );
+  ```
+
+- 插入数据
+
+  ```mysql
+  # 重复执行 20 次
+  insert into phone(card) values(floor(1 + rand() * 20));
+  ```
+
+- 开始分析： `explain select * from class left join book on book.card=class.card LEFT JOIN phone ON book.card=phone.card;`
+
+  ![](../pics/mysql/mysqlG2_21.png)
+
+  建立新索引： `alter table phone add index z(card);alter table book add index y(card);`
+
+  再次查看： `explain select * from class left join book on book.card=class.card LEFT JOIN phone ON book.card=phone.card;`
+
+  ![](../pics/mysql/mysqlG2_22.png)
+
+  结论： 索引最好设置在需要经常查询的字段中
+
+#### 4. 总结
+
+- 尽可能减少 join 语句中的 NestedLoop 的循环总次数： 永远用小结果集驱动大结果集
+- 优先优化 NestedLoop 的内层循环
+- 保证 join 语句中被驱动表上 join 条件字段已经被索引
+- 当无法保证被驱动表的 join 条件字段被索引且内存资源充足情况下，不要太吝啬 JoinBuffer 的设置
+
+### 2. 索引失效
+
+####1. 建表
+
+```mysql
+# 建表
+CREATE TABLE staffs
+(
+    id int PRIMARY KEY AUTO_INCREMENT,
+    name VARCHAR(225) COMMENT '姓名',
+    age INT DEFAULT 0 COMMENT '年龄',
+    pos VARCHAR(225) COMMENT '职位',
+    add_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP COMMENT '入职时间'
+)CHARSET UTF8 COMMENT '员工记录表';
+
+# 插入记录
+INSERT INTO staffs(name,age,pos,add_time) values('z3',22,'manager',NOW());
+INSERT INTO staffs(name,age,pos,add_time) values('july',23,'dev',NOW());
+INSERT INTO staffs(name,age,pos,add_time) values('2000',22,'manager',NOW());
+
+# 建立索引
+alter table staffs add index idx_staffs_nap(name,age,pos);
+
+# 查看索引
+ show index from staffs;
+```
+
+初次查看索引：
+
+![](../pics/mysql/mysqlG2_23.png)
+
+#### 2. 案例
+
+初次分析： `explain select * from staffs where name='july';`
+
+![](../pics/mysql/mysqlG2_24.png)
+
+再次分析： `explain select * from staffs where name='july' and age=25;`
+
+![](../pics/mysql/mysqlG2_25.png)
+
+接着分析： `explain select * from staffs where name='july' and age=25 and pos='dev';`
+
+![](../pics/mysql/mysqlG2_26.png)
+
+---
+
+**索引失效查询(未从索引最左前列开始)**： `explain select * from staffs where pos='dev';`
+
+![](../pics/mysql/mysqlG2_27.png)
+
+但查询： `explain select * from staffs where name='july';` 有效
+
+![](../pics/mysql/mysqlG2_24.png)
+
+**索引查询失效(跳过了索引)**： `explain select * from staffs where name='july' and pos='dev';`
+
+![](../pics/mysql/mysqlG2_28.png)
+
+- 结论： **最佳左前缀法则： 查询从索引的最左前列开始且不跳过索引中的列(索引多列时，应遵循最佳左前缀法则)**
+
+---
+
+初次分析： `explain select * from staffs where name='july';`
+
+![](../pics/mysql/mysqlG2_24.png)
+
+**索引失效(索引上操作函数)**： `explain select * from staffs where left(name,4)='july';`
+
+![](../pics/mysql/mysqlG2_29.png)
+
+- 结论： **在索引列上做任何操作(计算，函数，(自动or手动)类型转换)，会导致索引失效而转向全表扫描**
+
+---
+
+初次分析： `explain select * from staffs where name='july' and age=25 and pos='dev';`
+
+![](../pics/mysql/mysqlG2_30.png)
+
+**索引失效(使用了范围条件)**： `explain select * from staffs where name='july' and age>11 and pos='dev';`
+
+![](../pics/mysql/mysqlG2_31.png)
+
+- 结论： **存储引擎不能使用索引总范围条件右边的列** 
+
+---
+
+初次分析： `explain select * from staffs where name='july' and age=25 and pos='dev';`
+
+![](../pics/mysql/mysqlG2_26.png)
+
+**索引优化(只使用索引查询)**： `explain select name,age,pos from staffs where name='july' and age=25 and pos='dev';`
+
+![](../pics/mysql/mysqlG2_32.png)
+
+再次分析： `explain select name,age,pos from staffs where name='july' and age>25 and pos='dev';`
+
+![](../pics/mysql/mysqlG2_33.png)
+
+- 结论： **尽量使用覆盖索引(只访问索引的查询(索引列和查询列一致))，减少 `select *`**
+
+---
+
+初次分析： `explain select * from staffs where name='july';`
+
+![](../pics/mysql/mysqlG2_24.png)
+
+再次分析： `explain select * from staffs where name!='july';`
+
+![](../pics/mysql/mysqlG2_34.png)
+
+接着分析： `explain select * from staffs where name<>'july';`
+
+![](../pics/mysql/mysqlG2_35.png)
+
+- 结论： **使用不等号(!=或<>)时，无法使用索引会导致全表扫描**
+
+---
+
+初次分析： `explain select * from staffs where  name is null;`
+
+再次分析： `explain select * from staffs where  name is not null;`
+
+![](../pics/mysql/mysqlG2_36.png)
+
+- 结论： **`is not null` 无法使用索引(某些版本的 `is null` 也无法使用索引)**
+
+---
+
+初次分析： `explain select * from staffs where name like '%july%';`
+
+![](../pics/mysql/mysqlG2_37.png)
+
+再次分析：`explain select * from staffs where name like '%july';`
+
+![](../pics/mysql/mysqlG2_38.png)
+
+接着分析：  `explain select * from staffs where name like 'july%';`
+
+![](../pics/mysql/mysqlG2_39.png)
+
+- 结论： **like 以通配符左开头('%abc..') 的索引会失效，因此记住： ==like 的 % 加右边==** 
+
+---
+
+问题： 解决 like "%xxx%" 时，索引失效的方法？
+
+建表：
+
+```mysql
+# 建表
+CREATE TABLE tbl_user
+(
+    id int PRIMARY KEY AUTO_INCREMENT,
+    name VARCHAR(225),
+    age int,
+    email VARCHAR(20)
+)AUTO_INCREMENT=1 DEFAULT CHARSET=utf8;
+
+# 插入数据
+INSERT INTO tbl_user(name,age,email) values('1aa1',21,'b@163.com');
+INSERT INTO tbl_user(name,age,email) values('2aa2',222,'a@163.com');
+INSERT INTO tbl_user(name,age,email) values('3aa3',265,'c@163.com');
+INSERT INTO tbl_user(name,age,email) values('4aa4',21,'d@163.com');
+
+# 创建索引
+CREATE INDEX idx_user_ng ON tbl_user(name,age);
+```
+
+初次分析： `explain select name,age from tbl_user where name like '%aa%';`
+
+![](../pics/mysql/mysqlG2_40.png)
+
+再次分析： `explain select id from tbl_user where name like '%aa%';`
+
+![](../pics/mysql/mysqlG2_41.png)
+
+索引失效： `explain select * from tbl_user where name like '%aa%';`
+
+![](../pics/mysql/mysqlG2_42.png)
+
+索引失效： `explain select id,name,age,email from tbl_user where name like '%aa%';`
+
+![](../pics/mysql/mysqlG2_43.png)
+
+- 结论： **使用覆盖索引解决 like % 失效问题**
+
+---
+
+初次分析： `explain select * from staffs where name='2000';`
+
+![](../pics/mysql/mysqlG2_44.png)
+
+索引分析(自动类型转换)： `explain select * from staffs where name=2000;`
+
+![](../pics/mysql/mysqlG2_45.png)
+
+- 结论： **字符串不加单引号索引失效**
+
+---
+
+索引失效(使用了 or)： `explain select * from staffs where name='july' or name='z3';`
+
+![](../pics/mysql/mysqlG2_46.png)
+
+- 结论： **使用 `or` 连接时会导致索引失效**
+
+---
+
+**&&总结&&**：假设 `index(a,b,c)`
+
+| where 语句                                           | 索引是否被使用                            |
+| ---------------------------------------------------- | ----------------------------------------- |
+| where a = 3                                          | Yes，使用到 a                             |
+| where a = 3 and b = 5                                | Yes，使用到 a, b                          |
+| where a = 3 and b = 5 and c = 4                      | Yes，使用到 a, b, c                       |
+| where b = 3 或 where b = 3 and c  = 4 或 where c = 4 | No                                        |
+| where a = 3 and c = 5                                | 使用到 a，但 c 不可以，b 中间断了         |
+| where a = 3 and b > 4 and c = 5                      | 使用到 a 和 b，c 不能用在范围之后，b 断了 |
+| where a = 3 and b like 'kk%' and c = 4               | a，b 能用，c 不能用                       |
+
+#### 3. 例题
+
+建表
+
+```mysql
+# 建表
+CREATE TABLE test03
+(
+    id int PRIMARY KEY AUTO_INCREMENT,
+    c1 char(10),
+    c2 char(10),
+    c3 char(10),
+    c4 char(10),
+    c5 char(10)
+);
+
+# 插入数据
+INSERT INTO test03(c1,c2,c3,c4,c5) values('a1','a2','a3','a4','a5');
+INSERT INTO test03(c1,c2,c3,c4,c5) values('b1','b2','b3','b4','b5');
+INSERT INTO test03(c1,c2,c3,c4,c5) values('c1','c2','c3','c4','c5');
+INSERT INTO test03(c1,c2,c3,c4,c5) values('d1','d2','d3','d4','d5');
+INSERT INTO test03(c1,c2,c3,c4,c5) values('e1','e2','e3','e4','e5');
+
+# 建立索引
+create index idx_test03_c1234 on test03(c1,c2,c3,c4);
+```
+
+问题： 创建了复合索引 idx_test03_c1234，根据 SQL 语句分析索引使用情况？
+
+1） `explain select * from test03 where c1='a1' and c2='a2' and c4='a4' and c3='a3';`
+
+![](../pics/mysql/mysqlG2_47.png)
+
+- 结论： **改变索引顺序结果不变**，因为MySQL底层优化器会进行相关优化操作
+
+2）`explain select * from test03 where c1='a1' and c2='a2' and c3>'a3' and c4='a4';`
+
+![](../pics/mysql/mysqlG2_48.png)
+
+- 结论： **范围查询之后的索引失效**
+
+3）`explain select * from test03 where c1='a1' and c2='a2' and c4='a4' order by c3;`
+
+![](../pics/mysql/mysqlG2_49.png)
+
+- 结论： **索引中断之后的索引失效**
+
+4）`explain select * from test03 where c1='a1' and c2='a2' order by c4;`
+
+![](../pics/mysql/mysqlG2_50.png)
+
+- 结论： **索引建造与排序顺序尽量一致，避免内排序**
+
+5） `explain select * from test03 where c1='a1' and c5='a5' order by c2,c3;`
+
+![](../pics/mysql/mysqlG2_51.png)
+
+`explain select * from test03 where c1='a1' and c5='a5' order by c3,c2;`
+
+![](../pics/mysql/mysqlG2_52.png)
+
+- 结论： **order by 排序顺序尽量与索引顺序一致，避免内排序**
+
+6） `explain select * from test03 where c1='a1' and c2='a2' order by c3,c2;`
+
+![](../pics/mysql/mysqlG2_53.png)
+
+- 结论： 因为有 `where c2='c2'`，则此时的 `c2` 可看成一个常量，因此不会出现上述的内排序情况
+
+**&&总结&&**：
+
+- 定值，范围还是排序，一般 order by 是给个范围
+- group by 基本上都需要进行排序，会有临时表产生
+
+###3. 一般建议
+
+- 对于单键索引，尽量选择针对当前 query 过滤性更好的索引
+- 在选择组合索引时，当前 query 中过滤性最好的字段在索引字段顺序中，位置越靠前越好
+- 在选择组合索引时，尽量选择能包含当前 query 中的 where 子句中更多字段的索引
+- 尽可能通过分析统计信息和调整 query 的写法来达到选择合适索引的目的
+
+# 三、查询截取分析
+
+## 1. 查询优化
+
+### 1. 小表驱动大表
+
+- 优化原则(RBO)： 小表驱动大表，即**小的数据集驱动大的数据集**
+
+```mysql
+# 当 B 表的数据集小于 A 表的数据集时，in 优于 exists &&&&
+select * from A where id in (select id from B);
+等价于
+for select id from B
+for select * from A where A.id=B.id
+
+# 当 A 表的数据集小于 B 表的数据集时，exists 优于 in &&&&
+select * from A where exists (select * from A where B.id=A.id)
+等价于
+for select * from A
+for select * from B where B.id=A.id
+```
+
+`EXISTS` 语法： `SELECT ... FROM table_name WHERE EXISTS(subquery);`
+
+- **解释**： 将主查询的数据放到子查询中做条件验证，根据验证结果(TRUE 或 FALSE)来决定主查询的数据结果是否得以保留
+
+- **提示**：
+  - `EXISTS(subquery)` 只返回 TRUE 或 FALSE，因此子查询中的 `SELECT *` 也可以是 `SELECT 1 或 SELECT 'X'`，官方说法是：实际执行时会忽略 SELECT 清单，因此无区别
+  - EXISTS 子查询的实际执行过程可能经过了优化而不是我们理解上的逐条对比，如果担忧效率问题，可进行实际检验以确定是否有效率问题
+  - EXISTS 子查询往往也可以用条件表达式、其他子查询或 JOIN 来替代，何种最优需具体分析
+
+### 2. order by 关键字优化
+
+- **`ORDER BY` 子句尽量使用 Index 方式排序，避免使用 FileSort(内排序) 方式排序** 
+
+  **Index 效率高，指 MySQL 扫描索引本身完成排序；filesort 方式效率较低**
+
+  - **Index： 扫描有序索引排序**
+  - **filesort： 文件排序**
+
+  > 建表
+  >
+  > ```mysql
+  > # 建表
+  > CREATE TABLE tblA
+  > (
+  >     age int,
+  >     birth TIMESTAMP
+  > );
+  > 
+  > # 插入数据
+  > INSERT INTO tblA(age,birth) values(22,NOW());
+  > INSERT INTO tblA(age,birth) values(23,NOW());
+  > INSERT INTO tblA(age,birth) values(24,NOW());
+  > 
+  > # 建立索引
+  > CREATE INDEX idx_A_ab ON tblA(age,birth);
+  > ```
+  >
+  > 初次分析： `explain select * from tblA where age>20 order by age;`
+  >
+  > ![](../pics/mysql/mysqlG3_1.png)
+  >
+  > 再次分析： `explain select * from tblA where age>20 order by birth;`
+  >
+  > ![](../pics/mysql/mysqlG3_2.png)
+  >
+  >  接着分析： `explain select * from tblA order by birth;`
+  >
+  > ![](../pics/mysql/mysqlG3_3.png)
+  >
+  > 继续分析： `explain select * from tblA where birth > '2018-12-11 14:49:50' order by birth;`
+  >
+  > ![](../pics/mysql/mysqlG3_4.png)
+  >
+  > 再继续分析： `explain select * from tblA where birth > '2018-12-11 14:49:50' order by age;`
+  >
+  > ![](../pics/mysql/mysqlG3_5.png)
+  >
+  > 接着分析： `explain select * from tblA order by age ASC,birth DESC;`
+  >
+  > ![](../pics/mysql/mysqlG3_6.png)
+  >
+  > - 结论： `ORDER BY` 满足两种情况会使用 Index 方式排序：
+  >   - **`ORDER BY` 语句使用索引最左前列**
+  >   - **使用 `WHERE` 子句与 `ORDER BY` 子句条件列组合满足索引最左前列**
+
+- **尽可能在索引列上完成排序操作，遵循索引建的==最佳左前缀==**
+
+- **若不在索引列上，filesort 有两种算法：双路排序、单路排序** 
+
+  > - **双路排序**： 对磁盘进行两次扫描
+  >   - 两次扫描磁盘，最终得到数据，读取行指针和 orderby 列，对他们进行排序，然后扫描已排序号的列表，按照列表中的值重新从列表中读取对应的数据输出
+  >   - 从磁盘取排序字段，在 buffer 进行排序，再从磁盘取其他字段
+  > - **单路排序**： 
+  >   - 从磁盘读取查询需要的**所有列**，按照 orderby 列在 buffer 对它们进行排序，然后扫描排序后的列表进行输出
+  >   - 避免二次读取数据，且把随机 IO 变成顺序 IO，将每行数据保存在内存中
+  > - **单路排序的缺陷**：若取出的数据大小超过了 `sort_buffer` 容量，导致需要进行多次 IO 操作，性能反而会下降
+
+- **优化策略**
+
+  > - 增大 `sort_buffer_size` 参数是设置
+  >
+  >   > 该参数针对每个进程，所以提高这个参数会提高所有算法的效率，但应根据系统的能力进行提高
+  >
+  > - 增大 `max_length_for_sort_data` 参数的设置
+  >
+  >   > - 提高该参数会增加使用改进算法的概率
+  >   > - 若设的太高，数据总量超出 sort_buffer_size 的概率就会增加，则会出现： 高的磁盘 IO 活动和低的处理器使用效率
+
+- **提高 `ORDER BY` 的速度**
+
+  - 禁用 `select *` 全表查询
+
+    > - 当查询的字段大小总和小于 `max_length_for_sort_data` 且排序字段不是 `TEXT/BLOB` 类型时，会使用单路排序，否则使用多路排序
+    > - 两种算法都可能超出 `sort_buffer` 容量，则会创建 tmp 文件进行合并排序，导致多次 IO，另单路排序超出的风险更大
+
+  - 尝试提高 `sort_buffer_size `
+
+  - 尝试提高 `max_length_for_sort_data`
+
+**总结**：
+
+- MySQL 的两种排序方式： 文件排序、扫描有序索引排序
+- MySQL 能为排序与查询使用相同的索引
+
+对于索引： `KEY a_b_c(a,b,c)`
+
+- order by 能使用最左前缀
+  - `ORDER BY a`
+  - `ORDER BY a,b`
+  - `ORDER BY a,b,c`
+  - `ORDER BY a DESC,b DESC,c DESC`
+- 若 WHERE 使用索引的最左前缀定义为常量，则 order by 能使用索引
+  - `WHERE a = const ORDER BY b,c`
+  - `WHERE a = const AND b = const ORDER BY c`
+  - `WHERE a = const AND b > const ORDER BY b,c`
+- 不能使用索引进行排序的可能情况
+  - `ORDER BY a ASC,b DESC,c DESC ==> 排序不一致`
+  - `WHERE g = const ORDER BY b,c ==> 丢失 a 索引`
+  - `WHERE a = const ORDER BY c ==> 丢失 b 索引`
+  - `WHERE a = const ORDER BY a,d ==> d 不是索引的一部分`
+  - `WHERE a in(...) ORDER BY b,c ==> 对于排序来说，多个相等条件也是范围查询`
+
+### 3. group by 关键字优化
+
+与 order by 的规则基本一致，但注意以下几点：
+
+- group by 实质是先排序后进行分组，遵照索引建的最佳左前缀
+- 当无法使用索引列时，增大 `sort_buffer_size 与 max_length_for_sort_data` 参数的设置
+- where 高于 having，能写在 where 限定条件下就不要用 having
+
+## 2. 慢查询日志
+
+### 1. 简介
+
+- 是 MySQL 的一种日志记录，用来记录在 MySQL 中响应时间超过阙值的语句
+- 具体指运行时间超过 `long_query_time` 值的 SQL，则会被记录到慢查询日志中，默认为 10(s)
+
+### 2. 如何使用
+
+- **说明**：
+
+  > - 默认慢查询日志关闭
+  > - 若不需要调优，建议关闭该功能，因为会影响性能
+  > - 支持将日志记录写入文件
+
+- **查看是否开启及如何开启**： 
+
+  > - 查看是否开启： `SHOW VARIABLES LIKE '%slow_query_log%';`
+  >
+  >   ![](../pics/mysql/mysqlG3_7.png)
+  >
+  > - 开启： `SET GLOBAL slow_query_log=1;` 
+  >
+  >   注：
+  >
+  >   - **只对当前数据库有效，若 MySQL  重启则会失效**
+  >
+  >   - 若想永久生效，必须修改配置文件 `my.cnf`
+  >
+  >     ```mysql
+  >     slow_query_log = 1
+  >     slow_query_log_file=文件路径
+  >     ```
+  >
+
+- **哪种 SQL 会被记录到慢查询日志中**： 
+
+  > - 运行时间 `大于 long_query_time` 的 SQL 语句会被记录到慢查询日志中
+  >
+  > - 命令 `SHOW VARIABLES LIKE 'long_query_time%';` 可查看该值，默认为 10秒
+  >
+  >   ![](../pics/mysql/mysqlG3_8.png)
+  >
+  > - 可使用命令修改，也可修改 `my.cnf` 配置文件：`SET GLOBAL long_query_time=XX;`
+  >
+  >   注意：需要重新连接或新开一个会话才能看到修改值：`SHOW VARIABLES LIKE 'long_query_time%'; 或 SHOW GLOBAL VARIABLES LIKE 'long_query_time';` 
+
+- **查看当前系统有多少条慢查询记录**：`SHOW GLOBAL STATUS LIKE '%Slow_queries%';`
+
+### 3. 日志分析工具 mysqldumpslow
+
+> 日志分析工具 mysqldumpslow 用于在生产环境中分析日志，查找和分析 SQL
+
+命令 `mysqldumpslow --help` 查看帮助：
+
+![](../pics/mysql/mysqlG3_9.png)
+
+**相关参数信息**：
+
+![](../pics/mysql/mysqlG3_10.png)
+
+使用举例：
+
+![](../pics/mysql/mysqlG3_11.png)
+
+## 3. 批量插入数据脚本
+
+**建表**： 
+
+```mysql
+# 建表 dept
+CREATE TABLE dept
+(
+    id int PRIMARY KEY AUTO_INCREMENT,
+    deptno MEDIUMINT DEFAULT 0,
+    dname VARCHAR(20) DEFAULT "",
+    loc VARCHAR(13) DEFAULT ""
+);
+# 建表 emp
+CREATE TABLE emp
+(
+    id int PRIMARY KEY AUTO_INCREMENT,
+    empno MEDIUMINT DEFAULT 0,
+    ename VARCHAR(20),
+    job VARCHAR(9),
+    mgr MEDIUMINT,
+    hiredate DATE,
+    sal DECIMAL(7,2),
+    comm DECIMAL(7,2),
+    deptno MEDIUMINT
+);
+```
+
+**设置参数** `log_bin_trust_function_creators`：
+
+- 查看： `show variables like 'log_bin_trust_function_creators';`
+- 设置： `set global log_bin_trust_function_creators=1;` (此种方式设置，当 MySQL 重启后，参数就会消失)
+- 注意： **要记得开启慢查询日志，方便容灾测试分析** 
+
+**创建函数，保证每条数据都不同**：
+
+- 用于随机产生字符串
+
+  ```mysql
+  DELIMITER $$
+  CREATE FUNCTION rand_string(n INT) RETURNS VARCHAR(255)
+  BEGIN
+  	DECLARE chars_str VARCHAR(100) DEFAULT 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ';
+  	DECLARE return_str VARCHAR(255) DEFAULT '';
+  	DECLARE i INT DEFAULT 0;
+  	WHILE i < n DO
+  		SET return_str = CONCAT(return_str,SUBSTRING(chars_str,FLOOR(1+RAND()*52),1));
+  		SET i=i+1;
+  	END WHILE;
+  	RETURN return_str;
+  END $$
+  ```
+
+- 用于随机产生部门编号
+
+  ```mysql
+  DELIMITER $$
+  CREATE FUNCTION rand_num() RETURNS INT(5)
+  BEGIN 
+  	DECLARE i INT DEFAULT 0;
+  	SET i=FLOOR(100+RAND()*10);
+  	RETURN i;
+  END $$
+  ```
+
+**创建存储过程**：
+
+- 创建往 emp 表中插入数据从存储过程
+
+  ```mysql
+  DELIMITER $$
+  CREATE PROCEDURE insert_emp(IN START INT(10),IN max_num INT(10))
+  BEGIN
+  	DECLARE i INT DEFAULT 0;
+  	SET autocommit=0;
+  	REPEAT
+  	SET i=i+1;
+  	INSERT INTO emp(empno,ename,job,mgr,hiredate,sal,comm,deptno) values((START+i),rand_string(6),'SALEMAN',0001,CURDATE(),2000,400,rand_num());
+  	UNTIL i=max_num
+  	END REPEAT;
+  	COMMIT;
+  END $$
+  ```
+
+- 创建往 dept 表中插入数据的存储过程
+
+  ```mysql
+  DELIMITER $$
+  CREATE PROCEDURE insert_dept(IN START INT(10),IN max_num INT(10))
+  BEGIN
+  	DECLARE i INT DEFAULT 0;
+  	SET autocommit=0;
+  	REPEAT
+  	SET i=i+1;
+  	INSERT INTO dept(deptno,dname,loc) values((START+i),rand_string(10),rand_string(8));
+  	UNTIL i=max_num
+  	END REPEAT;
+  	COMMIT;
+  END $$
+  ```
+
+**调用存储过程**： 
+
+- `dept`
+
+  ```mysql
+  DELIMITER ;
+  CALL insert_dept(100,10);
+  ```
+
+- `emp`
+
+  ```mysql
+  # 执行存储过程，往 emp 表添加 50 万条数据
+  CALL insert_emp(100001,500000); # 需要等待一段时间
+  ```
+
+## 4. Show Profile
+
+- **简介**： 是 MySQL 提供的可以用来分析当前会话中语句执行的资源消耗情况，可用于 SQL 的调优测量
+
+- 默认参数处于关闭状态，并保存最近 15 次的运行结果
+
+- **分析步骤**：
+
+  - 查看当前 MySQL 版本是否支持：`show variables like 'profiling';`
+  - 开启功能：`set profiling=on; `
+  - 运行 SQL(任意SQL语句都行)： `select * from emp group by id limit 150000; select * from emp group by id order by 5;`
+
+  - 查看结果： `show profiles;`
+
+    ![](../pics/mysql/mysqlG3_12.png)
+
+  - 诊断 SQL： `show profile cpu,block io for query [Query_ID]`
+
+    如： `show profile cpu,block io for query 3` ==> 此处的 3 对应上图的 Query_ID 的 3
+
+    ![](../pics/mysql/mysqlG3_13.png)
+
+    **所有配置参数及解释**：
+
+    ![](../pics/mysql/mysqlG3_14.png)
+
+  - **日常开发需要注意的结论**：
+    - `converting HEAP to MyISAM` 查询结果太大，内存不够用了往磁盘上搬
+    - `creating tmp table` 创建临时表：拷贝数据到临时表，用完再删除
+    - `copying to tmp table on disk` 把内存中临时表复制到磁盘，危险
+    - `locked`
+
+## 5. 全局查询日志
+
+> - 记录执行的 SQL 语句
+> - **永远不要在生产环境中开启此功能**
+
+- **配置启用**：
+
+  ```mysql
+  # 在 mysql 的 my.cnf 中设置如下：
+  # 开启
+  general_log=1
+  # 记录日志文件的路径
+  general_log_file=/path/logfile
+  # 输出格式
+  log_output=FILE
+  ```
+
+- **编码启用**：
+
+  ```mysql
+  set global general_log=1;
+  set global log_output='TABLE';
+  # 接着，你编写的 sql 语句将会记录到 mysql 库中的 general_log 表中
+  # 查看 general_log 表
+  select * from mysql.general_log;
+  ```
+
+# 四、MySQL 锁机制
+
+## 1. 概述
+
+- **定义**： 锁是计算机协调多个进程或线程并发访问某一资源的机制
+- **锁的分类**：
+  - 从对数据的操作类型(读/写)：
+    - **读锁(共享锁)**： 针对同一份数据，多个读操作可同时进行而不会相互影响
+    - **写锁(排他锁)**： 当前写操作没有完成前，会阻断其他写锁和读锁
+  - 从对数据操作的粒度分：
+    - **表锁**
+    - **行锁**
+
+## 2. 三锁
+
+### 1. 表锁(偏读)
+
+#### 1. 特点
+
+- 偏向 MyISAM 存储引擎，开销小，加锁快，无死锁
+- 锁粒度大，发生锁冲突的概率最高，并发度最低
+
+#### 2. 案例分析
+
+**建表**：
+
+```mysql
+# 建表
+create table mylock
+(
+    id int PRIMARY KEY AUTO_INCREMENT,
+    name varchar(20)
+)engine myisam;
+
+# 插入数据
+insert into mylock(name) values('a');
+insert into mylock(name) values('b');
+insert into mylock(name) values('c');
+insert into mylock(name) values('d');
+insert into mylock(name) values('e');
+```
+
+**手动增加表锁**：
+
+`lock table 表名 read/write,表名2 read/write,其它;`
+
+**查看表加过的锁**： `show open tables;` 
+
+**删去表加的锁**： `unlock tables;`
+
+---
+
+开始分析： 
+
+给 `mylock` **加读锁**： `lock table mylock read;` 
+
+![](../pics/mysql/mysqlG4_1.png)
+
+给 `mylock` **加写锁**： `lock table mylock write;`  
+
+> 记得 `unlock tables` 删掉 mylock 的读锁
+
+![](../pics/mysql/mysqlG4_2.png)
+
+新开一个终端，执行 `select * from mylock;` 将一直处于**阻塞状态**
+
+![](../pics/mysql/mysqlG4_3.png)
+
+---
+
+结论：
+
+- MyISAM 在执行查询语句前，会自动给涉及的所有表加读锁，在执行增删改操作前，会自动给涉及的表加写锁
+
+- MySQL 的表级锁模式： 表共享锁和表独占锁
+
+  | 锁类型 | 可否兼容 | 读锁 | 写锁 |
+  | ------ | -------- | ---- | ---- |
+  | 读锁   | 是       | 是   | 否   |
+  | 写锁   | 是       | 否   | 否   |
+
+  可得：
+
+  - 对 MyISAM 表的读操作不会阻塞其他线程对同一表的读请求，但会阻塞对同一表的写请求。只有当读锁释放后，才会执行其他进程的写操作
+  - 对 MyISAM 表的写操作会阻塞其他线程对同一表的读与写请求。只有当写锁释放后，才会执行其他进程的读写操作
+
+#### 3. 表锁分析
+
+- 可通过检查 `table_locks_waited 和 table_locks_immediate` 状态变量来分析系统上的表锁定： `show status like 'table%';` 
+
+  ![](../pics/mysql/mysqlG4_4.png)
+
+  - `table_locks_immediate`： 产生表级锁定的次数，表示可立即获取锁的查询字数，每立即获取锁时值加1
+  - `table_locks_waited `： 出现表级锁定争用而发生等待的次数(不能立即获取锁的次数，每等待一次，锁值加1)，此值高说明存在较严重的表级锁争用情况
+
+> MyISAM 的读写锁调度是**写优先**，因此不适合做写操作为主的表的引擎
+
+### 2. 行锁(偏写)
+
+#### 1. 特点
+
+- 偏向 InnoDB 存储引擎，开销大，加锁慢，会出现死锁
+- 锁粒度最小，发生锁冲突的概率最低，并发度也最高
+
+InnoDB 与 MyIASM 的不同点：
+
+- **支持事务**
+- **采用了行级锁**
+
+#### 2. 复习
+
+- **事务及其ACID属性**
+
+  ![](../pics/mysql/mysqlG4_5.png)
+
+- 并发事务处理带来的问题
+
+  - **更新丢失**
+
+    ![](../pics/mysql/mysqlG4_6.png)
+
+  - **脏读**
+
+    ![](../pics/mysql/mysqlG4_7.png))
+
+  - **不可重复读**
+
+    ![](../pics/mysql/mysqlG4_8.png)
+
+  - **幻读** 
+
+    ![](../pics/mysql/mysqlG4_9.png)
+
+- **事务隔离级别**
+
+  ![](../pics/mysql/mysqlG4_10.png)
+
+#### 3. 案例分析
+
+建表
+
+```mysql
+# 建表
+CREATE TABLE test_innodb_lock
+(
+    a int(11),
+    b varchar(16)
+)engine=innodb;
+
+# 插入数据
+insert into test_innodb_lock values(1,'b2');
+insert into test_innodb_lock values(3,'3');
+insert into test_innodb_lock values(4,'4000');
+insert into test_innodb_lock values(5,'5000');
+insert into test_innodb_lock values(6,'6000');
+insert into test_innodb_lock values(7,'7000');
+insert into test_innodb_lock values(8,'8000');
+insert into test_innodb_lock values(9,'9000');
+insert into test_innodb_lock values(1,'b1');
+
+# 创建索引
+create index test_innodb_a on test_innodb_lock(a);
+create index test_innodb_b on test_innodb_lock(b);
+```
+
+**&&行锁定演示&&**： 同时开启两个终端，一个终端对表进行修改，然后查看效果
+
+![](../pics/mysql/mysqlG4_11.png)
+
+进行 `commit;` 提交后，再查看效果
+
+![](../pics/mysql/mysqlG4_12.png)
+
+---
+
+同时对表的两行进行操作：
+
+![](../pics/mysql/mysqlG4_13.png)
+
+---
+
+**&&无索引行锁升级为表锁&&**：因字段 `b varchar(16)` 为字符串类型，而下述调用会导致自动类型转换，进而导致索引失效，行锁升级为表锁，因此另一个进程无法对表的其他行进行写操作
+
+![](../pics/mysql/mysqlG4_14.png)
+
+当 `commit;` 提交后，终端1 则会释放表，终端2执行写操作：
+
+![](../pics/mysql/mysqlG4_15.png)
+
+---
+
+**&&间隙锁危害&&**： 
+
+![](../pics/mysql/mysqlG4_16.png)
+
+- **间隙锁**： 当我们用范围条件而不是相等条件检索数据，并请求共享或排他锁时，InnoDB 会给符合条件的已有数据记录的索引项加锁；对于**键值在条件范围内但并不存在的记录**，叫做“**间隙(GAP)**”，InnoDB 会对该“间隙”加锁
+
+- **危害**：在 Query 执行过程中，通过范围查找的话，他会锁定整个范围内所有的索引键值，即使该键值不存在
+
+  > 即当锁定一个范围键值后，即使某些不存在的键值也会被无辜的锁定，而造成在锁定的时候无法插入锁定键值范围内的任何数据，进而导致性能的下降
+
+---
+
+**&&如何锁定一行&&**：
+
+`SELECT ... FOR UPDATE` 锁定某一行后，其他操作会被阻塞，直到锁定行的会话提交 commit
+
+![](../pics/mysql/mysqlG4_17.png)
+
+---
+
+**&&总结&&**：
+
+- InnoDB 存储引擎由于实现了行级锁定，虽然在锁定机制方面的损耗比表锁更高，但整体的并发性能要远远优于 MyISAM 的表锁
+
+  > 但 InnoDB 也有缺陷，比如：索引不当会导致行锁变表锁，性能降低
+
+#### 4. 行锁分析
+
+- 通过检查 `InnoDB_row_lock` 状态变量来分析系统上的行锁的争夺情况： `show status like 'innodb_row_lock%';`
+
+  ![](../pics/mysql/mysqlG4_18.png)
+
+  - `Innodb_row_lock_current_waits`： 当前系统正在等待锁定的数量
+  - `Innodb_row_lock_time`： 从系统启动到现在锁定总时间长度
+  - `Innodb_row_lock_time_avg`： 每次等待所花平均时间
+  - `Innodb_row_lock_time_max`： 从系统启动到现在等待最长的一次所花时间
+  - `Innodb_row_lock_waits`： 系统启动到现在总共等待的次数
+
+  > 当等待次数很多，且每次等待时间也长时，就需要分析系统进行优化
+
+#### 5. 优化建议
+
+- 尽可能让所有数据检索都**通过索引来完成，避免无索引行锁升级为表锁**
+- 合理设计索引，缩小锁的范围
+- 尽可能较少检索条件，**避免间隙锁**
+- 尽量控制事务大小，减锁定资源量和时间长度
+- 尽可能低级别事务隔离
+
+### 3. 页锁
+
+- 开锁和加锁时间介于表锁与行锁之间，会出现死锁
+- 锁定粒度界于行锁与表锁之间，并发度一般
+
+# 五、主从复制
+
+## 1. 复制的基本原理
+
+- slave 会从 master 读取 binlog 来进行数据同步
+
+- 步骤：
+
+  - master 将改变记录到二进制日志，这些记录过程叫做二进制日志事件(binary log events)
+  - slave 将 master 的 binary log events 拷贝到它的中继日志(relay log)
+  - slave 重做中继日志中的事件，将改变应用到自己的数据库中
+
+  > MySQL 复制是异步且串行化的
+
+  ![](../pics/mysql/mysqlG5_1.png)
+
+## 2. 复制的基本原则
+
+- 每个 slave 只有一个 master
+- 每个 slave 只能有一个唯一的服务器 ID
+- 每个 master 可以有多个 slave
+
+## 3. 复制的最大问题
+
+- **延时**
+
+## 4. 一主一从配置
+
+- MySQL 版本一致且后台以服务运行
+- 主从都配置在 [mysqld] 节点下，都是小写
+
+....
+
+
+
+
+
+
 
 # 进阶
 
