@@ -104,6 +104,10 @@
 
   对于 MongoDB 的知识点部分总结
 
+- [MyBatis 相关用法介绍](./notes/MyBatis.md) 
+
+  关于 MyBatis 基本用法的简单总结
+
 ### :coffee: Java
 
 - [Java 基础](./notes/Java%20基础.md)
