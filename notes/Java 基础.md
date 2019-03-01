@@ -1385,7 +1385,7 @@ public void test3(){
 
 1. 前提：若已知具体的类，通过类的class属性获取，该方法最为安全可靠，程序性能最高       
 
-  ​实例：Class clazz = String.class
+  实例：Class clazz = String.class
 
 2. 前提：已知某个类的实例，调用该实例的getClass()方法获取Class对象       
 
@@ -2027,19 +2027,19 @@ public void test3() throws Exception{
 
 ###1. 动态代理简介
 
-- 动态代理是指客户通过代理类来调用其它对象的方法，并且是在程序运行时根据需要动态创建目标类的代理对象
+- 动态代理：指客户通过代理类来调用其它对象的方法，且是在程序运行时根据需要动态创建目标类的代理对象
 - 动态代理使用场合：
   - 调试
   - 远程方法调用
 - 代理设计模式的原理：使用一个代理将对象包装起来, 然后用该代理对象取代原始对象. 任何对原始对象的调用都要通过代理. 代理对象决定是否以及何时将方法调用转到原始对象上
 - Proxy ：专门完成代理的操作类，是所有动态代理类的父类。通过此类为一个或多个接口动态地生成实现类。
 - 提供用于创建动态代理类和动态代理对象的静态方法
-  - static Class<?>   getProxyClass(ClassLoader loader, Class<?>... interfaces)  创建一个动态代理类所对应的Class对象
-  - static Object   newProxyInstance(ClassLoader loader, Class<?>[] interfaces, InvocationHandler h)  直接创建一个动态代理对象
+  - `static Class<?>   getProxyClass(ClassLoader loader, Class<?>... interfaces)`  创建一个动态代理类所对应的Class对象
+  - `static Object   newProxyInstance(ClassLoader loader, Class<?>[] interfaces, InvocationHandler h)`  直接创建一个动态代理对象
 
 ### 2. 动态代理步骤
 
-1. 创建一个实现接口InvocationHandler的类，它必须实现invoke方法，以完成代理的具体操作
+1. 创建一个实现接口 InvocationHandler 的类，它必须实现 invoke 方法，以完成代理的具体操作
 2. 创建被代理的类以及接口
 3. 通过Proxy的静态方法`newProxyInstance(ClassLoader loader,Class[] interfaces,InvocationHandler h)` 创建一个Subject接口代理
 4. 通过 Subject 代理调用RealSubject 实现类的方法
@@ -2213,22 +2213,6 @@ public class TestAOP {
 }
 ```
 
- ##5. 相关英文解释
-
-**Advantages of Using Reflection:** 
-
--  **Extensibility Features**  : An application may make use of external, user-defined classes by creating instances of extensibility objects using their fully-qualified names.
--  **Class Browsers and Visual Development Environments**  :  A class browser needs to be able to enumerate the members of classes. Visual development environments can benefit from making use of type information available in reflection to aid the developer in writing correct code.
--  **Debuggers and Test Tools**  : Debuggers need to be able to examine private members on classes. Test harnesses can make use of reflection to systematically call a discoverable set APIs defined on a class, to insure a high level of code coverage in a test suite.
-
-**Drawbacks of Reflection:** 
-
-Reflection is powerful, but should not be used indiscriminately. If it is possible to perform an operation without using reflection, then it is preferable to avoid using it. The following concerns should be kept in mind when accessing code via reflection.
-
--  **Performance Overhead**  : Because reflection involves types that are dynamically resolved, certain Java virtual machine optimizations can not be performed. Consequently, reflective operations have slower performance than their non-reflective counterparts, and should be avoided in sections of code which are called frequently in performance-sensitive applications.
--  **Security Restrictions**  : Reflection requires a runtime permission which may not be present when running under a security manager. This is in an important consideration for code which has to run in a restricted security context, such as in an Applet.
--  **Exposure of Internals**  :Since reflection allows code to perform operations that would be illegal in non-reflective code, such as accessing private fields and methods, the use of reflection can result in unexpected side-effects, which may render code dysfunctional and may destroy portability. Reflective code breaks abstractions and therefore may change behavior with upgrades of the platform.
-
 
 - [Trail: The Reflection API](https://docs.oracle.com/javase/tutorial/reflect/index.html)
 - [深入解析 Java 反射（1）- 基础](http://www.sczyh30.com/posts/Java/java-reflection-1/)
@@ -2257,8 +2241,6 @@ Throwable 可以用来表示任何可以作为异常抛出的类，分为两种�
 3. 声明异常
 
    throws：异常的处理方式，声明方法可能要抛出的各种异常类
-
-
 
 - [Java 入门之异常处理](https://www.tianmaying.com/tutorial/Java-Exception)
 - [Java 异常的面试问题及答案 -Part 1](http://www.importnew.com/7383.html)
