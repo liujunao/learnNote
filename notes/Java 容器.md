@@ -16,13 +16,8 @@
 
 注： 存储无序的，不可重复的元素
 
->  添加进Set集合中的元素所在的类一定要重写equals() 和 hashCode()。要求重写equals() 和 hashCode()方法保持一致。
+>  添加进Set集合中的元素所在的类一定要重写equals() 和 hashCode()。要求重写equals() 和 hashCode()方法保持一致				
 
-```
-
-|------TreeSet
-				
-```
 - HashSet：基于哈希表实现，支持快速查找，但不支持有序性操作。并且失去了元素的插入顺序信息，也就是说使用 Iterator 遍历 HashSet 得到的结果是不确定的（主要的实现类）
 
 - LinkedHashSet：具有 HashSet 的查找效率，且内部使用双向链表维护元素的插入顺序(是HashSet的子类，当我们遍历集合元素时，是按照添加进去的顺序实现的；频繁的遍历，较少的添加、插入操作建议选择此)
@@ -31,7 +26,7 @@
 
      可以按照添加进集合中的元素的指定属性进行排序：
 
-     	1. 要求TreeSet添加进的元素必须是同一个类的！
+     1. 要求TreeSet添加进的元素必须是同一个类的！
 
   2. 两种排序方式：
 
@@ -399,14 +394,14 @@ private E get(Object[] a, int index) {
 
 ### 适用场景
 
-CopyOnWriteArrayList 在写操作的同时允许读操作，大大提高了读操作的性能，因此很适合读多写少的应用场景。
+CopyOnWriteArrayList 在写操作的同时允许读操作，大大提高了读操作的性能，因此很适合读多写少的应用场景
 
 但是 CopyOnWriteArrayList 有其缺陷：
 
 - 内存占用：在写操作时需要复制一个新的数组，使得内存占用为原来的两倍左右；
-- 数据不一致：读操作不能读取实时性的数据，因为部分写操作的数据还未同步到读数组中。
+- 数据不一致：读操作不能读取实时性的数据，因为部分写操作的数据还未同步到读数组中
 
-所以 CopyOnWriteArrayList 不适合内存敏感以及对实时性要求很高的场景。
+所以 CopyOnWriteArrayList 不适合内存敏感以及对实时性要求很高的场景
 
 ## LinkedList
 
@@ -520,7 +515,7 @@ map.put("K3", "V3");
 - 插入 &lt;K2,V2> 键值对，先计算 K2 的 hashCode 为 118，使用除留余数法得到所在的桶下标 118%16=6。
 - 插入 &lt;K3,V3> 键值对，先计算 K3 的 hashCode 为 118，使用除留余数法得到所在的桶下标 118%16=6，插在 &lt;K2,V2> 前面。
 
-应该注意到链表的插入是以头插法方式进行的，例如上面的 &lt;K3,V3> 不是插在 &lt;K2,V2> 后面，而是插入在链表头部。
+应该注意到链表的**插入是以头插法方式进行**，例如上面的 &lt;K3,V3> 不是插在 &lt;K2,V2> 后面，而是插入在链表头部
 
 查找需要分成两步进行：
 
@@ -560,7 +555,7 @@ public V put(K key, V value) {
 }
 ```
 
-HashMap 允许插入键为 null 的键值对。但是因为无法调用 null 的 hashCode() 方法，也就无法确定该键值对的桶下标，只能通过强制指定一个桶下标来存放。HashMap 使用第 0 个桶存放键为 null 的键值对。
+HashMap 允许插入键为 null 的键值对。但是因为无法调用 null 的 hashCode() 方法，也就无法确定该键值对的桶下标，只能通过强制指定一个桶下标来存放。**HashMap 使用第 0 个桶存放键为 null 的键值对**
 
 ```java
 private V putForNullKey(V value) {
@@ -578,7 +573,7 @@ private V putForNullKey(V value) {
 }
 ```
 
-使用链表的头插法，也就是新的键值对插在链表的头部，而不是链表的尾部。
+使用链表的头插法，也就是新的键值对插在链表的头部，而不是链表的尾部
 
 ```java
 void addEntry(int hash, K key, V value, int bucketIndex) {
@@ -587,7 +582,6 @@ void addEntry(int hash, K key, V value, int bucketIndex) {
         hash = (null != key) ? hash(key) : 0;
         bucketIndex = indexFor(hash, table.length);
     }
-
     createEntry(hash, key, value, bucketIndex);
 }
 
@@ -679,11 +673,11 @@ static int indexFor(int h, int length) {
 
 ### 5. 扩容-基本原理
 
-设 HashMap 的 table 长度为 M，需要存储的键值对数量为 N，如果哈希函数满足均匀性的要求，那么每条链表的长度大约为 N/M，因此平均查找次数的复杂度为 O(N/M)。
+设 HashMap 的 table 长度为 M，需要存储的键值对数量为 N，如果哈希函数满足均匀性的要求，那么每条链表的长度大约为 N/M，因此平均查找次数的复杂度为 O(N/M)
 
-为了让查找的成本降低，应该尽可能使得 N/M 尽可能小，因此需要保证 M 尽可能大，也就是说 table 要尽可能大。HashMap 采用动态扩容来根据当前的 N 值来调整 M 值，使得空间效率和时间效率都能得到保证。
+为了让查找的成本降低，应该尽可能使得 N/M 尽可能小，因此需要保证 M 尽可能大，也就是说 table 要尽可能大，HashMap 采用动态扩容来根据当前的 N 值来调整 M 值，使得空间效率和时间效率都能得到保证
 
-和扩容相关的参数主要有：capacity、size、threshold 和 load_factor。
+和扩容相关的参数主要有：capacity、size、threshold 和 load_factor
 
 |     参数     | 含义                                       |
 | :--------: | :--------------------------------------- |
@@ -721,7 +715,7 @@ void addEntry(int hash, K key, V value, int bucketIndex) {
 }
 ```
 
-扩容使用 resize() 实现，需要注意的是，扩容操作同样需要把 oldTable 的所有键值对重新插入 newTable 中，因此这一步是很费时的。
+扩容使用 resize() 实现，需要注意的是，扩容操作同样需要把 oldTable 的所有键值对重新插入 newTable 中，因此这一步是很费时的
 
 ```java
 void resize(int newCapacity) {
@@ -758,7 +752,7 @@ void transfer(Entry[] newTable) {
 
 ### 6. 扩容-重新计算桶下标
 
-在进行扩容时，需要把键值对重新放到对应的桶上。HashMap 使用了一个特殊的机制，可以降低重新计算桶下标的操作。
+进行扩容时，需把键值对重新放到对应桶上，HashMap 使用了一个特殊的机制，可以降低重新计算桶下标的操作
 
 假设原数组长度 capacity 为 16，扩容之后 new capacity 为 32：
 
@@ -807,7 +801,7 @@ static final int tableSizeFor(int cap) {
 
 ### 8. 链表转红黑树
 
-从 JDK 1.8 开始，一个桶存储的链表长度大于 8 时会将链表转换为红黑树。
+从 JDK 1.8 开始，一个桶存储的链表长度大于 8 时会将链表转换为红黑树
 
 ### 9. 与 HashTable 的比较
 
@@ -1016,9 +1010,9 @@ void afterNodeAccess(Node<K,V> e) { // move node to last
 
 ### afterNodeInsertion()
 
-在 put 等操作之后执行，当 removeEldestEntry() 方法返回 true 时会移除最晚的节点，也就是链表首部节点 first。
+在 put 等操作之后执行，当 removeEldestEntry() 方法返回 true 时会移除最晚的节点，也就是链表首部节点 first
 
-evict 只有在构建 Map 的时候才为 false，在这里为 true。
+evict 只有在构建 Map 的时候才为 false，在这里为 true
 
 ```java
 void afterNodeInsertion(boolean evict) { // possibly remove eldest
@@ -1080,9 +1074,9 @@ public static void main(String[] args) {
 
 ### 存储结构
 
-WeakHashMap 的 Entry 继承自 WeakReference，被 WeakReference 关联的对象在下一次垃圾回收时会被回收。
+WeakHashMap 的 Entry 继承自 WeakReference，被 WeakReference 关联的对象在下一次垃圾回收时会被回收
 
-WeakHashMap 主要用来实现缓存，通过使用 WeakHashMap 来引用缓存对象，由 JVM 对这部分缓存进行回收。
+WeakHashMap 主要用来实现缓存，通过使用 WeakHashMap 来引用缓存对象，由 JVM 对这部分缓存进行回收
 
 ```java
 private static class Entry<K,V> extends WeakReference<Object> implements Map.Entry<K,V>

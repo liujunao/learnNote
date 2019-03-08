@@ -152,6 +152,10 @@
 
   关于 webService 的基础部分
 
+- [spring 总结](./notes/spring.md)
+
+  关于部分 spring 基础的总结
+
 ### :bulb: 系统设计 
 
 - [系统设计基础](./notes/系统设计基础.md)
@@ -187,6 +191,10 @@
 - [Docker](./notes/Docker.md)
 
   Docker 基本原理
+
+- [shell](http://manual.51yip.com/shell/)  
+
+  Shell 的基本用法
 
 - [Jenkins](./notes/Jenkins.md)
 

@@ -210,8 +210,8 @@ System.out.println(s4 == s5);  // true
 
 使用这种方式一共会创建两个字符串对象（前提是 String Poll 中还没有 "abc" 字符串对象）。
 
-- "abc" 属于字符串字面量，因此编译时期会在 String Poll 中创建一个字符串对象，指向这个 "abc" 字符串字面量；
-- 而使用 new 的方式会在堆中创建一个字符串对象。
+- "abc" 属于字符串字面量，因此编译时期会在 String Poll 中创建一个字符串对象，指向这个 "abc" 字符串字面量
+- 使用 new 的方式会在堆中创建一个字符串对象
 
 创建一个测试类，其 main 方法中使用这种方式来创建字符串对象。
 
@@ -2276,9 +2276,65 @@ Throwable 可以用来表示任何可以作为异常抛出的类，分为两种�
     ? super A:可以将List\<A>的对象或List\<B>的对象赋给List<? extends A>。其中B 是A的父类
 
 - [Java 泛型详解](http://www.importnew.com/24029.html)
-- [10 道 Java 泛型面试题](https://cloud.tencent.com/developer/article/1033693)
+- [10 道 Java 泛型面试题](https://cloud.tencent.com/developer/article/1033693) 
 
 
+
+**java 泛型面试题**： 
+
+- **Java中的泛型是**： 防止在集合中存储对象并在使用前进行类型转换
+- **泛型的好处**： 提供编译期的类型安全，确保只把正确类型的对象放入集合中，避免在运行时出现ClassCastException
+- **泛型如何工作**： 泛型是通过类型擦除来实现，编译器在编译时擦除了所有类型相关的信息，所以在运行时不存在任何类型相关的信息
+- **类型擦除**： 通过类型参数合并，将泛型类型实例关联到同一份字节码上；关键在于从泛型类型中清除类型参数的相关信息，并且在必要的时候添加类型检查和类型转换的方法
+
+- **泛型中的限定通配符和非限定通配符**： 泛型类型必须用限定内的类型来进行初始化，否则会导致编译错误
+
+  - **限定通配符**： 对类型进行了限制
+    - `<? extends T>`： 通过确保类型必须是 T 的子类来设定类型的上界
+    - `<? super T>`： 通过确保类型必须是 T 的父类来设定类型的下界
+
+  - **非限定通配符 `<?>`**： <?>可以用任意类型来替代
+
+- **`List<? extends T>和List <? super T>`的区别**： 
+  - `List<? extends T>` 可以接受任何继承自 T 类型的List
+  - `List<? super T>` 可以接受任何 T 的父类构成的List
+
+- **编写一个能接受泛型参数并返回泛型类型的泛型方法**： 
+
+  ```java
+   public V put(K key, V value) {
+        return cache.put(key, value);
+  }
+  ```
+
+- **使用泛型编写带有参数的类**： 
+
+
+
+- **编写一段泛型程序来实现 LRU 缓存**： 
+
+  **提示**： 
+
+  - LinkedHashMap 可以用来实现固定大小的LRU缓存，当LRU缓存已满时，会把最老的键值对移出缓存
+  - LinkedHashMap 提供了一个称为 removeEldestEntry() 的方法，该方法会被put()和putAll()调用来删除最老的键值对
+
+- **不能把 `List<String>` 传递给一个接受 `List<Object>` 参数的方法**：
+
+  因为 `List<Object>` 可以存储任何类型的对象，而 `List<String>` 只能存储String
+
+  ```java
+  List<Object> objectList;
+  List<String> stringList;
+  objectList = stringList;  //compilation error incompatible types
+  ```
+
+- **Array 不支持泛型**：建议使用 List 来代替 Array，因为 List 可以提供编译期的类型安全保证，Array 不能
+
+- **如果把泛型和原始类型混合起来使用， Java 5的 javac 编译器会产生类型未检查警告**： 
+
+  如代码： ` List<String> rawList = new ArrayList()` 
+
+​      
 
 # 十、注解 
 
@@ -2680,7 +2736,6 @@ public class TestTCP2 {
 				System.out.print(str);
 			}
 		} catch (IOException e) {
-			// TODO Auto-generated catch block
 			e.printStackTrace();
 		}finally{
 			if(is != null){
@@ -2762,7 +2817,7 @@ public class TestTCP2 {
 }
 ```
 
-**3. TCP编程例三：从客户端发送文件给服务端，服务端保存到本地。并返回“发送成功”给客户端。并关闭相应的连接** 
+**3. TCP编程例三：从客户端发送文件给服务端，服务端保存到本地并返回“发送成功”给客户端，关闭相应的连接** 
 
 ```java
 public class TestTCP3 {
@@ -2841,8 +2896,8 @@ public class TestUDP {
 		try {
 			ds = new DatagramSocket();
 			byte[] b = "你好，我是要发送的数据".getBytes();
-			//创建一个数据报：每一个数据报不能大于64k，都记录着数据信息，发送端的IP、端口号,以及要发送到
-			//的接收端的IP、端口号。
+			//创建一个数据报：每一个数据报不能大于64k，都记录着数据信息，发送端的IP、端口号,
+            //以及要发送到的接收端的IP、端口号
 			DatagramPacket pack = new DatagramPacket(b, 0, b.length,
 					InetAddress.getByName("127.0.0.1"), 9090);
 			ds.send(pack);
@@ -2902,7 +2957,7 @@ public class TestUDP {
 - URL的方法 openStream()：能从网络上读取数据
 - 若希望输出数据，例如向服务器端的 CGI （公共网关接口-Common Gateway Interface-的简称，是用户浏览器和服务器端的应用程序进行连接的接口）程序发送一些数据，则必须先与URL建立连接，然后才能对其进行读写，此时需要使用 URLConnection 。
 - URLConnection：表示到URL所引用的远程对象的连接。当与一个URL建立连接时，首先要在一个 URL 对象上通过方法 openConnection() 生成对应的 URLConnection 对象。如果连接过程失败，将产生IOException. 
-  - URL netchinaren = new URL ("http://www.atguigu.com/index.shtml"); 
+  - URL netchinaren = new URL ("http://www.baidu.com/index.shtml"); 
   - URLConnectonn u = netchinaren.openConnection( ); 
 - 通过URLConnection对象获取的输入流和输出流，即可以与现有的CGI程序进行交互
 
@@ -2985,8 +3040,3 @@ public class TestURL {
 
 - JRE is the JVM program, Java application need to run on JRE.
 - JDK is a superset of JRE, JRE + tools for developing java programs. e.g, it provides the compiler "javac"
-
-# 参考资料
-
-- Eckel B. Java 编程思想[M]. 机械工业出版社, 2002.
-- Bloch J. Effective java[M]. Addison-Wesley Professional, 2017.

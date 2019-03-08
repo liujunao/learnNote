@@ -139,7 +139,7 @@ CONNECT www.example.com:443 HTTP/1.1
 
 -  **204 No Content** ：请求已经成功处理，但是返回的响应报文不包含实体的主体部分。一般在只需要从客户端往服务器发送信息，而不需要返回数据时使用。
 
--  **206 Partial Content** ：表示客户端进行了范围请求，响应报文包含由 Content-Range 指定范围的实体内容。
+-  **206 Partial Content** ：表示客户端进行了范围请求，响应报文包含由 Content-Range 指定范围的实体内容
 
 ## 3XX 重定向
 
@@ -246,7 +246,7 @@ CONNECT www.example.com:443 HTTP/1.1
 
 # 五、具体应用
 
-## Cookie
+## 1. Cookie
 
 HTTP 协议是无状态的，主要是为了让 HTTP 协议尽可能简单，使得它能够处理大量事务。HTTP/1.1 引入 Cookie 来保存状态信息。
 
@@ -273,7 +273,7 @@ Set-Cookie: tasty_cookie=strawberry
 [page content]
 ```
 
-客户端之后对同一个服务器发送请求时，会从浏览器中取出 Cookie 信息并通过 Cookie 请求首部字段发送给服务器。
+客户端之后对同一个服务器发送请求时，会从浏览器中取出 Cookie 信息并通过 Cookie 请求首部字段发给服务器
 
 ```html
 GET /sample_page.html HTTP/1.1
@@ -284,7 +284,7 @@ Cookie: yummy_cookie=choco; tasty_cookie=strawberry
 ### 3. 分类
 
 - 会话期 Cookie：浏览器关闭之后它会被自动删除，也就是说它仅在会话期内有效。
-- 持久性 Cookie：指定一个特定的过期时间（Expires）或有效期（max-age）之后就成为了持久性的 Cookie。
+- 持久性 Cookie：指定一个特定的过期时间（Expires）或有效期（max-age）之后就成为了持久性的 Cookie
 
 ```html
 Set-Cookie: id=a3fWa; Expires=Wed, 21 Oct 2015 07:28:00 GMT;
@@ -331,11 +331,11 @@ Session 可以存储在服务器上的文件、数据库或者内存中。也可
 使用 Session 维护用户登录状态的过程如下：
 
 - 用户进行登录时，用户提交包含用户名和密码的表单，放入 HTTP 请求报文中；
-- 服务器验证该用户名和密码，如果正确则把用户信息存储到 Redis 中，它在 Redis 中的 Key 称为 Session ID；
+- 服务器验证该用户名和密码，如果正确则把用户信息存储到 Redis 中，它在 Redis 中的 Key 称为 Session ID
 - 服务器返回的响应报文的 Set-Cookie 首部字段包含了这个 Session ID，客户端收到响应报文之后将该 Cookie 值存入浏览器中；
 - 客户端之后对同一个服务器进行请求时会包含该 Cookie 值，服务器收到之后提取出 Session ID，从 Redis 中取出用户信息，继续之前的业务操作。
 
-应该注意 Session ID 的安全性问题，不能让它被恶意攻击者轻易获取，那么就不能产生一个容易被猜到的 Session ID 值。此外，还需要经常重新生成 Session ID。在对安全性要求极高的场景下，例如转账等操作，除了使用 Session 管理用户状态之外，还需要对用户进行重新验证，比如重新输入密码，或者使用短信验证码等方式。
+应该注意 Session ID 的安全性问题，不能让它被恶意攻击者轻易获取，那么就不能产生一个容易被猜到的 Session ID 值。此外，还需要经常重新生成 Session ID。在对安全性要求极高的场景下，例如转账等操作，除了使用 Session 管理用户状态之外，还需要对用户进行重新验证，比如重新输入密码，或者使用短信验证码等方式
 
 ### 9. 浏览器禁用 Cookie
 
@@ -347,7 +347,7 @@ Session 可以存储在服务器上的文件、数据库或者内存中。也可
 - Cookie 存储在浏览器中，容易被恶意查看。如果非要将一些隐私数据存在 Cookie 中，可以将 Cookie 值进行加密，然后在服务器进行解密；
 - 对于大型网站，如果用户所有的信息都存储在 Session 中，那么开销是非常大的，因此不建议将所有的用户信息都存储到 Session 中。
 
-## 缓存
+## 2. 缓存
 
 ### 1. 优点
 
@@ -436,7 +436,7 @@ Last-Modified: Wed, 21 Oct 2015 07:28:00 GMT
 If-Modified-Since: Wed, 21 Oct 2015 07:28:00 GMT
 ```
 
-## 连接管理
+## 3. 连接管理
 
 <div align="center"> <img src="../pics//HTTP1_x_Connections.png" width="800"/> </div><br>
 
@@ -455,7 +455,7 @@ If-Modified-Since: Wed, 21 Oct 2015 07:28:00 GMT
 
 流水线是在同一条长连接上发出连续的请求，而不用等待响应返回，这样可以避免连接延迟。
 
-## 内容协商
+## 4. 内容协商
 
 通过内容协商返回最合适的内容，例如根据浏览器的默认语言选择返回中文界面还是英文界面。
 
@@ -485,7 +485,7 @@ Vary: Accept-Language
 
 例如，一个客户端发送了一个包含 Accept-Language 首部字段的请求之后，源服务器返回的响应包含 `Vary: Accept-Language` 内容，缓存服务器对这个响应进行缓存之后，在客户端下一次访问同一个 URL 资源，并且 Accept-Language 与缓存中的对应的值相同时才会返回该缓存。
 
-## 内容编码
+## 5. 内容编码
 
 内容编码将实体主体进行压缩，从而减少传输的数据量。
 
@@ -493,7 +493,7 @@ Vary: Accept-Language
 
 浏览器发送 Accept-Encoding 首部，其中包含有它所支持的压缩算法，以及各自的优先级。服务器则从中选择一种，使用该算法对响应的消息主体进行压缩，并且发送 Content-Encoding 首部来告知浏览器它选择了哪一种算法。由于该内容协商过程是基于编码类型来选择资源的展现形式的，在响应的 Vary 首部至少要包含 Content-Encoding。
 
-## 范围请求
+## 6. 范围请求
 
 如果网络出现中断，服务器只发送了一部分数据，范围请求可以使得客户端只请求服务器未发送的那部分数据，从而避免服务器重新发送所有数据。
 
@@ -531,11 +531,11 @@ Accept-Ranges: bytes
 - 在请求的范围越界的情况下，服务器会返回 416 Requested Range Not Satisfiable 状态码。
 - 在不支持范围请求的情况下，服务器会返回 200 OK 状态码。
 
-## 分块传输编码
+## 7. 分块传输编码
 
 Chunked Transfer Coding，可以把数据分割成多块，让浏览器逐步显示页面。
 
-## 多部分对象集合
+## 8. 多部分对象集合
 
 一份报文主体内可含有多种类型的实体同时发送，每个部分之间用 boundary 字段定义的分隔符进行分隔，每个部分都可以有首部字段。
 
@@ -556,11 +556,11 @@ Content-Type: text/plain
 --AaB03x--
 ```
 
-## 虚拟主机
+## 9. 虚拟主机
 
 HTTP/1.1 使用虚拟主机技术，使得一台服务器拥有多个域名，并且在逻辑上可以看成多个服务器。
 
-## 通信数据转发
+## 10. 通信数据转发
 
 ### 1. 代理
 
