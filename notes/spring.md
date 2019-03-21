@@ -46,7 +46,7 @@
 
 ### 2. BeanFactory & ApplicationContext
 
-> 在 Spring IOC 容器读取 Bean 配置创建 Bean 实例之前,必须对它进行实例化
+> 在 Spring IOC 容器读取 Bean 配置创建 Bean 实例之前，必须对它进行实例化
 
 Spring 提供两种类型的 **IOC 容器实现**： 
 
@@ -469,7 +469,6 @@ public static void main(String[] args) throws SQLException {
 
     - 默认情况下，当 IOC 容器里存在多个类型兼容的 Bean 时，可以在 `@Qualifier` 注解里提供 Bean 的名称或使用 `@Primary` 标注优先级
 
-
     > `@Authwired` 注解可以标注的属性： 
     >
     > - **在数组类型属性上**，Spring 将会把所有匹配的 Bean 进行自动装配
@@ -477,7 +476,7 @@ public static void main(String[] args) throws SQLException {
     > - **在集合属性上**，Spring 读取该集合的类型信息，然后自动装配所有与之兼容的 Bean
     > - **在 java.util.Map 上**，Spring 将自动装配与 Map 值类型兼容的 Bean
 
-  - `@Resource`：要求提供 Bean 名称的属性，若该属性为空，则自动采用标注处的变量或方法名作为 Bean 的名称
+  - `@Resource`：要求提供 Bean 名称的属性，若该属性为空，则自动采用标注处的变量或方法名作为 Bean 名称
   - `@Inject`：  和 @Autowired 注解一样也是按类型匹配注入的 Bean， 但没有 reqired 属性
 
 ## 3. 泛型依赖注入
@@ -1401,40 +1400,3 @@ public class BookShopServiceImpl implements BookShopService {
     <aop:advisor advice-ref="txAdvice" pointcut-ref="txPointCut"/>	
 </aop:config>
 ```
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

@@ -14,9 +14,9 @@
 ## 3. 数据库存储数据的特点
 
 1. 将数据放到表中，表再放到库中
-2. 一个数据库中可以有多个表，每个表都有一个的名字，用来标识自己。表名具有唯一性
+2. 一个数据库中可以有多个表，每个表都有一个的名字，用来标识自己，表名具有唯一性
 3. 表具有一些特性，这些特性定义了数据在表中如何存储，类似java中 “类”的设计
-4. 表由列组成，我们也称为字段。所有表都是由一个或多个列组成的，每一列类似java 中的”属性”
+4. 表由列(字段)组成，每一列类似java 中的”属性”
 5. 表中的数据是按行存储的，每一行类似于java中的“对象”
 
 # 二、 mysql 命令
@@ -35,20 +35,20 @@
 
 ## 2. 语法规范
 
-- 不区分大小写,但建议关键字大写，表名、列名小写
+- 不区分大小写，但建议关键字大写，表名、列名小写
 - 每条命令最好用分号结尾
-- 每条命令根据需要，可以进行缩进 或换行
+- 每条命令根据需要，可以进行缩进或换行
 - 注释： 
-  - 单行注释：#注释文字
-  - 单行注释：-- 注释文字
-  - 多行注释：/* 注释文字  */
+  - 单行注释：`#` 注释文字
+  - 单行注释：`--` 注释文字
+  - 多行注释：`/* 注释文字  */`
 
 ## 3. SQL的语言分类
 
-- DQL（Data Query Language）：数据查询语言： `select ` 
-- DML(Data Manipulate Language):数据操作语言: `insert 、update、delete` 
-- DDL（Data Define Languge）：数据定义语言: `create、drop、alter` 
-- TCL（Transaction Control Language）：事务控制语言: `commit、rollback` 
+- `DQL(Data Query Language)`：数据查询语言： `select ` 
+- `DML(Data Manipulate Language)`：数据操作语言: `insert 、update、delete` 
+- `DDL(Data Define Languge)`：数据定义语言: `create、drop、alter` 
+- `TCL(Transaction Control Language)`：事务控制语言: `commit、rollback` 
 
 ### 1. DQL语言的学习
 
@@ -105,7 +105,7 @@ SELECT 要查询的东西【FROM 表名】;
   > - 便于理解
   > - 如果要查询的字段有重名的情况，使用别名可以区分开来
 
-  - 方式一：**使用as**
+  - 方式一：**使用 as**
 
   ```mysql
   SELECT 100%98 AS 结果;
@@ -282,8 +282,7 @@ order by 排序的字段|表达式|函数|别名 【asc|desc】
      - **lpad 用指定的字符实现左填充指定长度**： `SELECT LPAD('殷素素',2,'*') AS out_put;`
      - **rpad 用指定的字符实现右填充指定长度**： `SELECT RPAD('殷素素',12,'ab') AS out_put;`
      - **instr 返回子串第一次出现的索引，如果找不到返回0**： `SELECT INSTR('杨不殷六侠悔爱上了殷六侠','殷八侠') AS out_put;`   `SELECT LENGTH(TRIM('    张翠山    ')) AS out_put;`
-     - **length 获取字节个数** ： `SELECT LENGTH('john');`
-       ​	
+     - **length 获取字节个数** ： `SELECT LENGTH('john');` 
 
    - **数学函数**
 
@@ -554,7 +553,7 @@ group by 分组的字段
       SELECT last_name,job_title
       FROM employees e
       INNER JOIN jobs j
-      ON e.job_id=  j.job_id
+      ON e.job_id = j.job_id
       WHERE e.last_name LIKE '%e%';
       ```
 
@@ -646,7 +645,7 @@ group by 分组的字段
 
 - **外连接**
 
-  > **应用场景：** 用于查询一个表中有，另一个表没有的记录
+  > **应用场景：** **用于查询一个表中有，另一个表没有的记录**
   >
   >  **特点：**
   >
@@ -723,8 +722,6 @@ group by 分组的字段
 >   - 列子查询（结果集只有一列多行）
 >   - 行子查询（结果集有一行多列）
 >   - 表子查询（结果集一般为多行多列）
-
-
 
 **一、where或having后面**
 
@@ -1482,20 +1479,15 @@ group by 分组的字段
 > - **CHECK**： 检查约束【mysql中不支持】
 > - **FOREIGN KEY**： 外键，用于限制两个表的关系，用于保证该字段的值必须来自于主表的关联列的值，在从表添加外键约束，用于引用主表中某列的值	
 >
->
->
 > **添加约束的时机：**
 >
 > - 创建表时
 > - 修改表时
->   	​	
 >
-> **约束的添加分类：**
+> **约束的添加分类：**  
 >
-> - **列级约束**：六大约束语法上都支持，但外键约束没有效果
-> - **表级约束**：除了非空、默认，其他的都支持			
->
->
+> - **列级约束**：对于一个列所创建的约束
+> - **表级约束**：对于两个或两个以上的列所创建的约束			
 >
 > **主键和唯一的大对比：** 
 >
@@ -1504,7 +1496,7 @@ group by 分组的字段
 > ​     主键	       		√			×				至多有1个         	  	 √，但不推荐
 > ​     唯一			√			√				可以有多个         		 √，但不推荐
 >
->
+> 
 >
 > **外键：**
 >
@@ -1512,7 +1504,7 @@ group by 分组的字段
 > - 从表的外键列的类型和主表的关联列的类型要求一致或兼容，名称无要求
 > - 主表的关联列必须是一个key（一般是主键或唯一）
 > - 插入数据时，先插入主表，再插入从表
->   删除数据时，先删除从表，再删除主表
+> 删除数据时，先删除从表，再删除主表
 
 **一、创建表时添加约束**
 
@@ -1941,7 +1933,7 @@ end
 >
 > - 存储过程体中可以有多条sql语句，如果仅仅一条sql语句，则可以省略begin end
 >
->   - 存储过程体中的每条sql语句的结尾要求必须加分号
+>   - 存储过程体中的每条sql语句的结尾要求必须加**分号**
 >   - 存储过程的结尾可以使用 delimiter 重新设置
 >
 >   > 语法：`delimiter 结束标记` 
@@ -2024,8 +2016,7 @@ call 存储过程名(实参列表)
     BEGIN
     	SELECT boys.boyname ,boys.usercp INTO boyname,usercp
     	FROM boys 
-    	RIGHT JOIN
-    	beauty b ON b.boyfriend_id = boys.id
+    	RIGHT JOIN beauty b ON b.boyfriend_id = boys.id
     	WHERE b.name=beautyName ;	
     END $
     
@@ -2497,7 +2488,8 @@ end repeat 【标签】;
     BEGIN
     	DECLARE i INT DEFAULT 1;
     	a:WHILE i<=insertCount DO
-    		INSERT INTO admin(username,`password`) VALUES(CONCAT('xiaohua',i),'0000');
+    		INSERT INTO admin(username,`password`) 
+    			VALUES(CONCAT('xiaohua',i),'0000');
     		IF i>=20 THEN LEAVE a;
     		END IF;
     		SET i=i+1;
@@ -2520,7 +2512,8 @@ end repeat 【标签】;
     		SET i=i+1;
     		IF MOD(i,2)!=0 THEN ITERATE a;
     		END IF;
-    		INSERT INTO admin(username,`password`) VALUES(CONCAT('xiaohua',i),'0000');
+    		INSERT INTO admin(username,`password`) 
+    			VALUES(CONCAT('xiaohua',i),'0000');
     	END WHILE a;
     END $
     
@@ -2692,7 +2685,7 @@ LIMIT <limit_number>
 
 ### 7. 是否需要索引
 
-创建索引情况：
+**创建索引情况**：
 
 > 只应为最经常查询和最经常排序的数据列建立索引
 
@@ -2700,7 +2693,7 @@ LIMIT <limit_number>
 - 频繁作为查询条件的字段应创建索引
 - 查询中与其他表关联的字段，外键关系建立索引
 
-不适合索引情况：
+**不适合索引情况**：
 
 - 频繁更新的字段不适合创建索引
 
@@ -2713,9 +2706,9 @@ LIMIT <limit_number>
   > - 提高了查询速度，但降低了更新表的速度
   > - 因为更新表时，不仅要保存数据，同时要保存索引文件
 
-- 数据重重复且分布平均的字段
+- 数据重复且分布平均的字段
 
-索引选择：
+**索引选择**：
 
 - 单键/组合索引选择： 在高并发下，倾向组合索引
 - 查询中排序的字段：排序字段若通过索引去访问将大大提高排序速度
@@ -3010,7 +3003,7 @@ LIMIT <limit_number>
 
   ![](../pics/mysql/mysqlG2_22.png)
 
-  结论： 索引最好设置在需要经常查询的字段中
+  结论： **索引最好设置在需要经常查询的字段中**
 
 #### 4. 总结
 
@@ -3078,7 +3071,7 @@ alter table staffs add index idx_staffs_nap(name,age,pos);
 
 ![](../pics/mysql/mysqlG2_28.png)
 
-- 结论： **最佳左前缀法则： 查询从索引的最左前列开始且不跳过索引中的列(索引多列时，应遵循最佳左前缀法则)**
+- **最佳左前缀法则： 查询从索引的最左前列开始且不跳过索引中的列(索引多列时，遵循最佳左前缀法则)**
 
 ---
 
@@ -3422,7 +3415,7 @@ for select * from B where B.id=A.id
 
 - **优化策略**
 
-  > - 增大 `sort_buffer_size` 参数是设置
+  > - 增大 `sort_buffer_size` 参数设置
   >
   >   > 该参数针对每个进程，所以提高这个参数会提高所有算法的效率，但应根据系统的能力进行提高
   >
@@ -3632,7 +3625,8 @@ CREATE TABLE emp
   	SET autocommit=0;
   	REPEAT
   	SET i=i+1;
-  	INSERT INTO dept(deptno,dname,loc) values((START+i),rand_string(10),rand_string(8));
+  	INSERT INTO dept(deptno,dname,loc) 
+  		values((START+i),rand_string(10),rand_string(8));
   	UNTIL i=max_num
   	END REPEAT;
   	COMMIT;
@@ -3806,7 +3800,7 @@ insert into mylock(name) values('e');
 
   ![](../pics/mysql/mysqlG4_4.png)
 
-  - `table_locks_immediate`： 产生表级锁定的次数，表示可立即获取锁的查询字数，每立即获取锁时值加1
+  - `table_locks_immediate`：产生表级锁定次数，表示可立即获取锁的查询字数，每立即获取锁时值加1
   - `table_locks_waited `： 出现表级锁定争用而发生等待的次数(不能立即获取锁的次数，每等待一次，锁值加1)，此值高说明存在较严重的表级锁争用情况
 
 > MyISAM 的读写锁调度是**写优先**，因此不适合做写操作为主的表的引擎
