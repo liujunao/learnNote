@@ -2852,6 +2852,8 @@ LIMIT <limit_number>
 
 ## 5. 索引优化
 
+推荐阅读： **[MYSQL中IN与EXISTS的区别](https://blog.csdn.net/weixin_39539399/article/details/80851817)**
+
 ### 1. 索引分析
 
 #### 1. 单表

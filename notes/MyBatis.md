@@ -13,7 +13,166 @@
 
 ![](../pics/MyBatis/mybatis_1.png)
 
+### 1. 简介
+
+- Mybatis 是一个半 ORM（对象关系映射）框架，内部封装了 JDBC，开发时只需要关注 SQL 语句本身，不需要花费精力去处理加载驱动、创建连接、创建 statement 等繁杂的过程
+
+- MyBatis 可以使用 XML 或注解来配置和映射原生信息，将 POJO 映射成数据库中的记录，避免 JDBC 代码和手动设置参数以及获取结果集
+
+- 通过 xml 文件或注解的方式将要执行的各种 statement 配置起来，并通过 java 对象和 statement 中 sql 的动态参数进行映射生成最终执行的 sql 语句，最后由 mybatis 框架执行 sql 并将结果映射为 java 对象并返回
+
+### 2. 优缺点
+
+- **优点**： 
+
+  - 基于 SQL 语句编程，不会对应用程序或者数据库的现有设计造成任何影响
+
+    > - SQL 写在 XML 中，解除 sql 与程序代码的耦合，便于统一管理
+    > - 提供 XML 标签，支持编写动态 SQL 语句，并可重用
+
+  - 消除 JDBC 大量冗余的代码，不需要手动开关连接
+
+  - 很好的与各种数据库兼容
+
+    > 因为 MyBatis 使用 JDBC 来连接数据库，所以只要JDBC支持的数据库MyBatis都支持
+
+  - 能够与 Spring 很好的集成
+
+  - 提供映射标签，支持对象与数据库的 ORM 字段关系映射
+
+    提供对象关系映射标签，支持对象关系组件维护
+
+- **缺点**： 
+
+  - SQL 语句的编写工作量较大，尤其当字段多、关联表多时，对开发人员编写SQL语句的功底有一定要求
+
+  - SQL 语句依赖于数据库，导致数据库移植性差，不能随意更换数据库
+
+### 3. 与 Hibernate 的不同
+
+- Mybatis 不完全是一个 ORM 框架，因为 MyBatis 需要程序员自己编写 Sql 语句
+
+- Mybatis 直接编写原生态 sql，可以严格控制 sql 执行性能，灵活度高，非常适合对关系数据模型要求不高的软件开发
+
+- 灵活前提： mybatis 无法做到数据库无关性，如果需要实现支持多种数据库的软件，则需要自定义多套 sql 映射文件，工作量大
+
+- Hibernate 对象/关系映射能力强，数据库无关性好，对于关系模型要求高的软件，可以节省代码，提高效率
+
+### 4. 分页
+
+- Mybatis 使用 `RowBounds` 对象进行分页，针对 `ResultSet` 结果集执行的内存分页，而非物理分页
+
+  > 可以在sql内直接书写带有物理分页的参数来完成物理分页功能，也可以使用分页插件来完成物理分页
+
+- 分页插件的基本原理是使用 Mybatis 提供的插件接口，实现自定义插件，在插件的拦截方法内拦截待执行的sql，然后重写 sql，根据 dialect 方言，添加对应的物理分页语句和物理分页参数
+
+### 5. mapper 传递多个参数
+
+- `#{0}` 代表接收的是dao层中的第一个参数，`#{1}` 代表dao层中第二参数
+- 使用 `@param` 注解
+- 多个参数封装成 map
+
+### 6. 延迟加载
+
+- Mybatis 仅支持 `association` 关联对象和 `collection` 关联集合对象的延迟加载
+  - `association`： 指一对一查询
+  - `collection`： 指一对多查询
+- Mybatis 配置是否启用延迟加载 `lazyLoadingEnabled=true|false`
+
+- 原理： 使用 CGLIB 创建目标对象的代理对象，当调用目标方法时，进入拦截器方法
+
+  > 例： 调用 a.getB().getName()，拦截器 invoke()方 法发现 a.getB() 是 null 值，则单独发送事先保存好的查询关联 B 对象的 sql，把 B 查询上来，然后调用 a.setB(b)，于是a的对象b属性就有值了，接着完成a.getB().getName()方法的调用
+
+### 7. 接口绑定
+
+- **接口绑定**： 在 MyBatis 中定义接口，接口中的方法和 SQL 语句绑定，直接调用接口就可以实现 SqlSession 提供的方法
+
+- **实现方式**： 
+  - **通过注解绑定**： 在接口的方法上面加上 @Select、@Update 等注解，里面包含 Sql 语句来绑定
+  - **通过 xml 写 SQL 来绑定**： xml 映射文件中的 namespace 必须为接口的全路径名
+
+### 8. 编写 Mapper 方式
+
+- Dao 接口实现类继承 `SqlSessionDaoSupport`： 编写 Dao接口、Dao实现类、配置文件
+
+  - 在 sqlMapConfig.xml 中配置 mapper.xml 的位置
+
+    ```xml
+    <mappers>
+        <mapper resource="mapper.xml文件的地址" />
+        <mapper resource="mapper.xml文件的地址" />
+    </mappers>
+    ```
+
+  - 定义 dao 接口
+
+  - dao 接口实现类继承 SqlSessionDaoSupport，dao 接口实现类方法中可以 `this.getSqlSession()` 进行数据增删改查
+
+  - spring 配置
+
+    ```xml
+    <bean id=" " class="mapper接口的实现">
+        <property name="sqlSessionFactory" ref="sqlSessionFactory"></property>
+    </bean>
+    ```
+
+- 使用 `org.mybatis.spring.mapper.MapperFactoryBean` 
+
+  - 在 `sqlMapConfig.xml` 中配置 mapper.xml 的位置，若 mapper.xml 和 mapper 接口的名称相同且在同一个目录，可以不用配置
+
+    ```xml
+    <mappers>
+        <mapper resource="mapper.xml文件的地址" />
+        <mapper resource="mapper.xml文件的地址" />
+    </mappers>
+    ```
+
+  - 定义 mapper 接口：
+
+    - mapper.xml 中的 namespace为mapper 接口的地址
+
+    - mapper 接口中的方法名和 mapper.xml 中的定义的 statement 的 id 保持一致
+
+    - Spring 中定义
+
+      ```xml
+      <bean id="" class="org.mybatis.spring.mapper.MapperFactoryBean">
+          <property name="mapperInterface"   value="mapper接口地址" /> 
+          <property name="sqlSessionFactory" ref="sqlSessionFactory" /> 
+      </bean>
+      ```
+
+- 使用mapper扫描器： 
+
+  - mapper.xml 文件编写：
+
+    - mapper.xml 中的 namespace为mapper 接口的地址
+    - mapper 接口中的方法名和 mapper.xml 中的定义的 statement 的id保持一致
+      如果将mapper.xml和mapper接口的名称保持一致则不用在sqlMapConfig.xml中进行配置
+
+  - 定义 mapper 接口
+
+    > 注意mapper.xml的文件名和mapper的接口名称保持一致，且放在同一个目录
+
+  - 配置mapper扫描器：
+
+    ```xml
+    <bean class="org.mybatis.spring.mapper.MapperScannerConfigurer">
+        <property name="basePackage" value="mapper接口包地址"></property>
+        <property name="sqlSessionFactoryBeanName" value="sqlSessionFactory"/> 
+    </bean>
+    ```
+
+  - 使用扫描器后从spring容器中获取mapper的实现对象
+
+### 9. 插件
+
+- Mybatis 仅可以编写针对 `ParameterHandler、ResultSetHandler、StatementHandler、Executor` 这4种接口的插件，Mybatis 使用 JDK 动态代理，为需要拦截的接口生成代理对象以实现接口方法拦截功能，每当执行这4种接口对象的方法时，就会进入拦截方法，具体就是 InvocationHandler的invoke() 方法，当然，只会拦截那些你指定需要拦截的方法
+
+- 编写插件：实现 Mybatis 的 `Interceptor` 接口并复写 `intercept()` 方法，然后在给插件编写注解，指定要拦截哪一个接口的哪些方法即可，最后在配置文件中配置编写的插件
+
 ## 2. 全局配置文件
+
 `mybatis-config.xml`： 
 
 ```xml
@@ -415,14 +574,14 @@
 - `id`： 一个 ID 结果，标记出作为 ID 的结果可以帮助提高整体性能
 - `result`： 注入到字段或 JavaBean 属性的普通结果
 - `association`： 一个复杂类型的关联;许多结果将包装成这种类型
+
   - 嵌套结果映射： 关联可以指定为一个 `resultMap` 元素，或者引用一个
 - `collection`： 一个复杂类型的集合
+
   - 嵌套结果映射： 集合可以指定为一个 `resultMap` 元素，或者引用一个
 - `discriminator`： 使用结果值来决定使用哪个 resultMap
   - `case`： 基于某些值的结果映射
     - 嵌套结果映射： 一个 `case` 也是一个映射它本身的结果,因此可以包含很多相 同的元素，或者它可以参照一个外部的 `resultMap` 
-
-
 
 - `id & result`： id 和 result 映射一个单独列的值到简单数据类型(字符串,整型,双精度浮点数,日期)的属性或字段
 
@@ -512,6 +671,11 @@
         </collection>
     </resultMap>
     ```
+
+### 5. 其他标签
+
+- `<sql>` 为sql片段标签，通过 `<include>` 标签引入sql片段
+- `<selectKey>` 为不支持自增的主键生成策略标签
 
 ## 4. 动态SQL
 
@@ -877,10 +1041,6 @@
     - `SESSION(默认)`： 当前会话的所有数据保存在会话缓存中
 
     - `STATEMENT`： 可以禁用一级缓存
-
-
-
-
 
 
 ## 6. Spring整合
