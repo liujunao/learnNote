@@ -23,7 +23,7 @@ struct sdshdr {
 };
 ```
 
-![](../pics/redis/redisG1_1.png)
+![](../../pics/redis/redisG1_1.png)
 
 ## 2. SDS 与 C 字符串的区别
 
@@ -73,13 +73,13 @@ struct sdshdr {
 
 - SDS 总是将保存的数据末尾设置为空字符，且总会为 buf 数组分配空间时多分配一个字节来容纳
 
-![](../pics/redis/redisG1_2.png)
+![](../../pics/redis/redisG1_2.png)
 
 ## 3. SDS API
 
-![](../pics/redis/redisG1_3.png)
+![](../../pics/redis/redisG1_3.png)
 
-![](../pics/redis/redisG1_4.png)
+![](../../pics/redis/redisG1_4.png)
 
 # 二、链表
 
@@ -101,7 +101,7 @@ typedef struct listNode{
 }listNode;
 ```
 
-![](../pics/redis/redisG2_2.png)
+![](../../pics/redis/redisG2_2.png)
 
 使用 `adlist.h/list` 来操作链表
 
@@ -122,7 +122,7 @@ typedef struct list{
 }list;
 ```
 
-![](../pics/redis/redisG2_1.png)
+![](../../pics/redis/redisG2_1.png)
 
 **redis的链表特性如下**：
 
@@ -138,9 +138,9 @@ typedef struct list{
 
 相关 API：
 
-![](../pics/redis/redisG2_3.png)
+![](../../pics/redis/redisG2_3.png)
 
-![](../pics/redis/redisG2_4.png)
+![](../../pics/redis/redisG2_4.png)
 
 # 三、字典
 
@@ -175,7 +175,7 @@ typedef struct dictht {
 } dictht;
 ```
 
-![](../pics/redis/redisG3_1.png)
+![](../../pics/redis/redisG3_1.png)
 
 ### 2. 哈希表节点
 
@@ -198,7 +198,7 @@ typedef struct dictEntry {
 } dictEntry;
 ```
 
-![](../pics/redis/redisG3_2.png)
+![](../../pics/redis/redisG3_2.png)
 
 ### 3. 字典
 
@@ -244,7 +244,7 @@ typedef struct dictType {
 } dictType;
 ```
 
-![](../pics/redis/redisG3_3.png)
+![](../../pics/redis/redisG3_3.png)
 
 ## 2. 哈希算法
 
@@ -260,7 +260,7 @@ typedef struct dictType {
 
     `index = hash & dict->ht[x].sizemask;`
 
-![](../pics/redis/redisG3_4.png)
+![](../../pics/redis/redisG3_4.png)
 
 ## 3. 解决键冲突
 
@@ -274,7 +274,7 @@ typedef struct dictType {
 
   > 因为 dictEntry 节点组成的链表没有指向链表表尾的指针
 
-  ![](../pics/redis/redisG3_5.png)
+  ![](../../pics/redis/redisG3_5.png)
 
 ## 4. rehash
 
@@ -325,9 +325,9 @@ typedef struct dictType {
 
 ## 6. API
 
-![](../pics/redis/redisG3_6.png)
+![](../../pics/redis/redisG3_6.png)
 
-![](../pics/redis/redisG3_7.png)
+![](../../pics/redis/redisG3_7.png)
 
 # 四、跳跃表
 
@@ -385,7 +385,7 @@ typedef struct zskiplist {
 
 ## 2. API
 
-![](../pics/redis/redisG4_1.png)
+![](../../pics/redis/redisG4_1.png)
 
 # 五、整数集合
 
@@ -431,7 +431,7 @@ typedef struct intset {
 
 ## 3. API
 
-![](../pics/redis/redisG5_1.png)
+![](../../pics/redis/redisG5_1.png)
 
 # 六、压缩列表
 
@@ -445,7 +445,7 @@ typedef struct intset {
 
 - 一个压缩表可包含多个节点，每个节点可保存一个字节数组或一个整数值
 
-![](../pics/redis/redisG6_1.png)
+![](../../pics/redis/redisG6_1.png)
 
 ## 2. 压缩表节点的构成
 
@@ -474,7 +474,7 @@ typedef struct intset {
 
     > 因为有了这个长度，所以程序可以通过指针运算，根据当前节点的起始地址来计算出前一个节点的起始地址，压缩列表的从表尾向表头遍历操作就是使用这一原理实现的
 
-  ![](../pics/redis/redisG6_2.png)
+  ![](../../pics/redis/redisG6_2.png)
 
   - `encoding`：**记录了节点的 content 属性所保存数据的类型以及长度**：
 
@@ -486,7 +486,7 @@ typedef struct intset {
     >
     >   这种编码表示节点的 content 属性**保存着整数值**，整数值的类型和长度由编码除去最高两位之后的其它位记录
 
-     ![](../pics/redis/redisG6_3.png)
+     ![](../../pics/redis/redisG6_3.png)
 
   - `content`：**负责保存节点的值**，节点值可以是一个**字节数组**或者**整数**，值的类型和长度由节点的 encoding 属性决定
 
@@ -507,7 +507,7 @@ typedef struct intset {
 
 ## 4. API
 
-![](../pics/redis/redisG6_4.png)
+![](../../pics/redis/redisG6_4.png)
 
 # 七、对象
 
@@ -554,9 +554,9 @@ typedef struct redisObject {
 - 命令 `TYPE` 返回数据库键对应的**值对象的类型**
 - 对象的 ptr 指针指向的对象的底层实现数据结构是由对象的 encoding 属性决定(编码)
 
-![](../pics/redis/redisG7_1.png)
+![](../../pics/redis/redisG7_1.png)
 
-![](../pics/redis/redisG7_2.png)
+![](../../pics/redis/redisG7_2.png)
 
 ## 2. 字符串对象
 
@@ -576,7 +576,7 @@ typedef struct redisObject {
   - embstr 释放内存的次数也由两次变为一次
   - embstr 编码的字符串对象的所有数据都保存在一块连续内存中，则字符串对象能更好的利用缓存带来的优势
 
-![](../pics/redis/redisG7_3.png)
+![](../../pics/redis/redisG7_3.png)
 
 - **编码转换**： int 编码的字符串对象和 embstr 编码的字符串对象在满足条件情况下，会被转换为 raw 编码的字符串对象
 
@@ -845,7 +845,7 @@ Redis 中用于操作键的命令可以分为两种类型：
   };
   ```
 
-  ![](../pics/redis/redisG8_1.png)
+  ![](../../pics/redis/redisG8_1.png)
 
 ##2. 切换数据库
 
@@ -1026,7 +1026,7 @@ Redis 中用于操作键的命令可以分为两种类型：
 
 ### 2. RDB 文件结构
 
-![](../pics/redis/redisG9_1.png)
+![](../../pics/redis/redisG9_1.png)
 
 - `REDIS`： 长度5字节，保存着“REDIS”五个字符，**用于快速检查所载入的文件是否是RDB文件**
 - `db_version`： 长度4字节，值是一个字符串表示的整数，这个整数**记录了RDB文件的版本号**
@@ -1034,7 +1034,7 @@ Redis 中用于操作键的命令可以分为两种类型：
 
 > 每个非空数据库都可以保存为 `SELECTDB、db_number、key_value_pairs` 三个部分
 >
-> ![](../pics/redis/redisG9_2.png)
+> ![](../../pics/redis/redisG9_2.png)
 >
 > - `SELECTDB`： 长度是1字节，通知读入程序确定下一个要读入的是数据库号码
 >
@@ -1148,7 +1148,7 @@ AOF 持久化功能实现的三个步骤：
   >   - 将执行后的写命令追加到 AOF 缓冲区
   >   - 将执行后的写命令追加到 AOF 重写缓冲区
   >
-  >   ![](../pics/redis/redisG9_3.png)
+  >   ![](../../pics/redis/redisG9_3.png)
   >
   > - 这样就能保证：
   >
@@ -1191,7 +1191,7 @@ Redis 服务器是一个事件驱动程序，服务器需处理两类事件：
   - **文件事件分派器**： 接收I/O多路复用程序传来的套接字，根据套接字的时间类型，调用相应事件处理器
   - **事件处理器**： 是一个函数，定义某个时间发生时，服务器应执行的动作
 
-  ![](../pics/redis/redisG10_1.png)
+  ![](../../pics/redis/redisG10_1.png)
 
 ## 2. 时间事件
 
@@ -1225,7 +1225,7 @@ Redis 服务器是一个事件驱动程序，服务器需处理两类事件：
 
 - 事件的调度和执行由 `ae.c/aeProcessEvents` 函数执行
 
-![](../pics/redis/redisG10_2.png)
+![](../../pics/redis/redisG10_2.png)
 
 - 事件的调度和执行规则：
 
@@ -1512,7 +1512,7 @@ Redis 服务器是一个事件驱动程序，服务器需处理两类事件：
 
 #### 1. 发送命令请求
 
-![](../pics/redis/redisG11_1.png)
+![](../../pics/redis/redisG11_1.png)
 
 #### 2. 读取命令请求
 
@@ -1531,9 +1531,9 @@ Redis 服务器是一个事件驱动程序，服务器需处理两类事件：
 
 - 命令表是一个字典，键是命令的名字，值是 `redisCommand` 结构，每个 `redisCommand` 记录了一个 Redis 命令的实现信息
 
-![](../pics/redis/redisG11_2.png)
+![](../../pics/redis/redisG11_2.png)
 
-![](../pics/redis/redisG11_3.png)
+![](../../pics/redis/redisG11_3.png)
 
 ##### 2. 执行预备操作
 
@@ -1592,7 +1592,7 @@ Redis 服务器是一个事件驱动程序，服务器需处理两类事件：
 
 #### 5. 客户端接收并打印命令回复
 
-![](../pics/redis/redisG11_4.png)
+![](../../pics/redis/redisG11_4.png)
 
 ### 2. serverCron 函数
 
@@ -1725,7 +1725,7 @@ Redis 的复制功能分为两步：
   >
   > - 主服务器将记录在缓冲区里面的所有写命令发送给从服务器，从服务器执行这些写命令，将自己的数据库状态更新至主服务器数据库当前的所处状态
   >
-  > ![](../pics/redis/redisG12_1.png)
+  > ![](../../pics/redis/redisG12_1.png)
 
 - **命令传播**： 用于在主服务器上的数据库状态被修改，导致主从服务器的数据库状态出现不一致时，让主从服务器的数据库状态重新回到一致
 
@@ -1772,7 +1772,7 @@ Redis 复制分为两种情况：
   >
   > - 当主服务器进行命令传播时，不仅会将命令发送给所有从服务器，还会将写命令入队到复制积压缓冲区中
   >
-  > ![](../pics/redis/redisG12_2.png)
+  > ![](../../pics/redis/redisG12_2.png)
   >
   > - 断线后重连上主服务器时，从服务器会将自己的复制偏移量发送给主服务器，主服务器根据这个复制偏移量来决定对从服务器执行何种同步操作：
   >
@@ -1820,7 +1820,7 @@ PSYNC 命令调用的两种方式：
 
   - 如果主服务器返回 `-ERR` 回复，表示识别不了 PSYNC 命令，从服务器将向主服务器发送 SYNC 命令，并与主服务器**执行完整同步操作**
 
-  ![](../pics/redis/redisG12_3.png)
+  ![](../../pics/redis/redisG12_3.png)
 
 ## 3. 复制的实现
 
@@ -1863,9 +1863,9 @@ PSYNC 命令调用的两种方式：
 - 由一个或多个 Sentinel 实例组成的 **Sentinel 系统可以监视任意多个主服务器**，以及这些主服务器属下的所有从服务器，并在被监视的主服务器进入下线状态时，自动将下线主服务器属下的某个从服务器升级为新的主服务器，然后由新的主服务器代替已下线的主服务器继续处理命令请求
 - **在替换了新的主服务器之后，如果之前下线的主服务器上线了，就会被降为新的主服务器的从服务器**
 
-![](../pics/redis/redisG13_1.png)
+![](../../pics/redis/redisG13_1.png)
 
-![](../pics/redis/redisG13_2.png)
+![](../../pics/redis/redisG13_2.png)
 
 ## 1. 启动并初始化Sentinel
 
@@ -2041,7 +2041,7 @@ PSYNC 命令调用的两种方式：
 
 - 在建立起订阅连接后，Sentinel 会通过该连接，向服务器发送以下命令： `SUBSCRIBE __sentinel__:hello`
 
-![](../pics/redis/redisG13_3.png)
+![](../../pics/redis/redisG13_3.png)
 
 ## 5. 检测下线状态
 
@@ -2154,7 +2154,7 @@ PSYNC 命令调用的两种方式：
 
 - 节点的本质还是服务器，服务器会根据 `cluster-enabled` 配置选项来决定是否开启集群模式
 
-  ![](../pics/redis/redisG14_1.png)
+  ![](../../pics/redis/redisG14_1.png)
 
 - 运行在集群模式下的节点会继续使用所有在单机模式中使用的服务器组件
 
@@ -2237,7 +2237,7 @@ PSYNC 命令调用的两种方式：
 
   - 当节点 B 接收到 PING 消息，节点 A 接收到 PONG 消息，表示握手完成
 
-  ![](../pics/redis/redisG14_2.png)
+  ![](../../pics/redis/redisG14_2.png)
 
 ## 2. 槽指派
 
@@ -2303,7 +2303,7 @@ PSYNC 命令调用的两种方式：
 
 ## 3. 集群中执行命令
 
-![](../pics/redis/redisG14_3.png)
+![](../../pics/redis/redisG14_3.png)
 
 - **计算键属于哪个槽**：
 
@@ -2372,9 +2372,9 @@ PSYNC 命令调用的两种方式：
   - **重复步骤3和4**，直到源节点保存的所有属于槽 `slot` 的键值对都被迁移到目标节点为止
   - 向集群中的任意一个节点发送 `CLUSTER SETSLOT <slot> NODE <target_id>` 命令，将槽`slot`指派给目标节点的信息发送给整个集群
 
-![](../pics/redis/redisG14_4.png)
+![](../../pics/redis/redisG14_4.png)
 
-![](../pics/redis/redisG14_5.png)
+![](../../pics/redis/redisG14_5.png)
 
 ## 6. ASK 错误
 
@@ -2418,7 +2418,7 @@ PSYNC 命令调用的两种方式：
   	reply("OK")
   ```
 
-  ![](../pics/redis/redisG14_6.png)
+  ![](../../pics/redis/redisG14_6.png)
 
 ## 8. 复制与故障转移
 
@@ -2788,7 +2788,7 @@ redis 集群的节点分为：
   >   - **立即执行的命令**：`EXEC, DISCARD, WATCH, MULTI`
   >   - **将命令放入事务队列中，并向客户端返回 `QUEUED` 回复的命令**：除上述四个命令的其他命令
   >
-  > ![](../pics/redis/redisG16_1.png)
+  > ![](../../pics/redis/redisG16_1.png)
   >
   > 事务状态包含一个事务队列及一个已入队命令的计数器(即事务队列的长度)：
   >
@@ -3275,7 +3275,7 @@ redis 集群的节点分为：
     >
     > 推荐阅读： **[缓存机制Cache ARC算法](<https://blog.csdn.net/WSKINGS/article/details/46416451>)** 
     >
-    > ![](../pics/redis/redisG21_1.png)
+    > ![](../../pics/redis/redisG21_1.png)
 
   - **LFU(LeastFrequentlyUsed)**： 按每个缓存块的被访问频率将缓存中的各块排序，当缓存空间已满时，替换掉缓存队列中访问频率最低的一项
 
@@ -3284,7 +3284,7 @@ redis 集群的节点分为：
     >   - 新加入数据插入到队列尾部（因为引用计数为1）
     >   - 队列中的数据被访问后，引用计数增加，队列重新排序
     >
-    >   ![](../pics/redis/redisG21_2.png)
+    >   ![](../../pics/redis/redisG21_2.png)
     >
     > - **缺点**： 与 LRU 类似，LFU 仅维护各项的被访问频率信息，对于某项缓存，如果该项的过去有着极高的访问频率，而最近访问频率较低，当缓存空间已满时该项很难被从缓存中替换出来，进来导致命中率下降
 
@@ -3295,7 +3295,7 @@ redis 集群的节点分为：
     > - 记录过去 W 个访问记录
     > - 需要淘汰时，将W个访问记录按照 LFU 规则排序淘汰
     >
-    > ![](../pics/redis/redisG21_3.png)
+    > ![](../../pics/redis/redisG21_3.png)
     >
     > **运行流程**： 
     >
@@ -3318,7 +3318,7 @@ redis 集群的节点分为：
     > - 缓存数据队列中被再次访问后，重新排序
     > - 需要淘汰数据时，淘汰缓存队列中排在末尾的数据
     >
-    > ![](../pics/redis/redisG21_4.png)
+    > ![](../../pics/redis/redisG21_4.png)
     >
     > **目的**： 解决 LRU 算法“缓存污染”问题
     >
@@ -3340,7 +3340,7 @@ redis 集群的节点分为：
     > - 如果数据在 LRU 队列再次被访问，则将数据移到 LRU 队列头部
     > - LRU 队列淘汰末尾的数据
     >
-    > ![](../pics/redis/redisG21_5.png)
+    > ![](../../pics/redis/redisG21_5.png)
 
   - **MRU(Most Recently Used)**： 首先丢弃最近最常使用的数据
 
@@ -3398,7 +3398,7 @@ redis 集群的节点分为：
     >
     > 比较： 比 Second Chance 算法更高效
     >
-    > ![](../pics/redis/redisG21_7.png)
+    > ![](../../pics/redis/redisG21_7.png)
 
   - **Gclock(Generalized clock page replacement algorithm)**： Clock的变种，相对于Clock标志位采用二进制0和1表示，Gclock 的标志位采用整数
 
@@ -3460,7 +3460,7 @@ redis 集群的节点分为：
     >
     >   - LIRS Stack Q： 维护cache中的HIR页面，以加快其索引速度，在需要释放页面时，首先淘汰这类。淘汰操作会引起一系列连锁反应
     >
-    > ![](../pics/redis/redisG21_6.png)
+    > ![](../../pics/redis/redisG21_6.png)
 
   - **FBR(Frequency Based Replacement)**： 维护一个 LRU 队列，并将队列分为 New、Middle、Old 三段，对队列中的每一缓存项均维护一个计数值
 
@@ -3540,7 +3540,7 @@ redis 集群的节点分为：
 
 - 通过订阅binlog获取需要重新删除的Key值数据。在应用程序中，另起一段程序，获得这个订阅程序传来的消息，进行删除缓存操作
 
-  ![](../pics/redis/redisG21_8.png)
+  ![](../../pics/redis/redisG21_8.png)
 
 ## 3. 防止缓存击穿和雪崩
 
@@ -4095,8 +4095,9 @@ Sentinel 采用 Raft 协议实现 Sentinel 间选举 Leader 的算法
        repl-diskless-sync-delay, 等待一定时长在复制，因为要等更多的slave重新连接
 
 - **过期 key 处理**： slave 没有过期 Key，只有 master 有过期 key
-  - 如果 key 过期或通过 LRU 算法淘汰 key，则 master 会模拟发送一个 del 命令给 slave
-
+  
+- 如果 key 过期或通过 LRU 算法淘汰 key，则 master 会模拟发送一个 del 命令给 slave
+  
 - **复制完整流程**： 
   - slave node 的启动，仅仅保存 master node 信息，包括master的host 和IP，但是复制还没有开始，host和ip都配置在redis.conf中
   - slave 内部有一个自动任务，每秒自动检查一次是否有 master 需要连接，如果发现有master连接，则向该 master 发送 socket 连接
@@ -4125,15 +4126,15 @@ Sentinel 采用 Raft 协议实现 Sentinel 间选举 Leader 的算法
 
 - **[Redis线程模型](https://www.cnblogs.com/barrywxx/p/8570821.html)**
 
-![](../pics/redis/redisG21_9.png)
+![](../../pics/redis/redisG21_9.png)
 
-![](../pics/redis/redisG21_10.png)
+![](../../pics/redis/redisG21_10.png)
 
 ## 14. 本地缓存与分布式缓存
 
 **[集中式系统和分布式系统](https://www.cnblogs.com/quchunhui/p/7691615.html)**
 
-![](../pics/redis/redisG21_11.png)
+![](../../pics/redis/redisG21_11.png)
 
 
 
