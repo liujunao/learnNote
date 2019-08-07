@@ -136,7 +136,7 @@ book.xml 文件
 
 通过 Idea 创建： 
 
-![](../pics/ws/ws1.png)
+![](../../pics/ws/ws1.png)
 
 会发现自动生成的 HelloWorld 代码： 
 
@@ -160,7 +160,7 @@ public class HelloWorld {
 
 然后通过浏览器访问 `http://localhost:9000/HelloWorld/service`： 
 
-![](../pics/ws/ws2.png)
+![](../../pics/ws/ws2.png)
 
 ### 2. 客户端
 
@@ -170,7 +170,7 @@ public class HelloWorld {
 
 运行成功后，会发现生成如下代码： 
 
-![](../pics/ws/ws3.png)
+![](../../pics/ws/ws3.png)
 
 然后编写 ClientTest 文件： 
 
@@ -221,7 +221,7 @@ public class ClientTest {
 
 ## 4. wsdl 文档解析
 
-![](../pics/ws/ws4.png)
+![](../../pics/ws/ws4.png)
 
 文档结构： 
 
