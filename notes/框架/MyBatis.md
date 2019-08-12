@@ -811,7 +811,7 @@ MyBatis 可以根据 `databaseId` 来根据不同的数据库厂商执行不同�
 |     `useCache`     | 会导致本条语句的结果被二级缓存，默认值：对 select 元素为 true |
 |     `timeout`      | 抛出异常前，驱动程序等待数据库返回请求结果的秒数。默认为  unset |
 |  `statementType`   | `STATEMENT，PREPARED 或 CALLABLE` 中的一个，会让 MyBatis 分别使用 Statement，PreparedStatement 或 CallableStatement，默认值：PREPARED |
-| `useGeneratedKeys` | 使用 JDBC 的 getGeneratedKeys 方法来取出由数据库内部生成的主键，默认: false <br>(仅对 insert 与 update) |
+| `useGeneratedKeys` | 使用 JDBC 的 getGeneratedKeys 方法来取出由数据库内部生成的主键，默认: false (仅对 insert 与 update) |
 |   `keyProperty`    | 通过 getGeneratedKeys 的返回值或 insert 语句的 selectKey 子元素设置它的键值<br/>(仅对 insert 与 update) |
 |    `keyColumn`     | 通过生成的键值设置表中的列名，当主键列不是表中的第一列的时候需要设置<br>如果希望使用多个生成的列，也可以设置为逗号分隔的属性名称列表<br/>(仅对 insert 与 update) |
 |    `databaseId`    | 加载所有不带 databaseId 或匹配当前 databaseId 的语句 如果带或者不带的语句都有，则不带的会被忽略 |
