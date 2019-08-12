@@ -1,5 +1,14 @@
 # 《后端架构师技术图谱》
 
+**面经链接推荐**： 
+
+- [Java高级工程师面试总结](https://segmentfault.com/a/1190000004716061) 
+
+- [史上最全阿里 Java 面试题总结](https://segmentfault.com/a/1190000016172470) 
+- [java后台面试题整理](https://www.cnblogs.com/chenyq/p/7886274.html) 
+
+- [阿里一面](https://juejin.im/post/5c9a67ac6fb9a070cb24bf34) 
+
 [![知识共享协议（CC协议）](https://img.shields.io/badge/License-Creative%20Commons-DC3D24.svg)](https://creativecommons.org/licenses/by-nc-sa/4.0/deed.zh)
 [![GitHub stars](https://img.shields.io/github/stars/xingshaocheng/architect-awesome.svg?style=flat&label=Star)](https://github.com/xingshaocheng/architect-awesome/stargazers)
 [![GitHub forks](https://img.shields.io/github/forks/xingshaocheng/architect-awesome.svg?style=flat&label=Fork)](https://github.com/xingshaocheng/architect-awesome/fork)
