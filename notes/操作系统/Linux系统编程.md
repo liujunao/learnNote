@@ -634,6 +634,141 @@ I/O 调度程序会执行的步骤：
 
 ## 1. 进程管理
 
+### 1. 进程 ID
+
+- **进程 ID `pid`**：每个进程具有的唯一标识符 
+
+- Linux 启动时运行的初始化进程由内核决定
+
+  > 初始化进程 `init` 存放位置，顺序读取：`/sbin/init,/etc/init,/bin/init,/bin/sh`
+
+- **进程 ID 的分配**： 内核默认进程 ID 最大值为 $2^{16}$ = 32768，可通过 `/proc/sys/kernel/pid_max` 修改
+
+  > - 内核会使用严格的**线性方式**替进程分配进程 ID
+  > - 内核不会重复使用 pid 值，除非超过最大值，才会使用较小值
+
+- **进程的层次结构**： 
+
+  > - 每个子进程都有一个父进程 `ppid`
+  >
+  > - 每个进程由一个用户`user` 和组 `group` 所拥有，所有权可用于控制资源的访问权限
+
+- **获取进程 ID**： 
+  - 获取当前进程 ID：`pid_t getpid(void)`
+  - 获取父进程 ID： `pid_t getppid(void)`
+
+### 2. 运行新进程
+
+- **`exec` 调用**： 
+
+  > `exec` 系列函数： 
+  >
+  > - `int execl(const char *path,const char *args,..)`： 将 path 参数所指向的程序加载至内存
+  >
+  >   > 成功的 `execl()` 调用不仅会改变地址空间和进程影像，也会改变进程的某些属性： 
+  >   >
+  >   > - 任何未决信号会遗失
+  >   > - 进程所捕捉到的任何信号会回到默认行为
+  >   > - 内存的任何锁定会被丢弃
+  >   > - 多数线程属性会回到默认值
+  >   > - 多数进程统计数据会被重置
+  >   > - 与进程的内存有关的任何东西，包括所映射的任何文件，会被丢弃
+  >   > - 单独存在于用户空间的任何东西，包括 C 链接库的功能，会被丢弃
+  >
+  > - `int execlp(const char *file,const char *arg,...)`
+  >
+  > - `int execle(const char *path,const char *arg,...,char * const envp[])`
+  >
+  > - `int execv(const char *path,const char *const argv[])`
+  >
+  > - `int execvp(const char *file,const char *const argv[])`
+  >
+  > - `int execve(const char *filename,const char *const argv[],char *const envp[])` 
+  >
+  > 对比： 
+  >
+  > - `l` 与 `v` 用于界定参数是提供列表，还是数组
+  > - `p` 表示用户的完整路径，可用于搜索指定的文件
+  > - `e` 表示新的进程提供一个新的环境
+
+- **`fork` 调用**： 创建一个新的进程来运行与当前相同的映像
+
+  > 子进程与父进程几乎一致，除了： 
+  >
+  > - 子进程的 pid 与父进程的不同
+  > - 子进程的 ppid 被设定为父进程的 pid
+  > - 子进程中的资源统计数据会被重置为零
+  > - 任何未决信号会被清除，而且不会被子进程继承
+  > - 所取得的任何文件锁定不会被子进程继承
+  >
+  > **进程的派生复制**： 
+  >
+  > - 早期 Linux 进程派生时，内核会替内部的所有数据结构创建副本，复制进程的页表项，以及将父进程的地址空间逐页复制到子进程的新地址空间
+  >
+  >   > 这种逐页复制费时
+  >
+  > - 现代 Linux 进程派生时，采用**写入时才复制(COW)**页面
+  >
+  >   > - 目的： 一种延迟化策略，减轻复制资源的开销
+  >   > - 前提： 如果要读取一个资源，则会得到指向资源的指针；如果要写入资源，则会复制资源的副本，即写入复制
+
+- **`vfork` 调用**： 同 `fork` 调用，但同时会执行 `exec` 或 `_exit()` 调用
+
+  > 目的： 如果后面立即进行 `exec` 动作，`fork` 动作期间会浪费时间进行地址空间复制
+
+### 3. 终止进程
+
+- `void exit(int status)`： 终止当前进程
+
+  > 步骤： 
+  >
+  > - 终止进程前，C 链接库会依次执行 `shutdown` 步骤
+  > - 接着 `exit()` 会调用 `_exit()` 让内核处理终止进程的其余工作
+
+- `shutdown` 步骤： 
+  - 按照与注册相反的顺序调用以 `atexit()` 或 `on_exit()` 注册的任何函数
+  - 刷新 `flush` 所有已打开的标准 I/O 流
+  - 移除任何由 `tmpfile()` 函数所创建的临时文件
+
+- `int atexit(void (*function)(void))`： 用于注册于进程终止时所调用的函数
+
+  > 注册的函数原型： `void my_function(void)`
+
+- `int on_exit(void (*function)(int,void *),void *arg)`： 同 `atexit`
+
+  > 注册的函数原型： `void my_function(int status,void *arg)`
+
+- `pid_t wait(int *status)`： 返回已终止子进程的 pid
+
+  > 僵尸进程： 若子进程的死亡时间先于它的父进程，则内核让子进程进入特殊的进程状态
+  >
+  > > 该状态的进程只保留最小的骨架： 
+  > >
+  > > - 一些可能会包含有用数据的基本内核数据结构
+
+- `pid waitpid(pid_t pid,int *status,int options)`： 
+
+  > - 参数 `pid` 用于指定要等待的是进程 ID
+  >   - `<-1`： 等待进程==组== ID 等于此值绝对值的任何子进程
+  >   - `-1`： 等待任何子进程，此刻行为如同 `wait()`
+  >   - `0`： 等待与 `calling process`(进行调用的进程) 均属于同一个进程组的任何子进程
+  >   - `>0`： 等待其 pid 等于所指定值的任何子进程
+  >
+  > - 参数 `status`： 同 `wait()` 参数
+  >
+  > - 参数 `options`： 可以是零个或多个以下选项的二元 OR 逻辑运算
+  >   - `WNOHANG`： 不要阻挡，如果没有相符的子进程已经终止(或停止，或继续)，则立即返回
+  >   - `WUNTRACED`： 让我们实现更一般化的作业控制
+  >   - `WCONTINUED`： 可用于实现一个 shell
+
+- `int waitid(idtype_t idtype,id_t id,siginfo_t *infop,int options)`： 可用于等待并取得关于一个子进程的状态变更(终止，停止，继续)信息
+
+  > 参数 `idtype` 和 `id` 用于指定所要等待的子进程
+
+- `int system(const char *command)`： 可用于产生一个新进程并等待它的终止
+
+  > 作用示例： 若一个进程产生了一个子进程且立即等待它的终止，则可以使用此接口
+
 
 
 
