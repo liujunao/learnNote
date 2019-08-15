@@ -2234,6 +2234,14 @@ public Object clone() {
 
 # 四、工具类
 
+[Timsort原理介绍](https://blog.csdn.net/yangzhongblog/article/details/8184707) 
+
+[快速排序算法原理及实现（单轴快速排序、三向切分快速排序、双轴快速排序）](https://www.cnblogs.com/nullzx/p/5880191.html) 
+
+[Collections.sort()和Arrays.sort()排序算法选择](https://blog.csdn.net/TimHeath/article/details/68930482) 
+
+
+
 ## 1. Collections
 
 ### Collection 和 Collections 的区别
@@ -2362,8 +2370,6 @@ private static final int INSERTIONSORT_THRESHOLD = 7;
       }
   }
   ```
-
-  
 
 - 针对 **Object 数组类型**来进行排序
 
