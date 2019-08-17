@@ -647,20 +647,20 @@ System.out.println(InterfaceExample.x);
 - 类可以实现很多个接口，但是只能继承一个抽象类
 - 接口的字段只能是 static 和 final 类型的，而抽象类的字段没有这种限制
 - 接口的成员只能是 public 的，而抽象类的成员可以有多种访问权限
-- 接口是绝对抽象的，不可以被实例化，抽象类也不可以被实例化。
+- 接口是绝对抽象的，不可以被实例化，抽象类也不可以被实例化
 
 **4. 使用选择** 
 
 使用接口：
 
-- 需要让不相关的类都实现一个方法，例如不相关的类都可以实现 Compareable 接口中的 compareTo() 方法；
-- 需要使用多重继承。
+- 需要让不相关的类都实现一个方法，例如不相关的类都可以实现 Compareable 接口中的 compareTo() 方法
+- 需要使用多重继承
 
 使用抽象类：
 
-- 需要在几个相关的类中共享代码。
-- 需要能控制继承来的成员的访问权限，而不是都为 public。
-- 需要继承非静态和非常量字段。
+- 需要在几个相关的类中共享代码
+- 需要能控制继承来的成员的访问权限，而不是都为 public
+- 需要继承非静态和非常量字段
 
 在很多情况下，接口优先于抽象类。因为接口没有抽象类严格的类层次结构要求，可以灵活地为一个类添加行为。并且从 Java 8 开始，接口也可以有默认的方法实现，使得修改接口的成本也变的很低。
 
@@ -762,37 +762,37 @@ SuperExtendExample.func()
   > ```java
   > //Supper 父类
   > public class Supper {
-  >     public void sup(int n) {
-  >         System.out.println("supper: " + n);
-  >     }
+  >    	public void sup(int n) {
+  >    		System.out.println("supper: " + n);
+  >    	}
   > }
   > 
   > //sub 子类
   > public class Sub extends Supper {
-  >     @Override
-  >     public void sup(int n) {
-  >         System.out.println("sub: " + n);
-  >     }
+  >    	@Override
+  >    	public void sup(int n) {
+  >    		System.out.println("sub: " + n);
+  >    	}
   > }
   > 
   > //测试一
   > public static void main(String[] args) {
-  >     Supper supper = new Supper();
-  >     supper.sup(1);
+  >       Supper supper = new Supper();
+  >       supper.sup(1);
   > }
   > //结果： supper: 1
   > 
   > //测试二
   > public static void main(String[] args) {
-  >     Supper supper = new Sub();
-  >     supper.sup(1);
+  >       Supper supper = new Sub();
+  >       supper.sup(1);
   > }
   > //结果： sub: 1
   > 
   > //测试三
   > public static void main(String[] args) {
-  >     Sub sub = new Sub();
-  >     sub.sup(1);
+  >       Sub sub = new Sub();
+  >       sub.sup(1);
   > }
   > //结果： sub: 1
   > ```
@@ -1225,7 +1225,7 @@ public class StaticDemoDriven {
 - **[序列化与单例模式](http://www.cnblogs.com/ixenos/p/5831067.html)** 
 - **[Java反序列化漏洞分析](https://www.cnblogs.com/he1m4n6a/p/10131566.html)** 
 
-
+---
 
 - 序列化： 把实体对象状态按照一定的格式写入到有序字节流
 
@@ -1810,7 +1810,6 @@ public void test3(){
     Class clazz = p.getClass();//通过运行时类的对象，调用其getClass()，返回其运行时类。
     System.out.println(clazz);
 }
-	
 ```
 
 ![](../..//pics/reflect.png)
@@ -2175,7 +2174,6 @@ public void test2(){
 
 ```java
 public class TestOthers {
-  
   	//1.获取运行时类的父类
 	@Test
 	public void test1(){
@@ -2183,7 +2181,6 @@ public class TestOthers {
 		Class superClass = clazz.getSuperclass();
 		System.out.println(superClass);
 	}
-  
   	//2.获取带泛型的父类
 	@Test
 	public void test2(){
@@ -2191,7 +2188,6 @@ public class TestOthers {
 		Type type1 = clazz.getGenericSuperclass();
 		System.out.println(type1);
 	}
-  
   	//3.获取父类的泛型
 	@Test
 	public void test3(){
@@ -2203,7 +2199,6 @@ public class TestOthers {
 		
 		System.out.println(((Class)ars[0]).getName());
 	}
-  
   	//4.获取实现的接口
 	@Test
 	public void test4(){
@@ -2213,7 +2208,6 @@ public class TestOthers {
 			System.out.println(i);
 		}
 	}
-  
     //5.获取所在的包
 	@Test
 	public void test5(){
@@ -2221,7 +2215,6 @@ public class TestOthers {
 		Package pack = clazz.getPackage();
 		System.out.println(pack);
 	}
-  
 	//6.获取注解
 	@Test
 	public void test6(){

@@ -29,7 +29,7 @@
   - 如果线程请求的栈深度大于虚拟机所允许的深度，将抛出StackOverflowError异常
   - 如果虚拟机扩展时无法申请到足够的内存，就会跑出OutOfMemoryError异常
 
-<div align="center"> <img src="../pics//926c7438-c5e1-4b94-840a-dcb24ff1dafe.png" width="500"/> </div><br>
+<img src="../../pics//926c7438-c5e1-4b94-840a-dcb24ff1dafe.png" width="500"/>
 
 可以通过 -Xss 这个虚拟机参数来指定每个线程的 Java 虚拟机栈内存大小：
 
@@ -46,9 +46,9 @@ java -Xss512M HackTheJava
 
 本地方法栈区域也会抛出StackOverflowError和OutOfMemoryErroy异常
 
->  本地方法一般是用其它语言（C、C++ 或汇编语言等）编写的，并且被编译为基于本机硬件和操作系统的程序，对待这些方法需要特别处理。
+>  本地方法一般是用其它语言（C、C++ 或汇编语言等）编写的，并且被编译为基于本机硬件和操作系统的程序，对待这些方法需要特别处理
 
-<div align="center"> <img src="../pics//JNI-Java-Native-Interface.jpg" width="350"/> </div><br>
+<img src="../../pics//JNI-Java-Native-Interface.jpg" width="350"/>
 
 ## 4. Java堆
 
@@ -68,7 +68,7 @@ java -Xss512M HackTheJava
 - 堆是Java虚拟机所管理的内存中最大的一块
 - Java堆是被所有线程共享的一块内存区域，在虚拟机启动的时候创建
 - 此内存区域的唯一目的是存放对象实例，几乎所有的对象实例都在这里分配内存。所有的**对象实例和数组**都在堆上分配
-- Java堆**是垃圾收集器管理的主要区域**。Java堆细分为新生代和老年代
+- Java堆**是垃圾收集器管理的主要区域**，Java堆细分为新生代和老年代
 - Java堆可以处于物理上不连续的内存空间中，只要逻辑上是连续的即可
 - 如果在堆中没有完成实例分配，并且动态扩展失败时将会抛出OutOfMemoryError异常
 
@@ -240,13 +240,13 @@ public class StackSOFTest {
         stackLeak();//递归，疯狂的入栈，有意不让出栈
     } 
     public static void main(String[] args){
-        StackSOFTest s=new StackSOFTest();
+        StackSOFTest s = new StackSOFTest();
         s.stackLeak();
     }
 }
 ```
 
-## 3. **方法区和运行时常量池溢出**
+## 3. 方法区和运行时常量池溢出
 
 > **String.intern()**  是一个Native方法
 >
@@ -654,8 +654,8 @@ obj = null;
 
 ### 1. 对象优先在 Eden 分配
 
-- 大多数情况**对象在新生代Eden区分配**
-- **当 Eden 区空间不足时，虚拟机将发起一次Minor GC**
+- 大多数情况**对象在新生代 Eden 区分配**
+- **当 Eden 区空间不足时，虚拟机将发起一次 Minor GC**
 
 ### 2. 大对象直接进入老年代
 

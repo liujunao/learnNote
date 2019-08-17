@@ -10,7 +10,7 @@ URI 包含 -URL 和 URN，目前 WEB 只有 URL 比较流行，所以见到的�
 - URL（Uniform Resource Locator，统一资源定位符）
 - URN（Uniform Resource Name，统一资源名称）
 
-<div align="center"> <img src="../../pics//urlnuri.jpg" width="600"/> </div><br>
+ <img src="../../pics//urlnuri.jpg" width="600"/>
 
 ## URL 请求过程
 
@@ -29,11 +29,11 @@ URI 包含 -URL 和 URN，目前 WEB 只有 URL 比较流行，所以见到的�
 
 ### 1. 请求报文
 
-<div align="center"> <img src="../../pics//HTTP_RequestMessageExample.png" width=""/> </div><br>
+<img src="../../pics//HTTP_RequestMessageExample.png" width=""/>
 
 ### 2. 响应报文
 
-<div align="center"> <img src="../../pics//HTTP_ResponseMessageExample.png" width=""/> </div><br>
+<img src="../../pics//HTTP_ResponseMessageExample.png" width=""/>
 
 ## HTTP 的无状态性
 
@@ -124,7 +124,7 @@ DELETE /file.html HTTP/1.1
 CONNECT www.example.com:443 HTTP/1.1
 ```
 
-<div align="center"> <img src="../pics//dc00f70e-c5c8-4d20-baf1-2d70014a97e3.jpg" width=""/> </div><br>
+<img src="../pics//dc00f70e-c5c8-4d20-baf1-2d70014a97e3.jpg" width=""/>
 
 ## TRACE
 
@@ -149,13 +149,13 @@ CONNECT www.example.com:443 HTTP/1.1
 
 ## 1XX 信息
 
--  **100 Continue** ：表明到目前为止都很正常，客户端可以继续发送请求或者忽略这个响应。
+-  **100 Continue** ：表明到目前为止都很正常，客户端可以继续发送请求或者忽略这个响应
 
 ## 2XX 成功
 
 -  **200 OK** 
 
--  **204 No Content** ：请求已经成功处理，但是返回的响应报文不包含实体的主体部分。一般在只需要从客户端往服务器发送信息，而不需要返回数据时使用。
+-  **204 No Content** ：请求已经成功处理，但是返回的响应报文不包含实体的主体部分。一般在只需要从客户端往服务器发送信息，而不需要返回数据时使用
 
 -  **206 Partial Content** ：表示客户端进行了范围请求，响应报文包含由 Content-Range 指定范围的实体内容
 
@@ -169,25 +169,25 @@ CONNECT www.example.com:443 HTTP/1.1
 
   > 注：虽然 HTTP 协议规定 301、302 状态下重定向时不允许把 POST 方法改成 GET 方法，但是大多数浏览器都会在 301、302 和 303 状态下的重定向把 POST 方法改成 GET 方法。
 
-- **304 Not Modified** ：如果请求报文首部包含一些条件，例如：If-Match，If-Modified-Since，If-None-Match，If-Range，If-Unmodified-Since，如果不满足条件，则服务器会返回 304 状态码。
+- **304 Not Modified** ：如果请求报文首部包含一些条件，例如：If-Match，If-Modified-Since，If-None-Match，If-Range，If-Unmodified-Since，如果不满足条件，则服务器会返回 304 状态码
 
-- **307 Temporary Redirect** ：临时重定向，与 302 的含义类似，但是 307 要求浏览器不会把重定向请求的 POST 方法改成 GET 方法。
+- **307 Temporary Redirect** ：临时重定向，与 302 的含义类似，但是 307 要求浏览器不会把重定向请求的 POST 方法改成 GET 方法
 
 ## 4XX 客户端错误
 
--  **400 Bad Request** ：请求报文中存在语法错误。
+-  **400 Bad Request** ：请求报文中存在语法错误
 
--  **401 Unauthorized** ：该状态码表示发送的请求需要有认证信息（BASIC 认证、DIGEST 认证）。如果之前已进行过一次请求，则表示用户认证失败。
+-  **401 Unauthorized** ：该状态码表示发送的请求需要有认证信息（BASIC 认证、DIGEST 认证）。如果之前已进行过一次请求，则表示用户认证失败
 
--  **403 Forbidden** ：请求被拒绝。
+-  **403 Forbidden** ：请求被拒绝
 
 -  **404 Not Found** 
 
 ## 5XX 服务器错误
 
--  **500 Internal Server Error** ：服务器正在执行请求时发生错误。
+-  **500 Internal Server Error** ：服务器正在执行请求时发生错误
 
--  **503 Service Unavailable** ：服务器暂时处于超负载或正在进行停机维护，现在无法处理请求。
+-  **503 Service Unavailable** ：服务器暂时处于超负载或正在进行停机维护，现在无法处理请求
 
 # 四、HTTP 首部
 
@@ -320,7 +320,7 @@ Path 标识指定了主机下的哪些路径可以接受 Cookie（该 URL 路径
 
 ### 5. JavaScript
 
-通过 `Document.cookie` 属性可创建新的 Cookie，也可通过该属性访问非 HttpOnly 标记的 Cookie。
+通过 `Document.cookie` 属性可创建新的 Cookie，也可通过该属性访问非 HttpOnly 标记的 Cookie
 
 ```html
 document.cookie = "yummy_cookie=choco";
@@ -330,7 +330,7 @@ console.log(document.cookie);
 
 ### 6. HttpOnly
 
-标记为 HttpOnly 的 Cookie 不能被 JavaScript 脚本调用。跨站脚本攻击 (XSS) 常常使用 JavaScript 的 `Document.cookie` API 窃取用户的 Cookie 信息，因此使用 HttpOnly 标记可以在一定程度上避免 XSS 攻击。
+标记为 HttpOnly 的 Cookie 不能被 JavaScript 脚本调用。跨站脚本攻击 (XSS) 常常使用 JavaScript 的 `Document.cookie` API 窃取用户的 Cookie 信息，因此使用 HttpOnly 标记可以在一定程度上避免 XSS 攻击
 
 ```html
 Set-Cookie: id=a3fWa; Expires=Wed, 21 Oct 2015 07:28:00 GMT; Secure; HttpOnly
@@ -338,26 +338,26 @@ Set-Cookie: id=a3fWa; Expires=Wed, 21 Oct 2015 07:28:00 GMT; Secure; HttpOnly
 
 ### 7. Secure
 
-标记为 Secure 的 Cookie 只能通过被 HTTPS 协议加密过的请求发送给服务端。但即便设置了 Secure 标记，敏感信息也不应该通过 Cookie 传输，因为 Cookie 有其固有的不安全性，Secure 标记也无法提供确实的安全保障。
+标记为 Secure 的 Cookie 只能通过被 HTTPS 协议加密过的请求发送给服务端。但即便设置了 Secure 标记，敏感信息也不应该通过 Cookie 传输，因为 Cookie 有其固有的不安全性，Secure 标记也无法提供确实的安全保障
 
 ### 8. Session
 
-除了可以将用户信息通过 Cookie 存储在用户浏览器中，也可以利用 Session 存储在服务器端，存储在服务器端的信息更加安全。
+除了可以将用户信息通过 Cookie 存储在用户浏览器中，也可以利用 Session 存储在服务器端，存储在服务器端的信息更加安全
 
-Session 可以存储在服务器上的文件、数据库或者内存中。也可以将 Session 存储在 Redis 这种内存型数据库中，效率会更高。
+Session 可以存储在服务器上的文件、数据库或者内存中。也可以将 Session 存储在 Redis 这种内存型数据库中，效率会更高
 
 使用 Session 维护用户登录状态的过程如下：
 
-- 用户进行登录时，用户提交包含用户名和密码的表单，放入 HTTP 请求报文中；
+- 用户进行登录时，用户提交包含用户名和密码的表单，放入 HTTP 请求报文中
 - 服务器验证该用户名和密码，如果正确则把用户信息存储到 Redis 中，它在 Redis 中的 Key 称为 Session ID
-- 服务器返回的响应报文的 Set-Cookie 首部字段包含了这个 Session ID，客户端收到响应报文之后将该 Cookie 值存入浏览器中；
-- 客户端之后对同一个服务器进行请求时会包含该 Cookie 值，服务器收到之后提取出 Session ID，从 Redis 中取出用户信息，继续之前的业务操作。
+- 服务器返回的响应报文的 Set-Cookie 首部字段包含了这个 Session ID，客户端收到响应报文之后将该 Cookie 值存入浏览器中
+- 客户端之后对同一个服务器进行请求时会包含该 Cookie 值，服务器收到之后提取出 Session ID，从 Redis 中取出用户信息，继续之前的业务操作
 
 应该注意 Session ID 的安全性问题，不能让它被恶意攻击者轻易获取，那么就不能产生一个容易被猜到的 Session ID 值。此外，还需要经常重新生成 Session ID。在对安全性要求极高的场景下，例如转账等操作，除了使用 Session 管理用户状态之外，还需要对用户进行重新验证，比如重新输入密码，或者使用短信验证码等方式
 
 ### 9. 浏览器禁用 Cookie
 
-此时无法使用 Cookie 来保存用户信息，只能使用 Session。除此之外，不能再将 Session ID 存放到 Cookie 中，而是使用 URL 重写技术，将 Session ID 作为 URL 的参数进行传递。
+此时无法使用 Cookie 来保存用户信息，只能使用 Session。除此之外，不能再将 Session ID 存放到 Cookie 中，而是使用 URL 重写技术，将 Session ID 作为 URL 的参数进行传递
 
 ### 10. Cookie 与 Session 选择
 
@@ -369,8 +369,8 @@ Session 可以存储在服务器上的文件、数据库或者内存中。也可
 
 ### 1. 优点
 
-- 缓解服务器压力；
-- 降低客户端获取资源的延迟：缓存通常位于内存中，读取缓存的速度更快。并且缓存在地理位置上也有可能比源服务器来得近，例如浏览器缓存。
+- 缓解服务器压力
+- 降低客户端获取资源的延迟：缓存通常位于内存中，读取缓存的速度更快。并且缓存在地理位置上也有可能比源服务器来得近，例如浏览器缓存
 
 ### 2. 实现方法
 
@@ -400,13 +400,13 @@ Cache-Control: no-cache
 
 **（三）私有缓存和公共缓存** 
 
-private 指令规定了将资源作为私有缓存，只能被单独用户所使用，一般存储在用户浏览器中。
+private 指令规定了将资源作为私有缓存，只能被单独用户所使用，一般存储在用户浏览器中
 
 ```html
 Cache-Control: private
 ```
 
-public 指令规定了将资源作为公共缓存，可以被多个用户所使用，一般存储在代理服务器中。
+public 指令规定了将资源作为公共缓存，可以被多个用户所使用，一般存储在代理服务器中
 
 ```html
 Cache-Control: public
@@ -457,42 +457,42 @@ If-Modified-Since: Wed, 21 Oct 2015 07:28:00 GMT
 
 ## 3. 连接管理
 
-<div align="center"> <img src="../../pics//HTTP1_x_Connections.png" width="800"/> </div><br>
+<img src="../../pics//HTTP1_x_Connections.png" width="800"/>
 
 ### 1. 短连接与长连接
 
-当浏览器访问一个包含多张图片的 HTML 页面时，除了请求访问 HTML 页面资源，还会请求图片资源。如果每进行一次 HTTP 通信就要新建一个 TCP 连接，那么开销会很大。
+当浏览器访问一个包含多张图片的 HTML 页面时，除了请求访问 HTML 页面资源，还会请求图片资源。如果每进行一次 HTTP 通信就要新建一个 TCP 连接，那么开销会很大
 
-长连接只需要建立一次 TCP 连接就能进行多次 HTTP 通信。
+长连接只需要建立一次 TCP 连接就能进行多次 HTTP 通信
 
-- 从 HTTP/1.1 开始默认是长连接的，如果要断开连接，需要由客户端或者服务器端提出断开，使用 `Connection : close`；
-- 在 HTTP/1.1 之前默认是短连接的，如果需要使用长连接，则使用 `Connection : Keep-Alive`。
+- 从 HTTP/1.1 开始默认是长连接的，如果要断开连接，需要由客户端或者服务器端提出断开，使用 `Connection : close`
+- 在 HTTP/1.1 之前默认是短连接的，如果需要使用长连接，则使用 `Connection : Keep-Alive` 
 
 ### 2. 流水线
 
-默认情况下，HTTP 请求是按顺序发出的，下一个请求只有在当前请求收到响应之后才会被发出。由于会受到网络延迟和带宽的限制，在下一个请求被发送到服务器之前，可能需要等待很长时间。
+默认情况下，HTTP 请求是按顺序发出的，下一个请求只有在当前请求收到响应之后才会被发出。由于会受到网络延迟和带宽的限制，在下一个请求被发送到服务器之前，可能需要等待很长时间
 
-流水线是在同一条长连接上发出连续的请求，而不用等待响应返回，这样可以避免连接延迟。
+流水线是在同一条长连接上发出连续的请求，而不用等待响应返回，这样可以避免连接延迟
 
 ## 4. 内容协商
 
-通过内容协商返回最合适的内容，例如根据浏览器的默认语言选择返回中文界面还是英文界面。
+通过内容协商返回最合适的内容，例如根据浏览器的默认语言选择返回中文界面还是英文界面
 
 ### 1. 类型
 
 **（一）服务端驱动型** 
 
-客户端设置特定的 HTTP 首部字段，例如 Accept、Accept-Charset、Accept-Encoding、Accept-Language、Content-Languag，服务器根据这些字段返回特定的资源。
+客户端设置特定的 HTTP 首部字段，例如 Accept、Accept-Charset、Accept-Encoding、Accept-Language、Content-Languag，服务器根据这些字段返回特定的资源
 
 它存在以下问题：
 
 - 服务器很难知道客户端浏览器的全部信息；
-- 客户端提供的信息相当冗长（HTTP/2 协议的首部压缩机制缓解了这个问题），并且存在隐私风险（HTTP 指纹识别技术）；
-- 给定的资源需要返回不同的展现形式，共享缓存的效率会降低，而服务器端的实现会越来越复杂。
+- 客户端提供的信息相当冗长（HTTP/2 协议的首部压缩机制缓解了这个问题），并且存在隐私风险（HTTP 指纹识别技术）
+- 给定的资源需要返回不同的展现形式，共享缓存的效率会降低，而服务器端的实现会越来越复杂
 
 **（二）代理驱动型** 
 
-服务器返回 300 Multiple Choices 或者 406 Not Acceptable，客户端从中选出最合适的那个资源。
+服务器返回 300 Multiple Choices 或者 406 Not Acceptable，客户端从中选出最合适的那个资源
 
 ### 2. Vary
 
@@ -594,23 +594,23 @@ HTTP/1.1 使用虚拟主机技术，使得一台服务器拥有多个域名，�
 
 代理服务器分为正向代理和反向代理两种：
 
-- 用户察觉得到正向代理的存在。
+- 用户察觉得到正向代理的存在
 
-<div align="center"> <img src="../pics//a314bb79-5b18-4e63-a976-3448bffa6f1b.png" width=""/> </div><br>
+<img src="../../pics//a314bb79-5b18-4e63-a976-3448bffa6f1b.png" width=""/>
 
-- 而反向代理一般位于内部网络中，用户察觉不到。
+- 而反向代理一般位于内部网络中，用户察觉不到
 
-<div align="center"> <img src="../pics//2d09a847-b854-439c-9198-b29c65810944.png" width=""/> </div><br>
+<img src="../../pics//2d09a847-b854-439c-9198-b29c65810944.png" width=""/>
 
 ### 2. 网关
 
-与代理服务器不同的是，网关服务器会将 HTTP 转化为其它协议进行通信，从而请求其它非 HTTP 服务器的服务。
+与代理服务器不同的是，网关服务器会将 HTTP 转化为其它协议进行通信，从而请求其它非 HTTP 服务器的服务
 
 ### 3. 隧道
 
-- 使用 SSL 等加密手段，在客户端和服务器之间建立一条安全的通信线路。
+- 使用 SSL 等加密手段，在客户端和服务器之间建立一条安全的通信线路
 
-- HTTP隧道是一种利用HTTP或者是HTTPS把多种网络协议封装起来进行通信的技术。因此，HTTP协议扮演了一个打通用于通信的网络协议的管道的包装器的角色。把其他协议的请求掩盖成HTTP的请求就是HTTP隧道。
+- HTTP隧道是一种利用HTTP或者是HTTPS把多种网络协议封装起来进行通信的技术。因此，HTTP协议扮演了一个打通用于通信的网络协议的管道的包装器的角色。把其他协议的请求掩盖成HTTP的请求就是HTTP隧道
 
 # 六、HTTPs
 
@@ -624,7 +624,7 @@ HTTPs 并不是新协议，而是让 HTTP 先和 SSL（Secure Sockets Layer）�
 
 通过使用 SSL，HTTPs 具有了加密（防窃听）、认证（防伪装）和完整性保护（防篡改）
 
-<div align="center"> <img src="../pics//ssl-offloading.jpg" width="700"/> </div><br>
+<img src="../../pics//ssl-offloading.jpg" width="700"/>
 
 ## 加密
 
@@ -634,10 +634,10 @@ HTTPs 并不是新协议，而是让 HTTP 先和 SSL（Secure Sockets Layer）�
 
 对称密钥加密（Symmetric-Key Encryption），加密和解密使用同一密钥。
 
-- 优点：运算速度快；
-- 缺点：无法安全地将密钥传输给通信方。
+- 优点：运算速度快
+- 缺点：无法安全地将密钥传输给通信方
 
-<div align="center"> <img src="../../pics//7fffa4b8-b36d-471f-ad0c-a88ee763bb76.png" width="600"/> </div><br>
+<img src="../../pics//7fffa4b8-b36d-471f-ad0c-a88ee763bb76.png" width="600"/>
 
 ### 2.非对称密钥加密
 
@@ -648,9 +648,9 @@ HTTPs 并不是新协议，而是让 HTTP 先和 SSL（Secure Sockets Layer）�
 非对称密钥除了用来加密，还可以用来进行签名。因为私有密钥无法被其他人获取，因此通信发送方使用其私有密钥进行签名，通信接收方使用发送方的公开密钥对签名进行解密，就能判断这个签名是否正确。
 
 - 优点：可以更安全地将公开密钥传输给通信发送方；
-- 缺点：运算速度慢。
+- 缺点：运算速度慢
 
-<div align="center"> <img src="../../pics//39ccb299-ee99-4dd1-b8b4-2f9ec9495cb4.png" width="600"/> </div><br>
+<img src="../../pics//39ccb299-ee99-4dd1-b8b4-2f9ec9495cb4.png" width="600"/>
 
 ### 3. HTTPs 采用的加密方式
 
@@ -674,22 +674,22 @@ HTTPs 采用混合的加密机制，使用非对称密钥加密用于传输对�
 
 ## 完整性保护
 
-SSL 提供报文摘要功能来进行完整性保护。
+SSL 提供报文摘要功能来进行完整性保护
 
-HTTP 也提供了 MD5 报文摘要功能，但不是安全的。例如报文内容被篡改之后，同时重新计算 MD5 的值，通信接收方是无法意识到发生了篡改。
+HTTP 也提供了 MD5 报文摘要功能，但不是安全的。例如报文内容被篡改之后，同时重新计算 MD5 的值，通信接收方是无法意识到发生了篡改
 
-HTTPs 的报文摘要功能之所以安全，是因为它结合了加密和认证这两个操作。试想一下，加密之后的报文，遭到篡改之后，也很难重新计算报文摘要，因为无法轻易获取明文。
+HTTPs 的报文摘要功能之所以安全，是因为它结合了加密和认证这两个操作。试想一下，加密之后的报文，遭到篡改之后，也很难重新计算报文摘要，因为无法轻易获取明文
 
 ## HTTPs 的缺点
 
-- 因为需要进行加密解密等过程，因此速度会更慢；
-- 需要支付证书授权的高额费用。
+- 因为需要进行加密解密等过程，因此速度会更慢
+- 需要支付证书授权的高额费用
 
 ## HTTPS与HTTP的区别
 
 - HTTPS协议需要到CA申请证书，一般免费证书很少，需要交费
 - HTTP协议运行在TCP之上，所有传输的内容都是明文，HTTPS运行在SSL/TLS之上，SSL/TLS运行在TCP之上，所有传输的内容都经过加密的
-- HTTP和HTTPS使用的是完全不同的连接方式，用的端口也不一样，前者是80，后者是443。
+- HTTP和HTTPS使用的是完全不同的连接方式，用的端口也不一样，前者是80，后者是443
 - HTTPS可以有效的防止运营商劫持，解决了防劫持问题
 
 # 七、HTTP/2.0
@@ -708,7 +708,7 @@ HTTPs 的报文摘要功能之所以安全，是因为它结合了加密和认�
   - **错误通知的管理**： 在HTTP1.1中新增了24个错误状态响应码，如409（Conflict）表示请求的资源与资源的当前状态发生冲突；410（Gone）表示服务器上的某个资源被永久性的删除
   - **Host头处理**： 
     - HTTP1.0 认为每台服务器都绑定唯一的 IP 地址，因此，请求消息中的URL并没有传递主机名
-    - HTTP1.1的请求消息和响应消息都支持 Host 头域，且请求消息中如果没有 Host 头域会报告一个错误
+    - HTTP1.1 的请求消息和响应消息都支持 Host 头域，且请求消息中若没有 Host 头域会报告一个错误
   - **长连接**： 
     - HTTP 1.1 支持长连接和请求的流水线处理，在一个TCP连接上可以传送多个HTTP请求和响应，减少了建立和关闭连接的消耗和延迟，在HTTP1.1中默认开启Connection： keep-alive，一定程度上弥补了HTTP1.0每次请求都要创建连接的缺点
 
@@ -749,7 +749,6 @@ HTTP/1.x 实现简单是以牺牲性能为代价的：
 HTTP/2.0 将报文分成 HEADERS 帧和 DATA 帧，它们都是二进制格式的。
 
 <div align="center"> <img src="../../pics//86e6a91d-a285-447a-9345-c5484b8d0c47.png" width="400"/> </div><br>
-
 在通信过程中，只会有一个 TCP 连接存在，它承载了任意数量的双向数据流（Stream）
 
 - 一个数据流（Stream）都有一个唯一标识符和可选的优先级信息，用于承载双向信息
@@ -763,7 +762,6 @@ HTTP/2.0 将报文分成 HEADERS 帧和 DATA 帧，它们都是二进制格式�
 HTTP/2.0 在客户端请求一个资源时，会把相关的资源一起发送给客户端，客户端就不需要再次发起请求了。例如客户端请求 page.html 页面，服务端就把 script.js 和 style.css 等与之相关的资源一起发给客户端
 
 <div align="center"> <img src="../../pics//e3f1657c-80fc-4dfa-9643-bf51abd201c6.png" width="800"/> </div><br>
-
 ## 4. 首部压缩
 
 HTTP/1.1 的首部带有大量信息，而且每次都要重复发送

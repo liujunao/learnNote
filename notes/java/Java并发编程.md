@@ -135,7 +135,7 @@ public class CreateThreadDemo {
 
 ### 2. 线程的切换
 
-> - 当线程进入到 synchronized 方法或者 synchronized 代码块时，线程切换到的是BLOCKED状态
+> - 当线程进入到 synchronized 方法或者 synchronized 代码块时，线程切换到的是 BLOCKED 状态
 > - 使用 java.util.concurrent.locks 下 lock 进行加锁时，线程切换的是 WAITING 或 TIMED_WAITING 状态，因为 lock 会调用 LockSupport 方法
 
 ![](../../pics/concurrent/concurrent_1.png)
@@ -696,7 +696,7 @@ public class FinalReferenceDemo {
 
 - **对 final 修饰的对象的成员域写操作**： 在构造函数内对**一个final修饰的对象的成员域的写入，与随后在构造函数之外把这个被构造的对象的引用赋给一个引用变量**，这两个操作是不能被重排序的
 
-  > 线程线程 A 执行 wirterOne 方法，执行完后线程 B 执行 writerTwo 方法，然后线程 C 执行 reader 方法
+  > 线程 A 执行 wirterOne 方法，执行完后线程 B 执行 writerTwo 方法，然后线程 C 执行 reader 方法
   >
   > ![](../../pics/concurrent/concurrent_19.png)
 
@@ -1153,6 +1153,8 @@ public final boolean hasQueuedPredecessors() {
 }
 ```
 
+### 3. 与 synchronized 对比
+
 > ReentrantLock 与 synchronized的区别： 
 >
 > - 与 synchronized 相比，ReentrantLock 提供了更多，更加全面的功能，具备更强的扩展性
@@ -1294,7 +1296,7 @@ public static class ReadLock implements Lock, java.io.Serializable {
 
 ### 3. 读锁
 
-> 读锁为一个可重入的共享锁，它能够被多个线程同时持有，在没有其他写线程访问时，读锁总是或获取成功
+> 读锁为一个可重入的共享锁，它能够被多个线程同时持有，在没有其他写线程访问时，读锁总是获取成功
 
 - **读锁的获取**： 
 
@@ -3362,7 +3364,6 @@ public ThreadPoolExecutor(int corePoolSize, int maximumPoolSize, long keepAliveT
   }
   ```
 
-  
 
 ## 3. FutureTask
 

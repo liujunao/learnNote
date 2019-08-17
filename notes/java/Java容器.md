@@ -1217,6 +1217,12 @@ static final class TreeNode<K,V> extends LinkedHashMap.Entry<K,V> {
 - HashMap 的迭代器是 fail-fast 迭代器
 - HashMap 不能保证随着时间的推移 Map 中的元素次序是不变的
 
+#### 9. rehash 死循环
+
+推荐阅读： ==[HashMap的死循环](https://www.jianshu.com/p/1e9cf0ac07f4)== 
+
+![](../../pics/collection/hashmap_1.png)
+
 ### 2. LinkedHashMap
 
 #### 1. 概述
@@ -2221,7 +2227,7 @@ public Object clone() {
 
 ### 2. LinkedHashSet
 
-- LinkedHashSe t是非同步的
+- LinkedHashSet 是非同步的
 - LinkedHashSet 是有序的，分别是插入顺序和访问顺序
 
 - LinkedHashSet 继承于HashSet，内部基于 LinkedHashMap实现
