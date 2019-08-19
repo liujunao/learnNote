@@ -1,4 +1,12 @@
-#一、概览
+-  **按操作方式分类结构图**：
+
+  ![](../../pics/io/io_4.png) 
+
+- **按操作对象分类结构图**：
+
+  ![](../../pics/io/io_5.png)
+
+# 一、概览
 
 Java 的 I/O 大概可以分成以下几类：
 
@@ -9,7 +17,7 @@ Java 的 I/O 大概可以分成以下几类：
 - **网络操作**：Socket
 - **新的输入/输出**：NIO
 
-![](../pics/javaio.png) 
+![](../../pics/javaio.png) 
 
 # 二、磁盘操作
 
@@ -35,7 +43,7 @@ public static void listAllFiles(File dir) {
 
 # 三、节点流(文件流)
 
-##1. 字节操作
+## 1. 字节操作
 
 - `FileInputStream `
 
@@ -93,7 +101,7 @@ public static void listAllFiles(File dir) {
   }
   ```
 
-- FileInputStream 与 FileOutputStream 同时使用： 实现文件复制
+- `FileInputStream` 与 `FileOutputStream` 同时使用： 实现文件复制
 
   ```java
   // 从硬盘读取一个文件，并写入到另一个位置（相当于文件的复制）
@@ -206,7 +214,7 @@ public static void listAllFiles(File dir) {
   }
   ```
 
-#四、缓冲流(处理流)
+# 四、缓冲流(处理流)
 
 ## 1. 字节流
 
@@ -296,9 +304,9 @@ public void testBufferedReader(){
 }
 ```
 
-#五、其他流
+# 五、其他流
 
-##1. 转换流
+## 1. 转换流
 
 不管是磁盘还是网络传输，**最小的存储单元都是字节**： 
 
@@ -356,12 +364,12 @@ public void test1(){
 ## 2. 标准输入输出流
 
 - `System.in 和 System.out` 分别代表系统标准的输入和输出设备
-   - System.in 的类型是 InputStream
-   - System.out 的类型是 PrintStream
+   - `System.in` 的类型是 `InputStream`
+   - `System.out` 的类型是 `PrintStream`
 - 默认输入设备是键盘，输出设备是显示器
 - 通过 System 类的 `setIn，setOut` 方法对默认设备进行改变
-   - public static void setIn(InputStream in)
-   - public static void setOut(PrintStream out)
+   - `public static void setIn(InputStream in)`
+   - `public static void setOut(PrintStream out)`
 
 ```java
 /*
@@ -408,9 +416,9 @@ public void test2(){
 **PrintStream(字节打印流)和PrintWriter(字符打印流)**
 
 - 提供了一系列重载的print和println方法，用于多种数据类型的输出
-- PrintStream和PrintWriter的输出不会抛出异常
-- PrintStream和PrintWriter有自动flush功能
-- System.out返回的是PrintStream的实例
+- `PrintStream` 和 `PrintWriter` 的输出不会抛出异常
+- `PrintStream` 和 `PrintWriter` 有自动flush功能
+- `System.out` 返回的是 `PrintStream` 的实例
 
 ```java
 // 打印流=> 字节流：PrintStream 字符流：PrintWriter
@@ -440,7 +448,7 @@ public void printStreamWriter() {
 
 数据流有两个类：(用于读取和写出基本数据类型的数据）
 
-- `DataInputStream 和 DataOutputStream` 
+- `DataInputStream` 和 `DataOutputStream` 
 
 ```java
 //数据流：用来处理基本数据类型、String、字节数组的数据:DataInputStream DataOutputStream
@@ -494,9 +502,9 @@ public void testData1(){
 
 - `ObjectInputStream和OjbectOutputSteam`：用于存储和读取对象的处理流，可以把 Java 中的对象写入到数据源中，也能把对象从数据源中还原回来
 
-- ObjectOutputStream和ObjectInputStream不能序列化 `static和transient` 修饰的成员变量
-  - **序列化(Serialize)**：用 ObjectOutputStream 类将一个Java对象写入IO流中
-  - 反序列化(Deserialize)：用 ObjectInputStream 类从IO流中恢复该Java对象
+- `ObjectOutputStream` 和 `ObjectInputStream` 不能序列化 `static和transient` 修饰的成员变量
+  - **序列化(Serialize)**：用 `ObjectOutputStream` 类将一个Java对象写入IO流中
+  - **反序列化(Deserialize)**：用 `ObjectInputStream` 类从IO流中恢复该Java对象
 
 ```java
 public class TestObjectInputOutputStream {
@@ -584,8 +592,8 @@ class Pet implements Serializable{
 ## 6. RandomAccessFile 类
 
 1. 构造器
-   - public RandomAccessFile(File file, String mode) 
-   - public RandomAccessFile(String name, String mode) 
+   - `public RandomAccessFile(File file, String mode)` 
+   - `public RandomAccessFile(String name, String mode)` 
 
 
 2. 创建 RandomAccessFile 类实例需要指定一个 mode 参数，该参数指定 RandomAccessFile 的访问模式：
@@ -714,8 +722,8 @@ public class TestRandomAccessFile {
   > 实现 Serializable 接口的类，需设置 `serialVersionUID` 用来表明类的不同版本间的兼容性
 
 - **方式**： 
-  - 序列化：ObjectOutputStream.writeObject()
-  - 反序列化：ObjectInputStream.readObject()
+  - 序列化：`ObjectOutputStream.writeObject()`
+  - 反序列化：`ObjectInputStream.readObject()`
 
 ## 2. Serializable 
 
@@ -812,7 +820,7 @@ public static void main(String[] args) throws IOException {
 
 服务器和客户端通过 InputStream 和 OutputStream 进行输入输出
 
-<img src="../pics//ClienteServidorSockets1521731145260.jpg"/>
+<img src="../../pics//ClienteServidorSockets1521731145260.jpg"/>
 
 ## 4. Datagram
 
@@ -844,7 +852,7 @@ public static void main(String[] args) throws IOException {
 
 - **缓冲区实质上是一个数组**
 
-####1. 缓冲区(Buffer)简介
+#### 1. 缓冲区(Buffer)简介
 
 在 Java NIO 中，缓冲区负责数据的存取，用于存储不同数据类型的数据
 
@@ -859,7 +867,7 @@ public static void main(String[] args) throws IOException {
 
 上述缓冲区的管理方式几乎一致，**通过 allocate() 获取缓冲区**
 
-####2. 缓冲区存取数据的核心方法
+#### 2. 缓冲区存取数据的核心方法
 
  * `put()`: 存入数据到缓冲区中
  * `get()`: 获取缓冲区中的数据
@@ -895,7 +903,7 @@ public void test2(){
 }
 ```
 
-####3. 缓冲区状态变量
+#### 3. 缓冲区状态变量
 
 - `capacity`：表示 Buffer 最大数据容量，缓冲区容量不能为负，并且创建后不能更改
 - `position`：当前已经读写的字节数，下一个要读取或写入的数据索引
@@ -908,23 +916,23 @@ public void test2(){
 
 ① 新建一个大小为 8 个字节的缓冲区，此时 position 为 0，而 limit = capacity = 8。capacity 变量不会改变
 
-<div align="center"> <img src="../pics//1bea398f-17a7-4f67-a90b-9e2d243eaa9a.png"/> </div><br>
+<img src="../../pics//1bea398f-17a7-4f67-a90b-9e2d243eaa9a.png"/>
 
 ② 从输入通道中读取 5 个字节数据写入缓冲区中，此时 position 移动设置为 5，limit 保持不变
 
-<div align="center"> <img src="../pics//80804f52-8815-4096-b506-48eef3eed5c6.png"/> </div><br>
+<img src="../../pics//80804f52-8815-4096-b506-48eef3eed5c6.png"/>
 
 ③ 在将缓冲区的数据写到输出通道之前，需要先调用` flip() `方法切换到读取数据模式，这个方法将 limit 设置为当前 position，并将 position 设置为 0
 
-<div align="center"> <img src="../pics//952e06bd-5a65-4cab-82e4-dd1536462f38.png"/> </div><br>
+<img src="../../pics//952e06bd-5a65-4cab-82e4-dd1536462f38.png"/>
 
 ④ 调用`get()`方法从缓冲区中取 4 个字节到输出缓冲中，此时 position 设为 5
 
-<div align="center"> <img src="../pics//b5bdcbe2-b958-4aef-9151-6ad963cb28b4.png"/> </div><br>
+<img src="../../pics//b5bdcbe2-b958-4aef-9151-6ad963cb28b4.png"/>
 
 ⑤ 最后需要调用 `clear() ` 方法来清空缓冲区，此时 position 和 limit 都被设置为最初位置。但是缓冲区中的数据依然存在，但数据处于“被遗忘”状态
 
-<div align="center"> <img src="../pics//67bf5487-c45d-49b6-b9c0-a058d8c68902.png"/> </div><br>
+<img src="../../pics//67bf5487-c45d-49b6-b9c0-a058d8c68902.png"/>
 
 ```java
 public void test1(){
@@ -984,14 +992,14 @@ public void test1(){
 }
 ```
 
-####4. 直接与非直接缓冲区
+#### 4. 直接与非直接缓冲区
 
 - **非直接缓冲区**：通过 allocate() 方法分配缓冲区，将缓冲区建立在 JVM 的内存中
 - **直接缓冲区**：通过 allocateDirect() 方法分配直接缓冲区，将缓冲区建立在物理内存中，可以提高效率
 
-![](../pics/nio_buffer1.png) 
+![](../../pics/nio_buffer1.png) 
 
-![](../pics/nio_buffer2.png)
+![](../../pics/nio_buffer2.png)
 
 ```java
 public void test3(){
@@ -1015,7 +1023,7 @@ public void test3(){
 - 用于源节点与目标节点的连接
 - 在 Java NIO 中负责缓冲区中数据的传输，Channel 本身不存储数据，因此需要配合缓冲区进行传输
 
-####2. 通道的主要实现类
+#### 2. 通道的主要实现类
 
 java.nio.channels.Channel 接口：
 *   `FileChannel`： 用于读取、写入、映射和操作文件的通道
@@ -1023,7 +1031,7 @@ java.nio.channels.Channel 接口：
  *   `ServerSocketChannel`： 可以监听新进来的 TCP 连接，对每一个新进来的连接都会创建一个SocketChannel
  *   `DatagramChannel`： 通过 UDP 读写网络中的数据通道
 
-####3. 获取通道
+#### 3. 获取通道
 
 - 方法： `getChannel()`
 
@@ -1117,7 +1125,7 @@ public void test2() throws IOException{//2127-1902-1777
 }
 ```
 
-####4. 通道之间的数据传输
+#### 4. 通道之间的数据传输
 
  * `transferFrom()`：将数据从源通道传输到其他 Channel 中
  * `transferTo()`：将数据从源通道传输到其他 Channel 中
@@ -1139,7 +1147,7 @@ public void test3() throws IOException{
 }
 ```
 
-####5. 分散(Scatter)与聚集(Gather)
+#### 5. 分散(Scatter)与聚集(Gather)
 
  * **分散读取**：将通道的数据分散到多个缓冲区，按缓冲区顺序，从 Channel 中读取的数据依次将Buffer 填满
  * **聚集写入**：将多个缓冲区的数据聚集到通道中，按缓冲区顺序，写入 position 和 limit 间的数据到 Channel
@@ -1169,7 +1177,7 @@ public void test4() throws IOException{
 }
 ```
 
-####6. 字符集：Charset
+#### 6. 字符集：Charset
 
  * 编码：字符串 -> 字节数组
  * 解码：字节数组  -> 字符串
@@ -1252,7 +1260,7 @@ public static void fastCopy(String src, String dist) throws IOException {
 - **传统 IO 流是阻塞式的**： 当一个线程调用 read() 或write() 时，该线程被阻塞，直到有数据被读取或写入
 - **Java NIO 是非阻塞模式的**： 当线程从某通道进行读写数据时，若没有数据可用，该线程可以进行其他任务
 
-####1. 使用 NIO 完成网络通信的三个核心：
+#### 1. 使用 NIO 完成网络通信的三个核心
 
 1. 通道(Channel)：负责连接，java.nio.channels.Channel 接口之 `SelectableChannel`：
    - SocketChannel
@@ -1524,7 +1532,7 @@ public class TestPipe {
 
 - 增强了对文件处理和文件系统特性的支持
 
-###1. 自动资源管理
+### 1. 自动资源管理
 
 - **自动资源管理(Automatic Resource Management, ARM)**：
   - 以 try 语句的扩展版为基础，当 try 代码块结束时，**自动释放资源**
@@ -1610,7 +1618,7 @@ public void test8(){
 
   > 只有套接字 Channel 才能配置为非阻塞，而 FileChannel 不能，为 FileChannel 配置非阻塞也没有意义
 
-<img src="../pics//4d930e22-f493-49ae-8dff-ea21cd6895dc.png"/>
+<img src="../../pics//4d930e22-f493-49ae-8dff-ea21cd6895dc.png"/>
 
 ### 1. 创建选择器
 
@@ -1694,7 +1702,7 @@ while (true) {
 }
 ```
 
-###6. Selector 的常用方法
+### 6. Selector 的常用方法
 
 - `Set<SelectionKey> keys()`： 所有的 SelectionKey 集合，代表注册在该 Selector上的 Channel
 - `selectedKeys()`：被选择的 SelectionKey 集合，返回此 Selector 的已选择键集
@@ -1789,21 +1797,3 @@ NIO 与普通 I/O 的区别主要有以下两点：
 
 - NIO 是非阻塞的
 - NIO 面向块，I/O 面向流
-
-# 面试
-
-# 九、BIO、NIO、AIO
-
-- **[Java 网络IO编程总结](https://blog.csdn.net/caohongshuang/article/details/79455391)** 
-- **[BIO、NIO、AIO 区别和应用场景](https://blog.csdn.net/lisha006/article/details/82856906)**
-
-## 1. BIO
-
-![](../pics/io_1.png)
-
-## 2. NIO
-
-![](../pics/io_2.png)
-
-## 3. AIO
-

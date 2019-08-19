@@ -1,3 +1,5 @@
+- 推荐阅读： [java 8 新特性]([https://snailclimb.gitee.io/javaguide/#/java/What's%20New%20in%20JDK8/Java8Tutorial](https://snailclimb.gitee.io/javaguide/#/java/What's New in JDK8/Java8Tutorial)) 
+
 # 一、Java8
 
 ## 1. Lambda 表达式
