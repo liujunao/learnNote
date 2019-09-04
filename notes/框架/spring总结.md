@@ -16,6 +16,15 @@
 
   > 实际上 Spring 自身也提供了**展现层的 SpringMVC 和 持久层的 Spring JDBC** 
 
+> Spring 的 6 个特征:
+>
+> - **核心技术** ：依赖注入(DI)，AOP，事件(events)，资源，i18n，验证，数据绑定，类型转换，SpEL
+> - **测试** ：模拟对象，TestContext框架，Spring MVC 测试，WebTestClient
+> - **数据访问** ：事务，DAO支持，JDBC，ORM，编组XML
+> - **Web支持** : Spring MVC和Spring WebFlux Web框架
+> - **集成** ：远程处理，JMS，JCA，JMX，电子邮件，任务，调度，缓存
+> - **语言** ：Kotlin，Groovy，动态语言
+
 ## 2. spring 优点
 
 - **方便解耦，简化开发**： 通过 Spring 提供的 IoC 容器，用户可以将对象之间的依赖关系交由 Spring 进行控制
@@ -87,11 +96,13 @@
 
 ## 6. spring 用到的设计模式
 
-- **工厂模式**：BeanFactory 就是简单工厂模式的体现，用来创建对象的实例
-- **单例模式**：Bean 默认为单例模式
-- **代理模式**：Spring AOP 功能用到了 JDK 的动态代理和 CGLIB 字节码生成技术
-- **模板方法**：用来解决代码重复的问题，如： RestTemplate, JmsTemplate, JpaTemplate
-- **观察者模式**：一对多的依赖关系，当一个对象的状态改变时，所有依赖于它的对象都会得到通知并自动更新
+- **工厂设计模式**： Spring 使用工厂模式通过 `BeanFactory`、`ApplicationContext` 创建 bean 对象
+- **代理设计模式**： Spring AOP 功能的实现
+- **单例设计模式**： Spring 中的 Bean 默认都是单例
+- **模板方法模式**： Spring 中 `jdbcTemplate`、`hibernateTemplate` 等以 Template 结尾的对数据库操作的类
+- **包装器设计模式**： 我们的项目需要连接多个数据库，而且不同的客户在每次访问中根据需要会去访问不同的数据库。这种模式让我们可以根据客户的需求能够动态切换不同的数据源
+- **观察者模式**： Spring 事件驱动模型就是观察者模式很经典的一个应用
+- **适配器模式**： Spring AOP 的增强或通知(Advice)使用到了适配器模式、spring MVC 中也是用到了适配器模式适配`Controller` 
 
 # 二、Bean
 
@@ -121,7 +132,9 @@
 - **DisposableBean**：Bean 实现 DisposableBean 接口，会调用其实现的 destroy() 方法
 - **destroy-method**：如果 Bean 的 Spring 配置中配置了destroy-method 属性，会自动调用配置的销毁方法
 
-## 2. 的作用域
+![](../../pics/spring/spring_18.png)
+
+## 2. 作用域
 
 - `singleton`：默认，每个容器中只有一个 bean 实例，由 BeanFactory 自身来维护
 - `prototype`：为每一个 bean 请求提供一个实例
@@ -790,6 +803,8 @@ public static void main(String[] args) throws SQLException {
 
 # 四、AOP
 
+推荐阅读： [spring源码剖析（六）AOP实现原理剖析](https://blog.csdn.net/fighterandknight/article/details/51209822) 
+
 > AOP 的实现基于**代理模式** ， 同时支持 `CGLIB, ASPECTJ, JDK动态代理` 
 >
 > > JDK动态代理模式只能代理接口而不能代理类
@@ -1022,8 +1037,6 @@ public class CGlibAgent implements MethodInterceptor {
  */
 ```
 
-
-
 ---
 
 **原理**： 使用一个代理将对象包装起来，然后用该代理对象取代原始对象，任何对原始对象的调用都要通过代理，代理对象决定是否以及何时将方法调用转到原始对象上
@@ -1243,6 +1256,8 @@ public class CGlibAgent implements MethodInterceptor {
 
 ### 2. AspectJ
 
+> 采用动态代理技术来构建 Spring AOP 的内部机制(动态织入)，与 AspectJ(静态织入)最根本的区别
+
 - **AspectJ 配置**： 
 
   - 添加 AspectJ 类库: aopalliance.jar、aspectj.weaver.jar 和 spring-aspects.jar
@@ -1299,7 +1314,7 @@ public class CGlibAgent implements MethodInterceptor {
     > ```java
     > @AfterRunning(pointcut="execution(* *.*(..))",returning="result")
     > public void logAfterReturning(JoinPoint joinPoint,Object result){
-    >  log.info("The method " + joinPoint.getSignature().getName()
+    >  	log.info("The method " + joinPoint.getSignature().getName()
     >                            + " ends with " + result);
     > }
     > ```
@@ -1312,7 +1327,7 @@ public class CGlibAgent implements MethodInterceptor {
     > ```java
     > @AfterThrowing(pointcut="execution(* *.*(..))",throwing="e")
     > public void logAfterThrowing(JoinPoint joinPoint,Exception e){
-    >  log.info("An exception " + e + "has been throwing in " 
+    >  	log.info("An exception " + e + "has been throwing in " 
     >              + joinPoint.getSignature().getName());
     > }
     > ```
@@ -1332,31 +1347,29 @@ public class CGlibAgent implements MethodInterceptor {
     > ```java
     > @Around("execution(public int com.spring.aop.ArithmeticCalculator.*(..))")
     > public Object aroundMethod(ProceedingJoinPoint pjd){
-    > 
-    >  Object result = null;
-    >  String methodName = pjd.getSignature().getName();
-    > 
-    >  try {
-    >      //前置通知
-    >      System.out.println("The method " + methodName + " begins with " 
-    >                            + Arrays.asList(pjd.getArgs()));
-    >      //执行目标方法
-    >      result = pjd.proceed();
-    >      //返回通知
-    >      System.out.println("The method " + methodName + " ends with " 
-    >                            + result);
-    >  } catch (Throwable e) {
-    >      //异常通知
-    >      System.out.println("The method " + methodName 
-    >                            + " occurs exception:" + e);
-    >      throw new RuntimeException(e);
+    >     Object result = null;
+    >      String methodName = pjd.getSignature().getName();
+    >      try {
+    >         //前置通知
+    >          System.out.println("The method " + methodName + " begins with " 
+    >                                   + Arrays.asList(pjd.getArgs()));
+    >            //执行目标方法
+    >         result = pjd.proceed();
+    >            //返回通知
+    >            System.out.println("The method " + methodName + " ends with " 
+    >                                   + result);
+    >        } catch (Throwable e) {
+    >         //异常通知
+    >          System.out.println("The method " + methodName 
+    >                                   + " occurs exception:" + e);
+    >            throw new RuntimeException(e);
+    >     }
+    >        //后置通知
+    >      System.out.println("The method " + methodName + " ends");
+    >      return result;
     >  }
-    >  //后置通知
-    >  System.out.println("The method " + methodName + " ends");
-    >  return result;
-    > }
-    > ```
-
+    >  ```
+  
 - **方法签名**： 
 
   - `execution * com.spring.ArithmeticCalculator.*(..)`： 匹配 ArithmeticCalculator 声明的所有方法
@@ -1557,7 +1570,190 @@ public class CalculatorAspect {
   - 支持声明式事务管理
   - 和 Spring 各种数据访问抽象层很好集成
 
-## 2. 声明式事务
+## 2. 事务管理的接口
+
+### 1. PlatformTransactionManager
+
+> (平台)事务管理器
+
+```java
+Public interface PlatformTransactionManager()...{  
+    // 根据指定的传播行为，返回当前活动的事务或创建一个新事务
+    TransactionStatus getTransaction(TransactionDefinition definition) 
+        throws TransactionException; 
+    // 使用事务目前的状态提交事务
+    Void commit(TransactionStatus status) throws TransactionException;  
+    // 对执行的事务进行回滚
+    Void rollback(TransactionStatus status) throws TransactionException;  
+} 
+```
+
+Spring 中 PlatformTransactionManager 根据不同持久层框架实现所对应的接口实现类，常见如下： 
+
+![](../../pics/spring/spring_16.png)
+
+### 2. TransactionDefinition
+
+> 事务定义信息(事务隔离级别、传播行为、超时、只读、回滚规则)，即定义基本的事务属性
+
+![](../../pics/spring/spring_17.png)
+
+```java
+public interface TransactionDefinition {
+    // 返回事务的传播行为
+    int getPropagationBehavior(); 
+    // 返回事务的隔离级别，事务管理器根据它来控制另外一个事务可以看到本事务内的哪些数据
+    int getIsolationLevel(); 
+    //返回事务的名字
+    String getName();
+    // 返回事务必须在多少秒内完成
+    int getTimeout();  
+    // 返回是否优化为只读事务
+    boolean isReadOnly();
+} 
+```
+
+#### 1. 事务隔离级别
+
+> 定义了一个事务可能受其他并发事务影响的程度
+
+**并发事务所导致的问题**： 
+
+- **脏读**： 对于两个事物 T1、T2，T1  读取了已经被 T2 更新但还没有被提交的字段后，若 T2 回滚，T1读取的内容就是临时且无效的
+- **修改丢失**： 对于两个事物 T1、T2，T1  修改了一个字段，同时 T2 也修改了该字段，则 T1 修改的结果丢失
+- **不可重复读**： 对于两个事物 T1、T2，T1  读取了一个字段，然后 T2 更新了该字段后，T1再次读取同一个字段，值发生变化
+- **幻读**： 对于两个事物 T1、T2，T1  从一个表中读取了一个字段，然后 T2 在该表中插入了一些新的行后，如果 T1 再次读取同一个表，就会多出几行
+
+**TransactionDefinition 定义的五个隔离级别**：
+
+- `TransactionDefinition.ISOLATION_DEFAULT`： 使用底层数据库的默认隔离级别
+
+  > Mysql 默认采用的 `REPEATABLE_READ` 隔离级别
+  >
+  > Oracle 默认采用的 `READ_COMMITTED` 隔离级别
+
+- `TransactionDefinition.ISOLATION_READ_UNCOMMITTED`： 最低隔离级别(默认)，允许读取尚未提交的数据变更
+
+  > 可能会导致脏读、幻读或不可重复读
+
+- `TransactionDefinition.ISOLATION_READ_COMMITTED`： 允许读取并发事务已经提交的数据
+
+  > 可以阻止脏读，但幻读或不可重复读仍可能发生
+
+- `TransactionDefinition.ISOLATION_REPEATABLE_READ`： 确保事务可以多次从一个字段中读取相同的值，在事务持续期间，禁止其他事务对这个字段进行更新
+
+  > 可以阻止脏读和不可重复读，但幻读仍可能发生
+
+- `TransactionDefinition.ISOLATION_SERIALIZABLE`： 确保事务可以从一个表中读取相同的行，在这个事务持续期间，禁止其他事务对该表执行插入、更新、删除操作，所有并发问题都可以避免，但性能低下
+
+#### 2. 事务的传播行为
+
+> 为了解决业务层方法之间互相调用的事务问题
+>
+> - 当事务方法被另一个事务方法调用时，必须指定事务应该如何传播
+
+TransactionDefinition 定义的事务传播行为：
+
+- **支持当前事务的情况**： 
+  - `TransactionDefinition.PROPAGATION_REQUIRED`： 如果当前存在事务，则加入该事务；如果当前没有事务，则创建一个新的事务
+
+    > ![](D:/architect_learn/learnNote/pics/spring/spring_7.png)
+
+  - `TransactionDefinition.PROPAGATION_SUPPORTS`： 如果当前存在事务，则加入该事务；如果当前没有事务，则以非事务的方式继续运行
+
+  - `TransactionDefinition.PROPAGATION_MANDATORY`： 如果当前存在事务，则加入该事务；如果当前没有事务，则抛出异常(mandatory：强制性)
+
+- **不支持当前事务的情况**： 
+  - `TransactionDefinition.PROPAGATION_REQUIRES_NEW`： 创建一个新的事务，如果当前存在事务，则把当前事务挂起
+
+    > ![](D:/architect_learn/learnNote/pics/spring/spring_8.png)
+
+  - `TransactionDefinition.PROPAGATION_NOT_SUPPORTED`： 以非事务方式运行，如果当前存在事务，则把当前事务挂起
+
+  - `TransactionDefinition.PROPAGATION_NEVER`： 以非事务方式运行，如果当前存在事务，则抛出异常
+
+**其他情况：**
+
+- `TransactionDefinition.PROPAGATION_NESTED`： 如果当前存在事务，则创建一个事务作为当前事务的嵌套事务来运行；如果当前没有事务，则等价于 TransactionDefinition.PROPAGATION_REQUIRED
+
+---
+
+```java
+@Service("bookShopService")
+public class BookShopServiceImpl implements BookShopService {
+	@Autowired
+	private BookShopDao bookShopDao;
+	
+	//添加事务注解
+	@Transactional(propagation=Propagation.REQUIRES_NEW,
+			isolation=Isolation.READ_COMMITTED,
+			readOnly=false,
+			timeout=3)
+	@Override
+	public void purchase(String username, String isbn) {
+		try {
+			Thread.sleep(5000);
+		} catch (InterruptedException e) {}
+		//1. 获取书的单价
+		int price = bookShopDao.findBookPriceByIsbn(isbn);
+		//2. 更新数的库存
+		bookShopDao.updateBookStock(isbn);
+		//3. 更新用户余额
+		bookShopDao.updateUserAccount(username, price);
+	}
+}
+```
+
+#### 3. 事务超时
+
+> 一个事务允许执行的最长时间
+
+- **事务超时**： 指一个事务所允许执行的最长时间，如果超过该时间限制但事务还没有完成，则自动回滚事务
+
+  > 在 TransactionDefinition 中以 int 的值来表示超时时间，其单位是秒
+
+#### 4. 事务只读
+
+> 对事物资源是否执行只读操作
+
+- **事务只读属性**： 指对事务性资源进行只读操作或读写操作
+
+- **事务性资源**： 指被事务管理的资源，比如数据源、 JMS 资源，以及自定义的事务性资源等等
+
+> 若只对事务性资源进行只读操作，则可以将事务标志为只读，以提高事务处理的性能
+>
+> - 在 TransactionDefinition 中以 boolean 类型来表示该事务是否只读
+
+#### 5. 回滚规则
+
+> 定义事务回滚规则
+
+- **回滚规则**： 定义哪些异常会导致事务回滚而哪些不会
+
+  > - 默认情况下，事务遇到**运行期异常会回滚**，遇到检查型异常不会回滚
+  >
+  > - 但可以声明事务在遇到特定的检查型异常时回滚，还可以声明事务遇到特定的异常不回滚
+
+- **回滚属性**： 
+  - 默认情况下，只有未检查异常(`RuntimeException和Error`类型的异常)会导致事务回滚
+  - @Transactional 注解的 `rollbackFor 和 noRollbackFor` 属性定义回滚类型
+  - xml 文件中，可以在 `<tx:method>` 元素中指定回滚规则，可用用逗号分隔多个规则
+
+### 3. TransactionStatus
+
+> 事务运行状态
+
+```java
+public interface TransactionStatus{
+    boolean isNewTransaction(); // 是否是新的事物
+    boolean hasSavepoint(); // 是否有恢复点
+    void setRollbackOnly();  // 设置为只回滚
+    boolean isRollbackOnly(); // 是否为只回滚
+    boolean isCompleted; // 是否已完成
+} 
+```
+
+## 3. 声明式事务
 
 **步骤**： 
 
@@ -1595,75 +1791,7 @@ public class CalculatorAspect {
   }
   ```
 
-## 3. 事务的传播
-
-- 当**事务方法被另一个事务方法调用**时，必须指定事务应该如何传播；事务的传播行为可以由传播属性指定
-
-**Spring 支持的事务传播行为**： 
-
-- `REQUIRED`： 如果有事务在运行，当前的方法就在这个事务内运行，否则就启动一个新的事务，并在自己的事务内运行
-
-  ![](../../pics/spring/spring_7.png)
-
-- `REQUIRED_NEW`： 当前的方法必须启动新事务，并在它自己的事务内运行，若有事务在运行，应该将他挂起
-
-  ![](../../pics/spring/spring_8.png)
-
-- `SUPPORTS`： 如果有事务在运行，当前的方法就在这个事务内运行，否则可以不运行在事务中
-
-- `NOT_SUPPORTED`： 当前的方法不应该运行在事务中，如果有运行的事务，将它挂起
-
-- `MANDATORY`： 当前的方法必须运行在事务内部，若没有，则抛出异常
-
-- `NEVER`： 当前方法不应该运行在事务中，若有，则抛出异常
-
-- `NESTED`： 如果有事务在运行，当前的方法就应该在这个事务的嵌套事务内运行，否则就启动一个新的事务，并在它自己的事务内运行
-
-```java
-@Service("bookShopService")
-public class BookShopServiceImpl implements BookShopService {
-	@Autowired
-	private BookShopDao bookShopDao;
-	
-	//添加事务注解
-	@Transactional(propagation=Propagation.REQUIRES_NEW,
-			isolation=Isolation.READ_COMMITTED,
-			readOnly=false,
-			timeout=3)
-	@Override
-	public void purchase(String username, String isbn) {
-		try {
-			Thread.sleep(5000);
-		} catch (InterruptedException e) {}
-		
-		//1. 获取书的单价
-		int price = bookShopDao.findBookPriceByIsbn(isbn);
-		//2. 更新数的库存
-		bookShopDao.updateBookStock(isbn);
-		//3. 更新用户余额
-		bookShopDao.updateUserAccount(username, price);
-	}
-}
-```
-
-## 4. 事务的隔离
-
-- **并发事务所导致的问题**： 
-  - **脏读**： 对于两个事物 T1、T2，T1  读取了已经被 T2 更新但还没有被提交的字段后，若 T2 回滚，T1读取的内容就是临时且无效的
-  - **不可重复读**： 对于两个事物 T1、T2，T1  读取了一个字段，然后 T2 更新了该字段后，T1再次读取同一个字段，值发生变化
-  - **幻读**： 对于两个事物 T1、T2，T1  从一个表中读取了一个字段，然后 T2 在该表中插入了一些新的行后，如果 T1 再次读取同一个表，就会多出几行
-- **Spring 支持的事务隔离级别**： 
-  - `DEFAULT`： 使用底层数据库的默认隔离级别
-  - `READ_UNCOMMITED`： 默认隔离级别，允许事务读取未被其他事务提交的变更、脏读、不可重复读、幻读
-  - `READ_COMMITED`： 只允许事务读取已被其他事务提交的变更，可以避免脏读
-  - `REPEATABLE_READ`： 确保事务可以多次从一个字段中读取相同的值，在事务持续期间，禁止其他事务对这个字段进行更新，可以避免脏读和不可重复读
-  - `SERIALIZABLE`： 确保事务可以从一个表中读取相同的行，在这个事务持续期间，禁止其他事务对该表执行插入、更新、删除操作，所有并发问题都可以避免，但性能低下
-- **回滚属性**： 
-  - 默认情况下，只有未检查异常(`RuntimeException和Error`类型的异常)会导致事务回滚
-  - @Transactional 注解的 `rollbackFor 和 noRollbackFor` 属性定义回滚类型
-  - xml 文件中，可以在 `<tx:method>` 元素中指定回滚规则，可用用逗号分隔多个规则
-
-## 5. 配置详解
+## 4. 配置详解
 
 **@Transactional 注解属性详解**： 
 
@@ -1720,6 +1848,12 @@ public class BookShopServiceImpl implements BookShopService {
 - Spring MVC 是一个基于 Java 的实现了 MVC 设计模式的请求驱动类型的轻量级Web框架
 - 通过把 Model，View，Controller 分离，将 web 层进行职责解耦，把复杂的web应用分成逻辑清晰的几部分，简化开发，减少出错，方便组内开发人员之间的配合
 
+![](../../pics/spring/spring_19.png)
+
+> - SpringMVC 框架是**以请求为驱动，围绕 Servlet 设计，将请求发给控制器，然后通过模型对象，分派器来展示请求结果视图**
+>
+> - 核心类是 DispatcherServlet，它是一个 Servlet，顶层是实现的 Servlet 接口
+
 ## 2. MVC 流程
 
 - 用户发送请求至前端控制器 DispatcherServlet
@@ -1736,23 +1870,41 @@ public class BookShopServiceImpl implements BookShopService {
 
 ![](../../pics/spring/spring_13.png)
 
-## 3. MVC 优点
+## 3. MVC 重要组件
 
-- 可以支持各种视图技术，不仅仅局限于 JSP
-- 与 Spring 框架集成（如IoC容器、AOP等）
-- 清晰的角色分配：前端控制器(dispatcherServlet) , 请求到处理器映射（handlerMapping), 处理器适配器（HandlerAdapter), 视图解析器（ViewResolver）
-- 支持各种请求资源的映射策略
+1. 前端控制器 `DispatcherServlet`，由框架提供
 
-## 4. MVC 组件
+   > - Spring MVC 的入口函数，接收请求，响应结果，相当于转发器，中央处理器
+   > - 减少其它组件间的耦合度，整个流程控制的中心，由它调用其它组件处理用户的请求
 
-- **前端控制器 DispatcherServlet**： 接收请求、响应结果，相当于转发器，减少其它组件之间的耦合度
-- **处理器映射器HandlerMapping**： 根据请求的 URL 来查找 Handler
-- **处理器适配器HandlerAdapter**： 在编写 Handler 时按照 HandlerAdapter 要求的规则去编写，这样适配器HandlerAdapter 才可以正确的去执行Handler
-- **处理器Handler**： 
-- **视图解析器 ViewResolver**： 进行视图的解析，根据视图逻辑名解析成真正的视图（view）
-- **视图 View**： View是一个接口， 实现类支持不同的视图类型（jsp，freemarker，pdf等等）
+2. 处理器映射器 `HandlerMapping`，由框架提供
 
-## 5. 与 struts2 区别
+   > - 根据请求的 url 查找 Handler
+
+3. 处理器适配器 `HandlerAdapter`
+
+   > - 按照特定规则去执行 Handler 
+   > - 通过 HandlerAdapter 对处理器进行执行（适配器模式），通过扩展适配器可以对更多类型的处理器进行执行
+
+4. 处理器 `Handler`，(需要工程师开发)
+
+   > - Handler 对具体的用户请求进行处理
+
+5. 视图解析器 `ViewResolver`，由框架提供
+
+   > 进行视图解析，根据逻辑视图名解析成真正的视图：
+   >
+   > - 首先根据逻辑视图名解析成物理视图名即具体的页面地址
+   > - 再生成 View 视图对象
+   > - 最后对 View 进行渲染将处理结果通过页面展示给用户
+   >
+   > 需要通过页面标签或页面模版技术将模型数据通过页面展示给用户，根据业务需求开发具体的页面
+
+6. 视图 `View`，(需要工程师开发)
+
+   > - View 是一个接口，实现类支持不同的 View 类型（jsp、freemarker、pdf 等）
+
+## 4. 与 struts2 区别
 
 - **springmvc 入口**： 是一个 servlet 即前端控制器（DispatchServlet）
 
@@ -1766,7 +1918,7 @@ public class BookShopServiceImpl implements BookShopService {
 
   **springmvc 通过参数解析器解析 request 请求，并给方法形参赋值**，将数据和视图封装成ModelAndView对象，最后将 ModelAndView 中的模型数据通过 reques 域传输到页面，Jsp 视图解析器默认使用 jstl
 
-## 6. 与 AJAX 相互调用
+## 5. 与 AJAX 相互调用
 
 通过 Jackson 框架可以把 Java 对象直接转化成 Js 可以识别的 Json 对象
 
@@ -1776,7 +1928,7 @@ public class BookShopServiceImpl implements BookShopService {
 - 在配置文件中配置 json 映射
 - 在接受 Ajax 方法里面可以直接返回 Object,List 等,但方法前面要加上 @ResponseBody 注解
 
-## 7. 解决 GET 与 POST 乱码
+## 6. 解决 GET 与 POST 乱码
 
 - **解决 post 请求乱码**： 在 web.xml 中配置一个 CharacterEncodingFilter 过滤器，设置成 utf-8
 
