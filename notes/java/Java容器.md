@@ -343,15 +343,12 @@ private void writeObject(java.io.ObjectOutputStream s)
     // Write out element count, and any hidden stuff
     int expectedModCount = modCount;
     s.defaultWriteObject();
-
     // Write out size as capacity for behavioural compatibility with clone()
     s.writeInt(size);
-
     // Write out all elements in the proper order.
     for (int i=0; i<size; i++) {
         s.writeObject(elementData[i]);
     }
-
     if (modCount != expectedModCount) { //不相等，则抛出异常
         throw new ConcurrentModificationException();
     }
@@ -438,7 +435,7 @@ private void writeObject(java.io.ObjectOutputStream s)
 
 #### 1. 同步
 
-- Vector 基于可变数组的 List 接口的同步实现，有序，允许存储null值
+- Vector 基于可变数组的 List 接口的同步实现，有序，允许存储 null 值
 
 - 与 ArrayList 类似，但使用 synchronized 进行同步
 
@@ -703,6 +700,17 @@ private void checkElementIndex(int index) {
 ## 2. Map
 
 ### 1. HashMap
+
+> HashMap 长度取 $2^n$ 的原因： 为了存取高效，尽量较少碰撞
+>
+> - hash 取模： `hash%length==hash&(length-1)` 的前提是 length 是 $2^n$ 
+>
+> 样例： 
+>
+> - 例如： 长度为9时候，3&(9-1)=0  2&(9-1)=0 ，都在0上，碰撞了
+> - 例如： 长度为8时候，3&(8-1)=3  2&(8-1)=2 ，不同位置上，不碰撞
+>
+> 详解： [HashMap的长度为什么要是2的n次方](https://blog.csdn.net/sidihuo/article/details/78489820) 
 
 #### 1. 概述
 
@@ -1028,6 +1036,13 @@ final Node<K,V> getNode(int hash, Object key) {
 
 #### 5. 扩容resize()
 
+> **hash 值计算方式**： 
+>
+> - jdk1.7 使用取模算法
+> - jdk1.8 使用**高位与运算**
+>
+> 因为 & 运算比 % 运算速度更快
+
 **扩容步骤**： 
 
 - 获得新容量 newCap，更新域里面的 threshold
@@ -1036,7 +1051,15 @@ final Node<K,V> getNode(int hash, Object key) {
 
 - 将旧 table 中的Node，拷贝到新容器
 
-  > 桶的 Key 的 hash 值不需要重新计算，只需要计算 hash 在新 table 的高位还是低位)
+  > 桶的 Key 的 hash 值不需要重新计算，只需要计算 hash 在新 table 是高位还是低位
+
+**JDK 1.8 的扩容优化**： 扩容数组的长度是 2 倍关系，类似 0100 到 1000 的变化，扩容时，只判断**原来的 hash 值与左移一位按位与操作是 0 或 1** 就行： 
+
+- 0： 索引就不变
+
+- 1： 索引变成原索引加上扩容前数组
+
+  ![](../../pics/collection/collection_15.png)
 
 ```java
 final Node<K,V>[] resize() {
@@ -1219,11 +1242,18 @@ static final class TreeNode<K,V> extends LinkedHashMap.Entry<K,V> {
 
 #### 9. rehash 死循环
 
+> 原因： 
+>
+> - JDK 1.7 链表新节点采用头插法，在扩容迁移元素时，会将元素顺序改变，导致两个线程中出现元素的相互指向而形成循环链表
+> - JDK 1.8 采用了尾插法，从根源上杜绝了这种情况的发生
+
 推荐阅读： ==[HashMap的死循环](https://www.jianshu.com/p/1e9cf0ac07f4)== 
 
 ![](../../pics/collection/hashmap_1.png)
 
 ### 2. LinkedHashMap
+
+推荐阅读： [Java集合详解5：深入理解LinkedHashMap和LRU缓存](https://yq.aliyun.com/articles/639913) 
 
 #### 1. 概述
 
@@ -1311,7 +1341,7 @@ public LinkedHashMap(int initialCapacity, float loadFactor, boolean accessOrder)
   }
   ```
 
-- `afterNodeAccess()`： 若 accessOrder 为true(即按访问顺序迭代)，则将最近访问的节点调整至双向队列的队尾，这就保证了按照访问顺序迭代时，Entry 的有序性
+- `afterNodeAccess()`： 若 accessOrder 为 true(即按访问顺序迭代)，则将最近访问的节点调整至双向队列的队尾，这就保证了按照访问顺序迭代时，Entry 的有序性
 
   ```java
   void afterNodeAccess(Node<K,V> e) { // move node to last
@@ -1385,11 +1415,33 @@ public LinkedHashMap(int initialCapacity, float loadFactor, boolean accessOrder)
 
 #### 4. LRU 缓存
 
+> **LinkedHashMap 实现 LRU 缓存原理**： 
+>
+> - put 和 get 方法均有调用 `recordAccess` 方法(put方法在key相同时会调用)
+>
+> - `recordAccess` 方法判断 `accessOrder` 是否为 true： 
+>
+>   - 如果是，则将当前访问的 Entry(put 的 Entry 或 get 的 Entry)移到双向链表的尾部
+>
+>     > key 不相同时，put 新 Entry 时，会调用 addEntry，它会调用 createEntry，该方法同样将新插入的元素放入到双向链表的尾部，既符合插入的先后顺序，又符合访问的先后顺序
+>
+>   - 如果为 false，表示双向链表中的元素按照 Entry 插入 LinkedHashMap 中的先后顺序排序
+>
+>     > 即每次 put 到 LinkedHashMap 中的 Entry 都放在双向链表的尾部
+>
+> JDK1.8 删除了 addentry，createEnrty 等方法
+
 以下是使用 LinkedHashMap 实现的一个 LRU 缓存：
 
 - 设定最大缓存空间 MAX_ENTRIES  为 3；
-- 使用 LinkedHashMap 的构造函数将 accessOrder 设置为 true，开启 LRU 顺序；
-- 覆盖 removeEldestEntry() 方法实现，在节点多于 MAX_ENTRIES 就会将最近最久未使用的数据移除。
+
+- 使用 LinkedHashMap 的构造函数将 accessOrder 设置为 true，开启 LRU 顺序
+
+  > false 基于插入顺序  
+  >
+  > true  基于访问顺序
+
+- 覆盖 removeEldestEntry() 方法实现，在节点多于 MAX_ENTRIES 就会将最近最久未使用的数据移除
 
 ```java
 class LRUCache<K, V> extends LinkedHashMap<K, V> {
@@ -1584,6 +1636,14 @@ public synchronized V get(Object key) {
 ```
 
 ### 4. TreeMap
+
+> 一致性 hash 算法(**环状存储**)：**[一致性哈希](https://blog.csdn.net/yin__ren/article/details/99671218)** 
+>
+> TreeMap 实现一致性 hash：
+>
+> - 将每台服务器节点采用 hash 算法划分为 160个虚拟节点(可以配置划分权重)，将划分虚拟节点采用键值有序的 TreeMap 存储
+> - 对每个 redis 服务器的物理连接采用 LinkedHashMap 存储
+> - 对Key or KeyTag 采用同样的hash算法，然后从TreeMap获取大于等于键hash值得节点，取最邻近节点存储；当key的hash值大于虚拟节点hash值得最大值时，存入第一个虚拟节点
 
 #### 1. 概述
 
@@ -1971,11 +2031,25 @@ JDK8 的 ConcurrentHashMap 实现方式： **直接使用大数组，来提高�
 
   - 若遍历的节点是 forward 节点，就向后继续遍历，再加上给节点上锁的机制，就完成了多线程的控制
 
-  - 每当处理了一个节点，就把对应节点设为 forward 节点，另一个线程看到forward，就向后遍历
+  - 每当处理了一个节点，就把对应节点设为 forward 节点，另一个线程看到 forward，就向后遍历
 
 ![](../../pics/collection/concurrentHashMap.png)
 
 **put 操作**： 
+
+> 若添加元素时，正在进行扩容操作，则该线程会加入并帮助扩容
+>
+> 推荐阅读： [ConcurrentHashMap源码分析（JDK8） 扩容实现机制](https://www.jianshu.com/p/487d00afe6ca) 
+>
+> ```java
+> final V putVal(K key, V value, boolean onlyIfAbsent) {
+>   ...
+>    //f.hash == MOVED 表示为：ForwardingNode，说明其他线程正在扩容
+>    else if ((fh = f.hash) == MOVED)
+>        tab = helpTransfer(tab, f);
+>   ...
+> }
+> ```
 
 - 若 Key 对应的数组元素为 null，则通过 CAS 操作将其设置为当前值
 - 若 Key 对应的数组元素不为null，则对该元素使用 synchronized 关键字申请锁，然后进行操作
@@ -2095,9 +2169,9 @@ public final class ConcurrentCache<K, V> {
 
 #### 1. 概述
 
-- HashSet 基于HashMap实现，底层采用HashMap来保存元素
-- HashSet 将对象存储在key中，且不允许key重复
-- HashSet 的Value是固定的
+- HashSet 基于 HashMap 实现，底层采用 HashMap 来保存元素
+- HashSet 将对象存储在key中，且不允许 key 重复
+- HashSet 的 Value 是固定的
 
 ```java
 private transient HashMap<E,Object> map;
@@ -2265,7 +2339,7 @@ public Object clone() {
 
 - 找到各个 run，并入栈
 
-- 按规则合并run
+- 按规则合并 run
 
 ### 3. 详细步骤
 

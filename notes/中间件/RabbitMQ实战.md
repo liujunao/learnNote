@@ -34,7 +34,7 @@
   > - 消息中间件能在不同平台之间通信，常被用来屏蔽各种平台及协议之间的特性，实现应用程序之间的协同
   > - **优点**： 能够在客户和服务器之间提供同步和异步的连接，并且在任何时刻都可以将消息进行传送或者存储转发
 
-![](../pics/mq/rabbitmqG1_1.png)
+![](../../pics/mq/rabbitmqG1_1.png)
 
 ## 2. 消息中间件的作用
 
@@ -61,7 +61,7 @@
 
 ##3. 相关概念
 
-![](../pics/mq/rabbitmqG1_2.png)
+![](../../pics/mq/rabbitmqG1_2.png)
 
 ### 1. 生产者与消费者
 
@@ -82,7 +82,7 @@
 
 - **Broker(消息中间件的服务节点)**：RabbitMQ Broker 可看作一个RabbitMQ 服务节点或RabbitMQ 服务实例
 
-![](../pics/mq/rabbitmqG1_3.png)
+![](../../pics/mq/rabbitmqG1_3.png)
 
 ### 2. 队列
 
@@ -224,11 +224,11 @@
 
 **AMQP 生产者流转过程**：
 
-![](../pics/mq/rabbitmqG1_4.png)
+![](../../pics/mq/rabbitmqG1_4.png)
 
 **AMQP 消费者流转过程**： 
 
-![](../pics/mq/rabbitmqG1_5.png)
+![](../../pics/mq/rabbitmqG1_5.png)
 
 
 

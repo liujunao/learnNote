@@ -102,7 +102,7 @@
 - **模板方法模式**： Spring 中 `jdbcTemplate`、`hibernateTemplate` 等以 Template 结尾的对数据库操作的类
 - **包装器设计模式**： 我们的项目需要连接多个数据库，而且不同的客户在每次访问中根据需要会去访问不同的数据库。这种模式让我们可以根据客户的需求能够动态切换不同的数据源
 - **观察者模式**： Spring 事件驱动模型就是观察者模式很经典的一个应用
-- **适配器模式**： Spring AOP 的增强或通知(Advice)使用到了适配器模式、spring MVC 中也是用到了适配器模式适配`Controller` 
+- **适配器模式**： Spring AOP 的增强或通知(Advice)使用到了适配器模式、spring MVC 中也是用到了适配器模式适配 `Controller` 
 
 # 二、Bean
 
@@ -121,9 +121,13 @@
   - 如果 Bean 实现了 BeanFactoryAware 接口，会调用它实现的 setBeanFactory() 方法，传递的是Spring工厂自身
   - 如果 Bean 实现了 ApplicationContextAware 接口，会调用 setApplicationContext(ApplicationContext)方法，传入 Spring 上下文
 
-- **BeanPostProcessor**：Bean 实现 BeanPostProcessor 接口可以进行自定义处理，将调用postProcessBeforeInitialization(Object obj, String s) 方法
+- **BeanPostProcessor**：上述三个过程 Bean 已被正确构造，使用前通过 BeanPostProcessor 进行自定义处理
 
-  > 该方法在 Bean 初始化结束时调用，所以可以被应用于内存或缓存技术
+  > - `postProcessBeforeInitialzation(Object bean, String beanName)`：先于 InitialzationBean 执行，所有 Aware 接口的注入就是在这一步完成的，称为**前置处理**
+  >
+  >   >  该方法在 Bean 初始化结束时调用，所以可以被应用于内存或缓存技术
+  >
+  > - `postProcessAfterInitialzation(Object bean, String beanName)`： 当前正在初始化的bean对象会被传递进来，在 InitialzationBean 完成后执行，因此称为**后置处理**
 
 - **InitializingBean 与 init-method**：Bean 在 Spring 配置文件中配置了 init-method 属性，则会自动调用其配置的初始化方法
 
@@ -142,7 +146,73 @@
 - `session`：与request范围类似，确保每个 session 有一个 bean 实例，session 过期后，bean 会随之失效
 - `global-session`：全局作用域，与 Portlet 应用相关，所有 Portlet 可以共用存储在 global-session 中的全局变量，全局作用域与Servlet中的session作用域效果相同
 
-## 3. 配置
+## 3. 循环依赖问题
+
+推荐阅读： [Spring-bean的循环依赖以及解决方式](https://blog.csdn.net/chejinqiang/article/details/80003868)  
+
+- 简介： 循环依赖就是循环引用，即两个或以上的 bean 互相持有对方，最终形成闭环
+
+  > 比如： A 依赖于 B，B 依赖于 C，C 又依赖于 A
+  >
+  > ![](../../pics/spring/spring_20.png)
+  >
+  > **理论依据： 基于Java的引用传递**，当获取到对象的引用时，对象的 field 或属性可以延后设置
+
+- Spring 中**循环依赖场景**： 
+  - 构造器的循环依赖 
+  - field 属性的循环依赖
+
+- **检测循环依赖**： Bean 在创建时可以**打标**，如果递归调用回来发现正在创建中，即说明 Bean 循环依赖
+
+- **解决循环依赖**： ==构造器的循环依赖没法解决==
+
+  > 解决： 使用注解 `@Autowired` 或 `setter` 方法依赖注入
+  >
+  > 底层解析： 
+  >
+  > - spring **单例对象的初始化步骤**： 
+  >
+  >   > ![](../../pics/spring/spring_21.png)
+  >   >
+  >   > 1. `createBeanInstance`：实例化，即调用对象的构造方法实例化对象
+  >   >
+  >   > 2. `populateBean`：填充属性，主要是对 bean 的依赖属性进行填充
+  >   >
+  >   > 3. `initializeBean`：调用 spring xml 中的 init 方法
+  >   >
+  >   > 由上知： **循环依赖主要发生在第一、二步**，即构造器循环依赖和 field 循环依赖
+  >
+  > - Spring为了解决单例的循环依赖问题，使用了**三级缓存**： 
+  >
+  >   > 1. 三级缓存 `singletonFactories`： 单例对象工厂的 cache 
+  >   >
+  >   >    > 解决循环依赖的诀窍是 singletonFactories，这个cache的类型是 ObjectFactory
+  >   >
+  >   > 2. 二级缓存 `earlySingletonObjects`：提前曝光的单例对象的 cache 
+  >   >
+  >   > 3. 一级缓存 `singletonObjects`：单例对象的 cache
+  >
+  > - 三级缓存流程： 
+  >
+  >   > A 的某个 field 或 setter 依赖 B 的实例对象，同时 B 的某个 field 或 setter 依赖 A 的实例对象： 
+  >   >
+  >   > 1. A 首先完成初始化的第一步，将自己提前曝光到 singletonFactories 中
+  >   >
+  >   > 2. 进行初始化的第二步时，发现自己依赖对象 B，此时尝试 get(B)，发现 B 还未 create，所以走 create B 流程
+  >   >
+  >   > 3. B 在初始化第一步时，发现依赖对象 A，于是尝试 get(A)，尝试一级缓存 singletonObjects，二级缓存 earlySingletonObjects 都没有，在三级缓存 singletonFactories 中拿到
+  >   >
+  >   >    > 由于 A 通过 ObjectFactory 将自己提前曝光，所以 B 能够通过 ObjectFactory.getObject 拿到 A 对象
+  >   >
+  >   > 4. B 拿到 A 对象后顺利完成了初始化阶段 1、2、3，完全初始化之后将自己放入到一级缓存
+  >   >
+  >   > 5. B 创建完成后返回 A 中，A 此时能拿到 B 的对象顺利完成自己的初始化阶段2、3，并放入一级缓存 singletonObjects 中
+  >   >
+  >   >    > 更加幸运的是，由于 B 拿到了 A 的对象引用，所以 B 现在 hold 住的 A 对象完成了初始化
+  >   >
+  >   > **加入 singletonFactories 三级缓存的前提是执行了构造器**，所以**构造器的循环依赖没法解决**
+
+## 4. 配置
 
 ### 1. XML 文件方式
 
@@ -670,7 +740,7 @@ public class Main {
 <context:component-scan base-package="com.spring.annotation.generic"/>
 ```
 
-##  4. 自动装配
+##  5. 自动装配
 
 - spring 中，对象无需自己查找或创建与其关联的其他对象，由容器负责把需要相互协作的对象引用赋予各个对象，使用 `autowire` 来配置自动装载模式
 
@@ -797,7 +867,7 @@ public static void main(String[] args) throws SQLException {
 
 - **构造器依赖注入**： 通过容器触发类的构造器来实现，该类有一系列参数，每个参数代表一个对其他类的依赖
 
-  > 建议采用
+  > 不建议采用
 
 - **Setter方法注入**： 容器通过调用无参构造器或无参 static 工厂方法实例化 bean 后，调用该 bean 的 setter 方法
 
@@ -807,7 +877,7 @@ public static void main(String[] args) throws SQLException {
 
 > AOP 的实现基于**代理模式** ， 同时支持 `CGLIB, ASPECTJ, JDK动态代理` 
 >
-> > JDK动态代理模式只能代理接口而不能代理类
+> > JDK 动态代理模式只能代理接口而不能代理类
 >
 > - 如果目标对象的实现类**实现了接口**，Spring AOP 将会**采用 JDK 动态代理**来生成 AOP 代理类
 > - 如果目标对象的实现类**没有实现接口**，Spring AOP 将会**采用 CGLIB** 来生成 AOP 代理类
@@ -892,8 +962,8 @@ public class StaticProxy {
 
   > ```java
   > public interface InvocationHandler {
-  >     public Object invoke(Object proxy, Method method, Object[] args) 
-  >         throws Throwable;
+  >       public Object invoke(Object proxy, Method method, Object[] args) 
+  >           throws Throwable;
   > }
   > ```
   >
@@ -1122,15 +1192,13 @@ public class CGlibAgent implements MethodInterceptor {
   
   //动态代理实现类
   public class ArithmeticCalculatorLoggingProxy {
-  	
   	//要代理的对象
   	private ArithmeticCalculator target;
-  	
-  	public ArithmeticCalculatorLoggingProxy(ArithmeticCalculator target) {
+  
+      public ArithmeticCalculatorLoggingProxy(ArithmeticCalculator target) {
   		super();
   		this.target = target;
   	}
-  
   	//返回代理对象
   	public ArithmeticCalculator getLoggingProxy(){
   		ArithmeticCalculator proxy = null;
@@ -1172,7 +1240,7 @@ public class CGlibAgent implements MethodInterceptor {
   	}
   }
   ```
-
+  
 - 测试类： 
 
   ```java
@@ -1192,6 +1260,36 @@ public class CGlibAgent implements MethodInterceptor {
   	}
   }
   ```
+
+### 4. JDK 与 CGLIB 对比
+
+**实现对比**： 
+
+- JDK 动态代理
+
+  - 利用拦截器(实现 InvocationHanlder )加上**反射机制**生成一个实现代理接口的匿名类
+
+  - 在调用具体方法前调用 InvokeHandler 来处理
+
+- CGLIB 动态代理
+
+  - 利用 ASM 开源包，对代理对象类的 class 文件加载进来，通过**修改其字节码**生成子类来处理
+
+**何时使用 JDK 还是 CGLIB**： Spring 会自动在 JDK 动态代理和 CGLIB 之间转换
+
+- 如果目标对象实现了接口，默认采用 JDK 的动态代理实现 AOP
+
+- 如果目标对象实现了接口，可以强制使用 CGLIB 实现 AOP
+
+- 如果目标对象没有实现接口，必须采用 CGLIB 库
+
+**JDK 动态代理和 CGLIB 字节码生成的区别**： 
+
+- JDK 动态代理只能对实现了接口的类生成代理，而不能针对类
+
+- CGLIB 是针对类实现代理，主要是对指定的类生成一个子类，覆盖其中的方法，并覆盖其中方法实现增强
+
+  > CGLIB 采用的是继承，所以该类或方法最好不要声明成 final
 
 ## 2. AOP
 
@@ -1216,7 +1314,7 @@ public class CGlibAgent implements MethodInterceptor {
   - AOP 框架不修改字节码，而是每次运行时在内存中临时为方法生成一个 AOP 对象
   - 这个 AOP 对象包含目标对象的全部方法，并且在特定的切点做了增强处理，并回调原对象的方法
 
-**静态代理与动态代理区别**： 生成 AOP 代理对象的时机不同，AspectJ 静态代理方式具有更好的性能，但AspectJ需要特定的编译器进行处理，而 Spring AOP 无需特定的编译器处理
+**静态代理与动态代理区别**： 生成 AOP 代理对象的时机不同，AspectJ 静态代理方式具有更好的性能，但 AspectJ 需要特定的编译器进行处理，而 Spring AOP 无需特定的编译器处理
 
 **动态代理的实现方式**： 
 
@@ -1229,26 +1327,30 @@ public class CGlibAgent implements MethodInterceptor {
 
 **AOP 术语**： 
 
-- **切面(Aspect)**： 被抽取的公共模块，切面可以使用通用类或在普通类中以 `@AspectJ` 注解实现
-
-- **连接点(Joinpoint)**： 指方法，Spring AOP中，一个连接点代表一个方法的执行
+- **连接点(Joinpoint)**： 指方法，Spring AOP 中，一个连接点代表一个方法的执行
 
   > **确定连接点**： 
   >
   > - 方法表示的程序执行点
   > - 相对点表示的方位
 
-- **通知(Advice)**： 在切面的某个特定的连接点上执行的动作
-
 - **切点(pointcut)**： AOP 通过切点定位到特定的连接点，切点通过 `org.springframework.aop.Pointcut` 接口进行描述，它使用类和方法作为连接点的查询条件
 
-  > **类比**：连接点相当于数据库中的记录，切点相当于查询条件，一个切点匹配多个连接点
+  > **类比**：连接点相当于数据库中的记录，切点相当于查询条件，**一个切点匹配多个连接点**
+
+- **通知(Advice)**： 在切面的某个特定的连接点上执行的动作
 
 - **引入(Introduction)**：声明额外的方法或某个类型的字段，Spring 允许引入新的接口到任何被代理的对象
 
+  > 特殊类型 Advice，**对原有类对象添加一个新的属性或方法**
+
+- **切面(Aspect)**： 被抽取的公共模块，切面可以使用通用类或在普通类中以 `@AspectJ` 注解实现
+
+  > **切入点和通知(引入)的结合**
+
 - **目标对象(Target)**： 被一个或者多个切面所通知的对象
 
-- **织入(Weaving)**：指把增强应用到目标对象来创建新的代理对象的过程，Spring 在运行时完成织入
+- **织入(Weaving)**：指把**增强应用到目标对象来创建新的代理对象的过程**，Spring 在运行时完成织入
 
 ![](../../pics/spring/spring_12.png)
 
@@ -1266,7 +1368,7 @@ public class CGlibAgent implements MethodInterceptor {
 
 - **AspectJ 的使用**： 在 AspectJ 注解中, 切面只是一个带有 `@Aspect` 注解的 Java 类
 
-  > **让通知访问当前连接点的细节**： 在通知方法中声明一个类型为 `JoinPoint` 的参数，然后就能访问链接细节
+  > **让通知访问当前连接点的细节**： 在通知方法中声明一个类型为 `JoinPoint` 的参数，然后访问链接细节
 
   - `@Before`： **前置通知**，在方法执行之前执行
 
@@ -1380,7 +1482,7 @@ public class CGlibAgent implements MethodInterceptor {
 
     **若目标类与接口与该切面在同一个包中，可以省略包名**
 
-  - `execution public * ArithmeticCalculator.*(..)`： 匹配 ArithmeticCalculator **接口**的所有公有方法
+  - `execution public * ArithmeticCalculator.*(..)`： 匹配 ArithmeticCalculator **接口**所有公有方法
 
   - `execution public double ArithmeticCalculator.*(..)`： 匹配 ArithmeticCalculator 中返回 double 类型数值的方法
 
@@ -1696,7 +1798,7 @@ public class BookShopServiceImpl implements BookShopService {
 		} catch (InterruptedException e) {}
 		//1. 获取书的单价
 		int price = bookShopDao.findBookPriceByIsbn(isbn);
-		//2. 更新数的库存
+		//2. 更新书的库存
 		bookShopDao.updateBookStock(isbn);
 		//3. 更新用户余额
 		bookShopDao.updateUserAccount(username, price);

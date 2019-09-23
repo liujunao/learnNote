@@ -2533,11 +2533,11 @@ end repeat 【标签】;
 
   - `show variables like '%char%';`
 
-  ![](../pics/mysql/mysqlG1_1.png)
+  ![](../../pics/mysql/mysqlG1_1.png)
 
   - `show variables like 'collation_%';`
 
-    ![](../pics/mysql/mysqlG1_2.png)
+    ![](../../pics/mysql/mysqlG1_2.png)
 
 - 修改字符集
 
@@ -2560,7 +2560,7 @@ end repeat 【标签】;
 
 ## 3. 逻辑架构
 
-![](../pics/mysqlG1_1.png)
+![](../../pics/mysqlG1_1.png)
 
 - 插件式的存储引擎架构将查询处理与其他系统任务以及数据存储提取分离
 
@@ -2568,11 +2568,11 @@ end repeat 【标签】;
 
   - `show engines;`
 
-    ![](../pics/mysql/mysqlG1_3.png)
+    ![](../../pics/mysql/mysqlG1_3.png)
 
   - `show variables like '%storage_engine%';`
 
-    ![](../pics/mysql/mysqlG1_4.png)
+    ![](../../pics/mysql/mysqlG1_4.png)
 
 # 二、索引优化
 
@@ -2615,15 +2615,15 @@ LIMIT <limit_number>
 10. LIMIT <limit_number>
 ```
 
-![](../pics/mysql/mysqlG2_1.png)
+![](../../pics/mysql/mysqlG2_1.png)
 
 ### 2. 7 种Join查询
 
-![](../pics/mysql/mysqlG2_2.png) ![](../pics/mysql/mysqlG2_3.png) ![](../pics/mysql/mysqlG2_4.png)
+![](../../pics/mysql/mysqlG2_2.png) ![](../../pics/mysql/mysqlG2_3.png) ![](../../pics/mysql/mysqlG2_4.png)
 
-​                ![](../pics/mysql/mysqlG2_5.png)                                    ![](../pics/mysql/mysqlG2_6.png) 
+​                ![](../../pics/mysql/mysqlG2_5.png)                                    ![](../../pics/mysql/mysqlG2_6.png) 
 
-![](../pics/mysql/mysqlG2_7.png) ![](../pics/mysql/mysqlG2_8.png)
+![](../../pics/mysql/mysqlG2_7.png) ![](../../pics/mysql/mysqlG2_8.png)
 
 ## 3. 索引简介
 
@@ -2760,7 +2760,7 @@ LIMIT <limit_number>
 
 结果：
 
-![](../pics/mysql/mysqlG2_9.png)
+![](../../pics/mysql/mysqlG2_9.png)
 
 - `id`： select 查询的序列号，包含一组数字，表示查询中执行select子句或操作表的顺序
 
@@ -2883,7 +2883,7 @@ LIMIT <limit_number>
 
   `EXPLAIN SELECT id,author_id FROM article WHERE category_id = 1 AND comments > 1 ORDER BY views DESC LIMIT 1; `
 
-  ![](../pics/mysql/mysqlG2_10.png)
+  ![](../../pics/mysql/mysqlG2_10.png)
 
   结果：type 是 ALL，即全表扫描 ==> 最坏情况；Extra 出现 Using filesort，即文件内排序 ==> 最坏情况，因此必须优化
 
@@ -2891,19 +2891,19 @@ LIMIT <limit_number>
 
   首先查看原始索引： `show index from article;`
 
-  ![](../pics/mysql/mysqlG2_11.png)
+  ![](../../pics/mysql/mysqlG2_11.png)
 
   新建索引：`create index idx_article_ccv on article(category_id,comments,views); 或 alter table article add index idx_article_ccv(category_id,comments,views);`
 
-  ![](../pics/mysql/mysqlG2_12.png)
+  ![](../../pics/mysql/mysqlG2_12.png)
 
   再次查看(解决了全表扫描问题)：`EXPLAIN SELECT id,author_id FROM article WHERE category_id = 1 AND comments > 1 ORDER BY views DESC LIMIT 1; `
 
-  ![](../pics/mysql/mysqlG2_13.png)
+  ![](../../pics/mysql/mysqlG2_13.png)
 
   更改语句(观察变化)： `EXPLAIN SELECT id,author_id FROM article WHERE category_id = 1 AND comments = 1 ORDER BY views DESC LIMIT 1; `
 
-  ![](../pics/mysql/mysqlG2_14.png)
+  ![](../../pics/mysql/mysqlG2_14.png)
 
   **上述优化结论**：
 
@@ -2919,11 +2919,11 @@ LIMIT <limit_number>
 
   查看新的索引： `show index from article;`
 
-  ![](../pics/mysql/mysqlG2_15.png)
+  ![](../../pics/mysql/mysqlG2_15.png)
 
   **查看优化结果(解决了全表查询与内排序问题，优化成功)**： `EXPLAIN SELECT id,author_id FROM article WHERE category_id = 1 AND comments > 1 ORDER BY views DESC LIMIT 1;`
 
-  ![](../pics/mysql/mysqlG2_16.png)
+  ![](../../pics/mysql/mysqlG2_16.png)
 
 #### 2. 双表
 
@@ -2952,11 +2952,11 @@ LIMIT <limit_number>
 
 - 查看： `select * from book inner join class on book.card=class.card;`
 
-  ![](../pics/mysql/mysqlG2_17.png)
+  ![](../../pics/mysql/mysqlG2_17.png)
 
 - **开始分析**：`explain select * from class left join book on book.card=class.card;`
 
-  ![](../pics/mysql/mysqlG2_18.png)
+  ![](../../pics/mysql/mysqlG2_18.png)
 
   > - type 为 ALL，即全表查询
 
@@ -2964,7 +2964,7 @@ LIMIT <limit_number>
 
   再次查看： `explain select * from class left join book on book.card=class.card;`
 
-  ![](../pics/mysql/mysqlG2_19.png)
+  ![](../../pics/mysql/mysqlG2_19.png)
 
   **再次重新优化**：`drop index y on book;`
 
@@ -2972,7 +2972,7 @@ LIMIT <limit_number>
 
   再次查看： `explain select * from class left join book on book.card=class.card;`
 
-  ![](../pics/mysql/mysqlG2_20.png)
+  ![](../../pics/mysql/mysqlG2_20.png)
 
   两次比较的**结论**： **左连接加右表索引，右连接加左表索引**：这是由坐连接特性决定，LEFT JOIN 条件用于确定如何从右表搜索行，左边一定都有
 
@@ -2997,13 +2997,13 @@ LIMIT <limit_number>
 
 - 开始分析： `explain select * from class left join book on book.card=class.card LEFT JOIN phone ON book.card=phone.card;`
 
-  ![](../pics/mysql/mysqlG2_21.png)
+  ![](../../pics/mysql/mysqlG2_21.png)
 
   建立新索引： `alter table phone add index z(card);alter table book add index y(card);`
 
   再次查看： `explain select * from class left join book on book.card=class.card LEFT JOIN phone ON book.card=phone.card;`
 
-  ![](../pics/mysql/mysqlG2_22.png)
+  ![](../../pics/mysql/mysqlG2_22.png)
 
   结论： **索引最好设置在需要经常查询的字段中**
 
@@ -3043,35 +3043,35 @@ alter table staffs add index idx_staffs_nap(name,age,pos);
 
 初次查看索引：
 
-![](../pics/mysql/mysqlG2_23.png)
+![](../../pics/mysql/mysqlG2_23.png)
 
 #### 2. 案例
 
 初次分析： `explain select * from staffs where name='july';`
 
-![](../pics/mysql/mysqlG2_24.png)
+![](../../pics/mysql/mysqlG2_24.png)
 
 再次分析： `explain select * from staffs where name='july' and age=25;`
 
-![](../pics/mysql/mysqlG2_25.png)
+![](../../pics/mysql/mysqlG2_25.png)
 
 接着分析： `explain select * from staffs where name='july' and age=25 and pos='dev';`
 
-![](../pics/mysql/mysqlG2_26.png)
+![](../../pics/mysql/mysqlG2_26.png)
 
 ---
 
 **索引失效查询(未从索引最左前列开始)**： `explain select * from staffs where pos='dev';`
 
-![](../pics/mysql/mysqlG2_27.png)
+![](../../pics/mysql/mysqlG2_27.png)
 
 但查询： `explain select * from staffs where name='july';` 有效
 
-![](../pics/mysql/mysqlG2_24.png)
+![](../../pics/mysql/mysqlG2_24.png)
 
 **索引查询失效(跳过了索引)**： `explain select * from staffs where name='july' and pos='dev';`
 
-![](../pics/mysql/mysqlG2_28.png)
+![](../../pics/mysql/mysqlG2_28.png)
 
 - **最佳左前缀法则： 查询从索引的最左前列开始且不跳过索引中的列(索引多列时，遵循最佳左前缀法则)**
 
@@ -3079,11 +3079,11 @@ alter table staffs add index idx_staffs_nap(name,age,pos);
 
 初次分析： `explain select * from staffs where name='july';`
 
-![](../pics/mysql/mysqlG2_24.png)
+![](../../pics/mysql/mysqlG2_24.png)
 
 **索引失效(索引上操作函数)**： `explain select * from staffs where left(name,4)='july';`
 
-![](../pics/mysql/mysqlG2_29.png)
+![](../../pics/mysql/mysqlG2_29.png)
 
 - 结论： **在索引列上做任何操作(计算，函数，(自动or手动)类型转换)，会导致索引失效而转向全表扫描**
 
@@ -3091,11 +3091,11 @@ alter table staffs add index idx_staffs_nap(name,age,pos);
 
 初次分析： `explain select * from staffs where name='july' and age=25 and pos='dev';`
 
-![](../pics/mysql/mysqlG2_30.png)
+![](../../pics/mysql/mysqlG2_30.png)
 
 **索引失效(使用了范围条件)**： `explain select * from staffs where name='july' and age>11 and pos='dev';`
 
-![](../pics/mysql/mysqlG2_31.png)
+![](../../pics/mysql/mysqlG2_31.png)
 
 - 结论： **存储引擎不能使用索引总范围条件右边的列** 
 
@@ -3103,15 +3103,15 @@ alter table staffs add index idx_staffs_nap(name,age,pos);
 
 初次分析： `explain select * from staffs where name='july' and age=25 and pos='dev';`
 
-![](../pics/mysql/mysqlG2_26.png)
+![](../../pics/mysql/mysqlG2_26.png)
 
 **索引优化(只使用索引查询)**： `explain select name,age,pos from staffs where name='july' and age=25 and pos='dev';`
 
-![](../pics/mysql/mysqlG2_32.png)
+![](../../pics/mysql/mysqlG2_32.png)
 
 再次分析： `explain select name,age,pos from staffs where name='july' and age>25 and pos='dev';`
 
-![](../pics/mysql/mysqlG2_33.png)
+![](../../pics/mysql/mysqlG2_33.png)
 
 - 结论： **尽量使用覆盖索引(只访问索引的查询(索引列和查询列一致))，减少 `select *`**
 
@@ -3119,15 +3119,15 @@ alter table staffs add index idx_staffs_nap(name,age,pos);
 
 初次分析： `explain select * from staffs where name='july';`
 
-![](../pics/mysql/mysqlG2_24.png)
+![](../../pics/mysql/mysqlG2_24.png)
 
 再次分析： `explain select * from staffs where name!='july';`
 
-![](../pics/mysql/mysqlG2_34.png)
+![](../../pics/mysql/mysqlG2_34.png)
 
 接着分析： `explain select * from staffs where name<>'july';`
 
-![](../pics/mysql/mysqlG2_35.png)
+![](../../pics/mysql/mysqlG2_35.png)
 
 - 结论： **使用不等号(!=或<>)时，无法使用索引会导致全表扫描**
 
@@ -3137,7 +3137,7 @@ alter table staffs add index idx_staffs_nap(name,age,pos);
 
 再次分析： `explain select * from staffs where  name is not null;`
 
-![](../pics/mysql/mysqlG2_36.png)
+![](../../pics/mysql/mysqlG2_36.png)
 
 - 结论： **`is not null` 无法使用索引(某些版本的 `is null` 也无法使用索引)**
 
@@ -3145,15 +3145,15 @@ alter table staffs add index idx_staffs_nap(name,age,pos);
 
 初次分析： `explain select * from staffs where name like '%july%';`
 
-![](../pics/mysql/mysqlG2_37.png)
+![](../../pics/mysql/mysqlG2_37.png)
 
 再次分析：`explain select * from staffs where name like '%july';`
 
-![](../pics/mysql/mysqlG2_38.png)
+![](../../pics/mysql/mysqlG2_38.png)
 
 接着分析：  `explain select * from staffs where name like 'july%';`
 
-![](../pics/mysql/mysqlG2_39.png)
+![](../../pics/mysql/mysqlG2_39.png)
 
 - 结论： **like 以通配符左开头('%abc..') 的索引会失效，因此记住： ==like 的 % 加右边==** 
 
@@ -3185,19 +3185,19 @@ CREATE INDEX idx_user_ng ON tbl_user(name,age);
 
 初次分析： `explain select name,age from tbl_user where name like '%aa%';`
 
-![](../pics/mysql/mysqlG2_40.png)
+![](../../pics/mysql/mysqlG2_40.png)
 
 再次分析： `explain select id from tbl_user where name like '%aa%';`
 
-![](../pics/mysql/mysqlG2_41.png)
+![](../../pics/mysql/mysqlG2_41.png)
 
 索引失效： `explain select * from tbl_user where name like '%aa%';`
 
-![](../pics/mysql/mysqlG2_42.png)
+![](../../pics/mysql/mysqlG2_42.png)
 
 索引失效： `explain select id,name,age,email from tbl_user where name like '%aa%';`
 
-![](../pics/mysql/mysqlG2_43.png)
+![](../../pics/mysql/mysqlG2_43.png)
 
 - 结论： **使用覆盖索引解决 like % 失效问题**
 
@@ -3205,11 +3205,11 @@ CREATE INDEX idx_user_ng ON tbl_user(name,age);
 
 初次分析： `explain select * from staffs where name='2000';`
 
-![](../pics/mysql/mysqlG2_44.png)
+![](../../pics/mysql/mysqlG2_44.png)
 
 索引分析(自动类型转换)： `explain select * from staffs where name=2000;`
 
-![](../pics/mysql/mysqlG2_45.png)
+![](../../pics/mysql/mysqlG2_45.png)
 
 - 结论： **字符串不加单引号索引失效**
 
@@ -3217,7 +3217,7 @@ CREATE INDEX idx_user_ng ON tbl_user(name,age);
 
 索引失效(使用了 or)： `explain select * from staffs where name='july' or name='z3';`
 
-![](../pics/mysql/mysqlG2_46.png)
+![](../../pics/mysql/mysqlG2_46.png)
 
 - 结论： **使用 `or` 连接时会导致索引失效**
 
@@ -3266,41 +3266,41 @@ create index idx_test03_c1234 on test03(c1,c2,c3,c4);
 
 1） `explain select * from test03 where c1='a1' and c2='a2' and c4='a4' and c3='a3';`
 
-![](../pics/mysql/mysqlG2_47.png)
+![](../../pics/mysql/mysqlG2_47.png)
 
 - 结论： **改变索引顺序结果不变**，因为MySQL底层优化器会进行相关优化操作
 
 2）`explain select * from test03 where c1='a1' and c2='a2' and c3>'a3' and c4='a4';`
 
-![](../pics/mysql/mysqlG2_48.png)
+![](../../pics/mysql/mysqlG2_48.png)
 
 - 结论： **范围查询之后的索引失效**
 
 3）`explain select * from test03 where c1='a1' and c2='a2' and c4='a4' order by c3;`
 
-![](../pics/mysql/mysqlG2_49.png)
+![](../../pics/mysql/mysqlG2_49.png)
 
 - 结论： **索引中断之后的索引失效**
 
 4）`explain select * from test03 where c1='a1' and c2='a2' order by c4;`
 
-![](../pics/mysql/mysqlG2_50.png)
+![](../../pics/mysql/mysqlG2_50.png)
 
 - 结论： **索引建造与排序顺序尽量一致，避免内排序**
 
 5） `explain select * from test03 where c1='a1' and c5='a5' order by c2,c3;`
 
-![](../pics/mysql/mysqlG2_51.png)
+![](../../pics/mysql/mysqlG2_51.png)
 
 `explain select * from test03 where c1='a1' and c5='a5' order by c3,c2;`
 
-![](../pics/mysql/mysqlG2_52.png)
+![](../../pics/mysql/mysqlG2_52.png)
 
 - 结论： **order by 排序顺序尽量与索引顺序一致，避免内排序**
 
 6） `explain select * from test03 where c1='a1' and c2='a2' order by c3,c2;`
 
-![](../pics/mysql/mysqlG2_53.png)
+![](../../pics/mysql/mysqlG2_53.png)
 
 - 结论： 因为有 `where c2='c2'`，则此时的 `c2` 可看成一个常量，因此不会出现上述的内排序情况
 
@@ -3377,27 +3377,27 @@ for select * from B where B.id=A.id
   >
   > 初次分析： `explain select * from tblA where age>20 order by age;`
   >
-  > ![](../pics/mysql/mysqlG3_1.png)
+  > ![](../../pics/mysql/mysqlG3_1.png)
   >
   > 再次分析： `explain select * from tblA where age>20 order by birth;`
   >
-  > ![](../pics/mysql/mysqlG3_2.png)
+  > ![](../../pics/mysql/mysqlG3_2.png)
   >
   >  接着分析： `explain select * from tblA order by birth;`
   >
-  > ![](../pics/mysql/mysqlG3_3.png)
+  > ![](../../pics/mysql/mysqlG3_3.png)
   >
   > 继续分析： `explain select * from tblA where birth > '2018-12-11 14:49:50' order by birth;`
   >
-  > ![](../pics/mysql/mysqlG3_4.png)
+  > ![](../../pics/mysql/mysqlG3_4.png)
   >
   > 再继续分析： `explain select * from tblA where birth > '2018-12-11 14:49:50' order by age;`
   >
-  > ![](../pics/mysql/mysqlG3_5.png)
+  > ![](../../pics/mysql/mysqlG3_5.png)
   >
   > 接着分析： `explain select * from tblA order by age ASC,birth DESC;`
   >
-  > ![](../pics/mysql/mysqlG3_6.png)
+  > ![](../../pics/mysql/mysqlG3_6.png)
   >
   > - 结论： `ORDER BY` 满足两种情况会使用 Index 方式排序：
   >   - **`ORDER BY` 语句使用索引最左前列**
@@ -3487,7 +3487,7 @@ for select * from B where B.id=A.id
 
   > - 查看是否开启： `SHOW VARIABLES LIKE '%slow_query_log%';`
   >
-  >   ![](../pics/mysql/mysqlG3_7.png)
+  >   ![](../../pics/mysql/mysqlG3_7.png)
   >
   > - 开启： `SET GLOBAL slow_query_log=1;` 
   >
@@ -3509,7 +3509,7 @@ for select * from B where B.id=A.id
   >
   > - 命令 `SHOW VARIABLES LIKE 'long_query_time%';` 可查看该值，默认为 10秒
   >
-  >   ![](../pics/mysql/mysqlG3_8.png)
+  >   ![](../../pics/mysql/mysqlG3_8.png)
   >
   > - 可使用命令修改，也可修改 `my.cnf` 配置文件：`SET GLOBAL long_query_time=XX;`
   >
@@ -3523,15 +3523,15 @@ for select * from B where B.id=A.id
 
 命令 `mysqldumpslow --help` 查看帮助：
 
-![](../pics/mysql/mysqlG3_9.png)
+![](../../pics/mysql/mysqlG3_9.png)
 
 **相关参数信息**：
 
-![](../pics/mysql/mysqlG3_10.png)
+![](../../pics/mysql/mysqlG3_10.png)
 
 使用举例：
 
-![](../pics/mysql/mysqlG3_11.png)
+![](../../pics/mysql/mysqlG3_11.png)
 
 ## 3. 批量插入数据脚本
 
@@ -3665,17 +3665,17 @@ CREATE TABLE emp
 
   - 查看结果： `show profiles;`
 
-    ![](../pics/mysql/mysqlG3_12.png)
+    ![](../../pics/mysql/mysqlG3_12.png)
 
   - 诊断 SQL： `show profile cpu,block io for query [Query_ID]`
 
     如： `show profile cpu,block io for query 3` ==> 此处的 3 对应上图的 Query_ID 的 3
 
-    ![](../pics/mysql/mysqlG3_13.png)
+    ![](../../pics/mysql/mysqlG3_13.png)
 
     **所有配置参数及解释**：
 
-    ![](../pics/mysql/mysqlG3_14.png)
+    ![](../../pics/mysql/mysqlG3_14.png)
 
   - **日常开发需要注意的结论**：
     - `converting HEAP to MyISAM` 查询结果太大，内存不够用了往磁盘上搬
@@ -3766,17 +3766,17 @@ insert into mylock(name) values('e');
 
 给 `mylock` **加读锁**： `lock table mylock read;` 
 
-![](../pics/mysql/mysqlG4_1.png)
+![](../../pics/mysql/mysqlG4_1.png)
 
 给 `mylock` **加写锁**： `lock table mylock write;`  
 
 > 记得 `unlock tables` 删掉 mylock 的读锁
 
-![](../pics/mysql/mysqlG4_2.png)
+![](../../pics/mysql/mysqlG4_2.png)
 
 新开一个终端，执行 `select * from mylock;` 将一直处于**阻塞状态**
 
-![](../pics/mysql/mysqlG4_3.png)
+![](../../pics/mysql/mysqlG4_3.png)
 
 ---
 
@@ -3800,7 +3800,7 @@ insert into mylock(name) values('e');
 
 - 可通过检查 `table_locks_waited 和 table_locks_immediate` 状态变量来分析系统上的表锁定： `show status like 'table%';` 
 
-  ![](../pics/mysql/mysqlG4_4.png)
+  ![](../../pics/mysql/mysqlG4_4.png)
 
   - `table_locks_immediate`：产生表级锁定次数，表示可立即获取锁的查询字数，每立即获取锁时值加1
   - `table_locks_waited `： 出现表级锁定争用而发生等待的次数(不能立即获取锁的次数，每等待一次，锁值加1)，此值高说明存在较严重的表级锁争用情况
@@ -3823,29 +3823,29 @@ InnoDB 与 MyIASM 的不同点：
 
 - **事务及其ACID属性**
 
-  ![](../pics/mysql/mysqlG4_5.png)
+  ![](../../pics/mysql/mysqlG4_5.png)
 
 - 并发事务处理带来的问题
 
   - **更新丢失**
 
-    ![](../pics/mysql/mysqlG4_6.png)
+    ![](../../pics/mysql/mysqlG4_6.png)
 
   - **脏读**
 
-    ![](../pics/mysql/mysqlG4_7.png))
+    ![](../../pics/mysql/mysqlG4_7.png))
 
   - **不可重复读**
 
-    ![](../pics/mysql/mysqlG4_8.png)
+    ![](../../pics/mysql/mysqlG4_8.png)
 
   - **幻读** 
 
-    ![](../pics/mysql/mysqlG4_9.png)
+    ![](../../pics/mysql/mysqlG4_9.png)
 
 - **事务隔离级别**
 
-  ![](../pics/mysql/mysqlG4_10.png)
+  ![](../../pics/mysql/mysqlG4_10.png)
 
 #### 3. 案例分析
 
@@ -3877,33 +3877,33 @@ create index test_innodb_b on test_innodb_lock(b);
 
 **&&行锁定演示&&**： 同时开启两个终端，一个终端对表进行修改，然后查看效果
 
-![](../pics/mysql/mysqlG4_11.png)
+![](../../pics/mysql/mysqlG4_11.png)
 
 进行 `commit;` 提交后，再查看效果
 
-![](../pics/mysql/mysqlG4_12.png)
+![](../../pics/mysql/mysqlG4_12.png)
 
 ---
 
 同时对表的两行进行操作：
 
-![](../pics/mysql/mysqlG4_13.png)
+![](../../pics/mysql/mysqlG4_13.png)
 
 ---
 
 **&&无索引行锁升级为表锁&&**：因字段 `b varchar(16)` 为字符串类型，而下述调用会导致自动类型转换，进而导致索引失效，行锁升级为表锁，因此另一个进程无法对表的其他行进行写操作
 
-![](../pics/mysql/mysqlG4_14.png)
+![](../../pics/mysql/mysqlG4_14.png)
 
 当 `commit;` 提交后，终端1 则会释放表，终端2执行写操作：
 
-![](../pics/mysql/mysqlG4_15.png)
+![](../../pics/mysql/mysqlG4_15.png)
 
 ---
 
 **&&间隙锁危害&&**： 
 
-![](../pics/mysql/mysqlG4_16.png)
+![](../../pics/mysql/mysqlG4_16.png)
 
 - **间隙锁**： 当我们用范围条件而不是相等条件检索数据，并请求共享或排他锁时，InnoDB 会给符合条件的已有数据记录的索引项加锁；对于**键值在条件范围内但并不存在的记录**，叫做“**间隙(GAP)**”，InnoDB 会对该“间隙”加锁
 
@@ -3917,7 +3917,7 @@ create index test_innodb_b on test_innodb_lock(b);
 
 `SELECT ... FOR UPDATE` 锁定某一行后，其他操作会被阻塞，直到锁定行的会话提交 commit
 
-![](../pics/mysql/mysqlG4_17.png)
+![](../../pics/mysql/mysqlG4_17.png)
 
 ---
 
@@ -3931,7 +3931,7 @@ create index test_innodb_b on test_innodb_lock(b);
 
 - 通过检查 `InnoDB_row_lock` 状态变量来分析系统上的行锁的争夺情况： `show status like 'innodb_row_lock%';`
 
-  ![](../pics/mysql/mysqlG4_18.png)
+  ![](../../pics/mysql/mysqlG4_18.png)
 
   - `Innodb_row_lock_current_waits`： 当前系统正在等待锁定的数量
   - `Innodb_row_lock_time`： 从系统启动到现在锁定总时间长度
@@ -3968,7 +3968,7 @@ create index test_innodb_b on test_innodb_lock(b);
 
   > MySQL 复制是异步且串行化的
 
-  ![](../pics/mysql/mysqlG5_1.png)
+  ![](../../pics/mysql/mysqlG5_1.png)
 
 ## 2. 复制的基本原则
 
@@ -4008,7 +4008,6 @@ B+ Tree 是基于 B Tree 和叶子节点顺序访问指针进行实现，它具�
 在 B+ Tree 中，一个节点中的 key 从左到右非递减排列，如果某个指针的左右相邻 key 分别是 key<sub>i</sub> 和 key<sub>i+1</sub>，且不为 null，则该指针指向节点的所有 key 大于等于 key<sub>i</sub> 且小于等于 key<sub>i+1</sub>。
 
 <div align="center"> <img src="../pics//061c88c1-572f-424f-b580-9cbce903a3fe.png"/> </div><br>
-
 ### 2. 操作
 
 进行查找操作时，首先在根节点进行二分查找，找到一个 key 所在的指针，然后递归地在指针所指向的节点进行查找。直到查找到叶子节点，然后在叶子节点上进行二分查找，找出 key 所对应的 data。
@@ -4050,11 +4049,9 @@ B+ Tree 是基于 B Tree 和叶子节点顺序访问指针进行实现，它具�
 InnoDB 的 B+Tree 索引分为主索引和辅助索引。主索引的叶子节点 data 域记录着完整的数据记录，这种索引方式被称为聚簇索引。因为无法把数据行存放在两个不同的地方，所以一个表只能有一个聚簇索引。
 
 <div align="center"> <img src="../pics//c28c6fbc-2bc1-47d9-9b2e-cf3d4034f877.jpg"/> </div><br>
-
 辅助索引的叶子节点的 data 域记录着主键的值，因此在使用辅助索引进行查找时，需要先查找到主键值，然后再到主索引中进行查找。
 
 <div align="center"> <img src="../pics//7ab8ca28-2a41-4adf-9502-cc0a21e63b51.jpg"/> </div><br>
-
 ### 2. 哈希索引
 
 哈希索引能以 O(1) 时间进行查找，但是失去了有序性：
@@ -4316,7 +4313,6 @@ MySQL 提供了 FROM_UNIXTIME() 函数把 UNIX 时间戳转换为日期，并提
 当一个表的数据不断增多时，Sharding 是必然的选择，它可以将数据分布到集群的不同节点上，从而缓存单个数据库的压力。
 
 <div align="center"> <img src="../pics//63c2909f-0c5f-496f-9fe5-ee9176b31aba.jpg"/> </div><br>
-
 ## 垂直切分
 
 垂直切分是将一张表按列切分成多个表，通常是按照列的关系密集程度进行切分，也可以利用垂直切分将经常被使用的列和不经常被使用的列切分到不同的表中。
@@ -4324,7 +4320,6 @@ MySQL 提供了 FROM_UNIXTIME() 函数把 UNIX 时间戳转换为日期，并提
 在数据库的层面使用垂直切分将按数据库中表的密集程度部署到不同的库中，例如将原来的电商数据库垂直切分成商品数据库、用户数据库等。
 
 <div align="center"> <img src="../pics//e130e5b8-b19a-4f1e-b860-223040525cf6.jpg"/> </div><br>
-
 ## Sharding 策略
 
 - 哈希取模：hash(key) % N；
@@ -4358,7 +4353,6 @@ MySQL 提供了 FROM_UNIXTIME() 函数把 UNIX 时间戳转换为日期，并提
 -  **SQL 线程** ：负责读取重放日志并重放其中的 SQL 语句。
 
 <div align="center"> <img src="../pics//master-slave.png"/> </div><br>
-
 ## 读写分离
 
 主服务器处理写操作以及实时性要求比较高的读操作，而从服务器处理读操作。
@@ -4371,7 +4365,7 @@ MySQL 提供了 FROM_UNIXTIME() 函数把 UNIX 时间戳转换为日期，并提
 
 读写分离常用代理方式来实现，代理服务器接收应用层传来的读写请求，然后决定转发到哪个服务器。
 
- <img src="../pics//master-slave-proxy.png"/>
+ <img src="../../pics//master-slave-proxy.png"/>
 
 # 参考资料
 

@@ -1784,7 +1784,7 @@ Class 和 java.lang.reflect 一起对反射提供了支持，java.lang.reflect �
 - Class 本身也是一个类
 - Class 对象只能由系统建立对象
 - 一个类在 JVM 中只会有一个 Class 实例 
-- 一个 Class 对象对应的是一个加载到JVM中的一个.class文件
+- 一个 Class 对象对应的是一个加载到 JVM 中的一个 .class 文件
 - 每个类的实例都会记得自己是由哪个 Class 实例所生成
 - 通过 Class 可以完整地得到一个类中的完整结构 
 
@@ -1862,7 +1862,61 @@ public void test4() throws ClassNotFoundException{
 
   > SpringIoc 的实现
 
-### 2. 类的加载过程
+### 2. 创建对象的四种方法
+
+推荐阅读： [java创建对象的四种方式](https://www.cnblogs.com/yunche/p/9530927.html) 
+
+1. **new 语句创建**： `MyObject mo = new MyObject()`
+
+2. **clone 方法创建**： 
+
+   > ```java
+   > public class CreateInstance implements Cloneable{
+   >     public CreateInstance getInstance() throws CloneNotSupportedException{
+   >         return (CreateInstance) this.clone();
+   >     }
+   > }
+   > ```
+   >
+   > 调用 `new CreateInstance().getInstance()` 创建
+   >
+   > > 注： 不直接使用 `new CreateInstance().clone()` 原因： 
+   > >
+   > > - 使用 clone 方法，必需实现 java.lang.Cloneable 接口，否则抛出 CloneNotSupportedException
+   > > - clone 方法的的操作是直接复制字段的内容，即该操作并不管字段对应的对象实例内容(浅拷贝)
+
+3. **反射方法 newInstance 创建**： 
+
+   > - 方式一： `CreateInstance instance = CreateInstance.class.newInstance()`
+   > - 方式二： `CreateInstance instance = (CreateInstance)Class.forname("com.create.instance.CreateInstance").newInstance()`
+
+4. **序列化 readObject 方法创建**： 
+
+   > ```java
+   > public class Serialize{
+   >     public static void main(String[] args){
+   >         Hello h = new Hello();
+   >         //准备一个文件用于存储该对象的信息
+   >         File f = new File("hello.obj");
+   >         try(FileOutputStream fos = new FileOutputStream(f);
+   >             ObjectOutputStream oos = new ObjectOutputStream(fos);
+   >             FileInputStream fis = new FileInputStream(f);
+   >             ObjectInputStream ois = new ObjectInputStream(fis)
+   >             ){
+   >             //序列化对象，写入到磁盘中
+   >             oos.writeObject(h);
+   >             //反序列化对象
+   >             Hello newHello = (Hello)ois.readObject(); //创建对象
+   >         }catch (Exception e){
+   >             e.printStackTrace();
+   >         }
+   >     }
+   > }
+   > ```
+   >
+   > 若对象通过 ObjectInputStream 类的 readObject() 方法创建，则 Java 虚拟机通过从输入流中读入的序列化数据来初始化那些非暂时性的实例变量
+
+### 3. 类的加载过程
 
 当程序主动使用某个类时，如果该类还未被加载到内存中，则系统会通过如下三个步骤来对该类进行初始化：
 
@@ -1872,7 +1926,7 @@ public void test4() throws ClassNotFoundException{
 
 ![](../..//pics/reflect2.png)
 
-### 3. ClassLoader
+### 4. ClassLoader
 
 类加载器是用来把类(class)装载进内存的
 
