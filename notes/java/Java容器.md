@@ -68,7 +68,7 @@
 - **Map 的键值对**： 
   - `key`：不可重复，使用 Set 存放
   - `value`：可重复，使用 Collection 存放
-  - `entry`： 使用 Set 存放，由一个 key-value 对构成一个 `entry(Map.Entry)`
+  - `entry`： 使用 Set 存放，由一个 key-value 对构成一个 `entry(Map.Entry)` 
 
 - 方法： 
 
@@ -357,13 +357,13 @@ private void writeObject(java.io.ObjectOutputStream s)
 
 #### 7. fail-safe(安全失败)
 
-- 安全失败：遍历时，先复制原有集合内容，在拷贝的集合上进行遍历
+- **安全失败**：遍历时，先复制原有集合内容，在拷贝的集合上进行遍历
 
-- 原理：由于迭代时是对原集合的拷贝进行遍历，所以在遍历过程中对原集合所作的修改并不能被迭代器检测到，所以不会触发Concurrent Modification Exception
+- **原理**：由于迭代时是对原集合的拷贝进行遍历，所以在遍历过程中对原集合所作的修改并不能被迭代器检测到，所以不会触发Concurrent Modification Exception
 
-- 缺点：迭代器并不能访问到修改后的内容
+- **缺点**：迭代器并不能访问到修改后的内容
 
-- 场景：java.util.concurrent 包下的容器都是安全失败，可以在多线程下并发使用，并发修改
+- **场景**：java.util.concurrent 包下的容器都是安全失败，可以在多线程下并发使用，并发修改
 
 #### 8. 序列化
 

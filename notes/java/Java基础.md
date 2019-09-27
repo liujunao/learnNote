@@ -35,7 +35,7 @@
 - long/64
 - double/64
 
-基本类型都有对应的包装类型，基本类型与其对应的包装类型之间的赋值使用自动装箱与拆箱完成。
+基本类型都有对应的包装类型，基本类型与其对应的包装类型之间的赋值使用自动装箱与拆箱完成
 
 ```java
 Integer i = 1;
@@ -132,7 +132,7 @@ System.out.println(m == n); // true
 **注：** [JAVA 基本类型的封装类及对应常量池](https://blog.csdn.net/TaoTaoFu/article/details/74943337) 
 
 1. java中基本类型的包装类的大部分都实现了常量池技术，这些类是Byte,Short,Integer,Long,Character,Boolean,另外两种浮点数类型的包装类则没有实现
-2. Byte,Short,Integer,Long,Character这5种整型的包装类也只是在对应值小于等于127时才可使用对象池，也即对象不负责创建和管理大于127的这些类的对象。
+2. Byte,Short,Integer,Long,Character这5种整型的包装类也只是在对应值小于等于127时才可使用对象池，也即对象不负责创建和管理大于127的这些类的对象
 
 基本类型对应的缓冲池如下：
 

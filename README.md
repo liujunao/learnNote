@@ -1,3 +1,8 @@
+> 应届生三方协议： 
+>
+> - [应届毕业生签约必看](https://wenku.baidu.com/view/f6d4f0d643323968001c920f) 
+> - [应届生签offer不得不看的九大注意事项](http://www.qlmoney.com/content/20141120-4566.html) 
+
 ### :pencil2: 数据结构与算法
 
 - [数据结构](./notes/数据结构与算法/数据结构.md) 
