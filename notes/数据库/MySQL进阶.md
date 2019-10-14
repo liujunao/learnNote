@@ -830,7 +830,7 @@ expire_log_days = {0..99} #设定二进制日志的过期天数，超出此天�
 
 - InnoDB 存储引擎是索引组织，因此数据即索引，索引即数据
 
-- **数据段为B+树段叶子节点(Leaf node segment)，索引段为B+树段非索引节点(Non-leaf node segment)**
+- **数据段为B+树段叶子节点(Leaf node segment)，索引段为B+树段非叶节点(Non-leaf node segment)**
 
 ### 3. 区
 
@@ -1445,7 +1445,7 @@ ALTER TABLE index17 ADD INDEX index17_na(name,address);
 
 ### 4. Cardinatity
 
-- **如果某个字段的取值范围很广， 几乎没有重复， 即属于高选择性， 此时使用 B+ 数索引最合适**（通过 show index 结构中 Cardinality 来判断高选择性）
+- **如果某个字段的取值范围很广， 几乎没有重复， 即属于高选择性， 此时使用 B+ 树索引最合适**（通过 show index 结构中 Cardinality 来判断高选择性）
 
 - **Cardinality  表示索引中不重复记录数量的预估值**
 - 数据库对于 Cardinality  的统计通过**采样的方法完成**
@@ -1935,8 +1935,6 @@ search_modifier:
 - 通过应用业务日志定位到问题代码，找到相应的事务对应的 sql
 - 确定数据库隔离级别： `select @@global.tx_isolation` 
 - 找DBA执行 `show InnoDB STATUS` 看看最近死锁的日志
-
-
 
 ## 8. 锁升级
 

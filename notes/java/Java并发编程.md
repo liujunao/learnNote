@@ -2369,8 +2369,6 @@ CPU 提供了两种方法来实现多处理器的原子操作：总线加锁或�
 
 - CAS 操作是乐观锁，每次不加锁而是假设没有冲突去完成某项操作，如果因为冲突失败就重试，直到成功为止
 
-
-
 # 五、并发工具类
 
 ## 1. 循环栅栏 CyclicBarrier
@@ -3681,8 +3679,9 @@ public ThreadPoolExecutor(int corePoolSize, int maximumPoolSize, long keepAliveT
 
   > ```java
   > public static ExecutorService newFixedThreadPool(int nThreads) {
-  >     return new ThreadPoolExecutor(nThreads, nThreads,0L, TimeUnit.MILLISECONDS,
-  >                                   new LinkedBlockingQueue<Runnable>());
+  > 	return new ThreadPoolExecutor(nThreads, nThreads,0L, 
+  >                                TimeUnit.MILLISECONDS,
+  >                                new LinkedBlockingQueue<Runnable>());
   > }
   > ```
   >
@@ -3692,9 +3691,10 @@ public ThreadPoolExecutor(int corePoolSize, int maximumPoolSize, long keepAliveT
 
   > ```java
   > public static ExecutorService newSingleThreadExecutor() {
-  >     return new FinalizableDelegatedExecutorService
-  >         (new ThreadPoolExecutor(1, 1, 0L, TimeUnit.MILLISECONDS,
-  >                                 new LinkedBlockingQueue<Runnable>()));
+  > 	return new FinalizableDelegatedExecutorService
+  >         (new ThreadPoolExecutor(1, 1, 0L, 
+  >                              TimeUnit.MILLISECONDS,
+  >                              new LinkedBlockingQueue<Runnable>()));
   > }
   > ```
 
@@ -3702,7 +3702,7 @@ public ThreadPoolExecutor(int corePoolSize, int maximumPoolSize, long keepAliveT
 
   > ```java
   > public static ExecutorService newCachedThreadPool() {
-  >     return new ThreadPoolExecutor(0, Integer.MAX_VALUE, 60L, TimeUnit.SECONDS,
+  >    	return new ThreadPoolExecutor(0, Integer.MAX_VALUE, 60L, TimeUnit.SECONDS,
   >                                   new SynchronousQueue<Runnable>());
   > }
   > ```

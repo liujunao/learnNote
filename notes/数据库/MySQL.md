@@ -2863,8 +2863,8 @@ LIMIT <limit_number>
   ```mysql
   CREATE TABLE author
   (
-       id int(10) unsigned not null primary key auto_increment,
-       author_id int(10),
+      id int(10) unsigned not null primary key auto_increment,
+      author_id int(10),
       category_id int(10),
       views int(10),
       comments int(10),
@@ -2876,7 +2876,8 @@ LIMIT <limit_number>
 - 插入数据
 
   ```mysql
-  insert into article(author_id,category_id,views,comments,title,content) values (1,1,1,1,'1','1'), (2,2,2,2,'2','2'), (1,1,3,3,'3','3');
+  insert into article(author_id,category_id,views,comments,title,content) 
+  	values (1,1,1,1,'1','1'), (2,2,2,2,'2','2'), (1,1,3,3,'3','3');
   ```
 
 - 查询  category_id 为 1 且 comments 大于 1 的情况下，views 最多为  author_id： 
