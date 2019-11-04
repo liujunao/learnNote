@@ -2,7 +2,7 @@
 
 # 一、运行时数据区域
 
-<img src="../../pics//c9ad2bf4-5580-4018-bce4-1b9a71804d9c.png" width="450"/>
+![](../../pics/java/jvm_1.png)
 
 -  **线程隔离**：线程隔离的意思，就是给不同的线程多分配的资源用，以做到不争用
 -  **线程共享：**线程共享就是资源只有一个没有办法分配更多，只能共享
@@ -29,7 +29,7 @@
   - 如果线程请求的栈深度大于虚拟机所允许的深度，将抛出StackOverflowError异常
   - 如果虚拟机扩展时无法申请到足够的内存，就会跑出OutOfMemoryError异常
 
-<img src="../../pics//926c7438-c5e1-4b94-840a-dcb24ff1dafe.png" width="500"/>
+![](../../pics/java/jvm_2.png)
 
 可以通过 -Xss 这个虚拟机参数来指定每个线程的 Java 虚拟机栈内存大小：
 
@@ -48,7 +48,7 @@ java -Xss512M HackTheJava
 
 >  本地方法一般是用其它语言（C、C++ 或汇编语言等）编写的，并且被编译为基于本机硬件和操作系统的程序，对待这些方法需要特别处理
 
-<img src="../../pics//JNI-Java-Native-Interface.jpg" width="350"/>
+![](../../pics/java/jvm_3.png)
 
 ## 4. Java堆
 
@@ -171,7 +171,7 @@ java -Xms1M -Xmx2M HackTheJava
 
 ## 9. jdk8
 
-![](../../pics/jvm15.png)
+![](../../pics/java/jvm_4.png)
 
 - **元空间 `Metaspace`**：存储已被虚拟机加载的类信息
   - JDK8 中，JVM 删除方法区(PermGen)
@@ -240,7 +240,7 @@ Java堆中将会划分出一块内存来作为句柄池，reference 中存储的
 
 **优势：** **reference 中存储的是稳定的句柄地址**，在对象被移动(垃圾收集时移动对象是非常普遍的行为)时只会改变句柄中的实例数据指针，而reference本身不需要修改
 
-![](../../pics/jvm1.jpg)
+![](../../pics/java/jvm_5.png)
 
 ### 2. **使用直接指针访问**
 
@@ -248,7 +248,7 @@ Java堆中将会划分出一块内存来作为句柄池，reference 中存储的
 
 **优势：** 速度更快，节省了一次指针定位的时间开销
 
-![](../../pics/jvm2.jpg)
+![](../../pics//java/jvm_6.png)
 
 
 
@@ -376,7 +376,7 @@ public class ReferenceCountingGC {
 - 方法区中类静态属性引用的对象
 - 方法区中的常量引用的对象
 
-<img src="../../pics//0635cbe8.png" width=""/>
+![](../../pics/java/jvm_7.png)
 
 ### 3. 方法区的回收
 
@@ -477,7 +477,7 @@ obj = null;
 
 ### 1. 标记 - 清除
 
-<img src="../../pics//a4248c4b-6c1d-4fb8-a557-86da92d3a294.jpg" width=""/>
+![](../../pics/java/jvm_8.png)
 
 **特点： 将存活的对象进行标记，然后清理掉未被标记的对象**
 
@@ -488,13 +488,13 @@ obj = null;
 
 ### 2. 标记 - 整理
 
-<img src="../../pics//902b83ab-8054-4bd2-898f-9a4a0fe52830.jpg" width=""/>
+![](../../pics/java/jvm_9.png)
 
 **特点： 让所有存活的对象都向一端移动，然后直接清理掉端边界以外的内存** 
 
 ### 3. 复制
 
-<img src="../../pics//e6b733ad-606d-4028-b3e8-83c3a73a3797.jpg" width=""/>
+![](../../pics/java/jvm_10.png)
 
 **特点**： 
 
@@ -533,7 +533,7 @@ obj = null;
 
  **HotSpot 虚拟机中的 7 个垃圾收集器，连线表示垃圾收集器可以配合使用**： 
 
-<img src="../../pics//c625baa0-dde6-449e-93df-c3a67f2f430f.jpg">
+![](../../pics/java/jvm_11.png)
 
 - **单线程与多线程收集**：单线程指的是垃圾收集器只使用一个线程进行收集，而多线程使用多个线程
 
@@ -548,7 +548,7 @@ obj = null;
 
 ### 1. Serial 收集器
 
-<img src="../../pics//22fda4ae-4dd5-489d-ab10-9ebfdad22ae0.jpg"/>
+![](../../pics/java/jvm_12.png)
 
 - **单线程的收集器，以串行的方式执行**
 - **优点：** 简单高效，没有线程交互开销，拥有最高的单线程收集效率
@@ -561,7 +561,7 @@ obj = null;
 
 ### 2. ParNew 收集器
 
-<img src="../../pics//81538cd5-1bcf-4e31-86e5-e198df1e013b.jpg" width=""/>
+![](../../pics/java/jvm_13.png)
 
 - **Serial 收集器的多线程版本** 
 - **默认开启的线程数量与 CPU 数量相同**，可以使用 `-XX:ParallelGCThreads` 参数来设置线程数
@@ -591,7 +591,7 @@ obj = null;
 
 ### 4. Serial Old 收集器
 
-<img src="../../pics//08f32fd3-f736-4a67-81ca-295b2a7972f2.jpg"/>
+![](../../pics/java/jvm_14.png)
 
 - **Serial 收集器的老年代版本，使用标记整理算法**
 
@@ -604,7 +604,7 @@ obj = null;
 
 ### 5. Parallel Old 收集器
 
-<img src="../../pics//278fe431-af88-4a95-a895-9c3b80117de3.jpg"/>
+![](../../pics/java/jvm_15.png)
 
 - **Parallel Scavenge 收集器的老年代版本，使用多线程和标记整理算法**
 
@@ -612,7 +612,7 @@ obj = null;
 
 ### 6. CMS 收集器
 
-<img src="../../pics//62e77997-6957-4b68-8d12-bfd609bb2c68.jpg"/>
+![](../../pics/java/jvm_16.png)
 
 1. **特点：**
    - **CMS 收集器使用标记清除算法**
@@ -658,11 +658,11 @@ obj = null;
 
 1. **G1 可以直接对新生代和老年代一起回收** 
 
-   <img src="../../pics//4cf711a8-7ab2-4152-b85c-d5c226733807.png" width="600"/>
+   ![](../../pics/java/jvm_17.png)
 
 2. **G1 把堆划分成多个大小相等的独立区域（Region）** ，新生代和老年代不再物理隔离
 
-   <img src="../../pics//9bbddeeb-e939-41f0-8e8e-2b1a0aa7e0a7.png" width="600"/>
+   ![](../../pics/java/jvm_18.png)
 
 3. 引入 Region **将原来的一整块内存空间划分成多个的小空间，使得每个小空间可以单独进行垃圾回收** 
    - 这种划分方法带来了**很大的灵活性**，使得可预测的停顿时间模型成为可能
@@ -689,8 +689,8 @@ obj = null;
    - **筛选回收：** 对各个 Region 的回收价值和成本进行排序，根据用户所期望的 GC 停顿时间来制定回收计划
 
      - 因为只回收一部分 Region，时间是用户可控制的，因此停顿用户线程将大幅度提高收集效率
-
-   <img src="../../pics//f99ee771-c56f-47fb-9148-c0036695b5fe.jpg" width=""/>
+    
+     ![](../../pics/java/jvm_19.png)
 
 
 5. 具备如下**特点：** 
@@ -754,7 +754,7 @@ obj = null;
     - 如果小于，则进行一次 Full GC
   - 若不允许，则进行一次 Full GC
 
-![](../../pics/jvm14.png)
+![](../../pics/java/jvm_20.png)
 
 ## 3. Full GC 的触发条件
 
@@ -805,7 +805,7 @@ obj = null;
 
 **加载、验证、准备、解析、初始化、使用和卸载** 
 
-<img src="../../pics//32b8374a-e822-4720-af0b-c0f485095ea2.jpg"/>
+![](../../pics/java/jvm_21.png)
 
 **注：** 
 
@@ -1064,15 +1064,11 @@ obj = null;
 
 ###3. 双亲委派模型
 
-- **双亲委派模型： 除启动类加载器，其余的类加载器都应有父类加载器**
+- **双亲委派模型： 除启动类加载器，其余的类加载器都应有父类加载器** 
 
   > **类加载器间的父子关系通过使用组合关系来复用父类加载器的代码**
 
-
-
-![](../../pics/jvm3.png)
-
-
+![](../../pics/java/jvm_22.png) 
 
 ####1. 工作过程
 
@@ -1241,7 +1237,7 @@ public class FileSystemClassLoader extends ClassLoader {
 
 - 不同线程之间无法直接访问对方工作内存中的变量，**线程间变量值的传递均需要在主内存来完成**
 
-![](../../pics/jvm4.png)
+![](../../pics/java/jvm_23.png)
 
 ### 2. **内存间的交互操作**
 
@@ -1473,7 +1469,7 @@ public class FileSystemClassLoader extends ClassLoader {
 
 - **实现语言无关性的基础是虚拟机和字节码存储格式** 
 
-![](../../pics/jvm5.png)
+![](../../pics/java/jvm_24.png)
 
 ## 2. Class类文件的结构
 
@@ -1491,7 +1487,7 @@ public class FileSystemClassLoader extends ClassLoader {
 
     > 所有表习惯以 `_info` 结尾
 
-  ![](../../pics/jvm6.png)
+  ![](../../pics/java/jvm_25.png)
 
 ### 1. 魔数和Class文件的版本
 
@@ -1703,7 +1699,7 @@ jvm 直接支持的数值类型的**宽化类型转换**(小范围类型向大�
 
 - **执行意义：**每个方法从调用开始到执行完成的过程，就对应着一个栈帧在虚拟机栈里面从入栈到出栈的过程
 
-![](../../pics/jvm7.png)
+![](../../pics/java/jvm_26.png)
 
 ### 1. 局部变量表
 
@@ -1875,7 +1871,7 @@ JVM 的**方法调用字节码指令**：
 
 ##3. 基于栈的字节码解释执行引擎
 
-![](../../pics/jvm8.png)
+![](../../pics/java/jvm_27.png)
 
 - **javac 编译器**实现程序代码经词法分析、语法分析到抽象语法树，再到编译语法生成线性的字节码指令流
 - **java 程序的编译是半独立的实现**：部分动作在 java 虚拟机外进行，但解释器在虚拟机内部执行
@@ -1928,7 +1924,7 @@ JVM 的**方法调用字节码指令**：
      >
      > **抽象语法树**： 一种用来描述程序代码语法结构的树形表示方式，语法树的每一个节点都代表着程序代码中的一个语法结构
 
-   ![](../../pics/jvm9.png)
+   ![](../../pics/java/jvm_28.png)
 
 2. **填充符号表**  
 
@@ -2030,7 +2026,7 @@ JVM 的**方法调用字节码指令**：
 
 方法调用计数器触发的即时编译交互过程如下图所示：
 
-![](../../pics/jvm10.png)
+![](../../pics/java/jvm_29.png)
 
 #### 3. 编译过程
 
@@ -2042,7 +2038,7 @@ JVM 的**方法调用字节码指令**：
 
   其大致过程如下所示：
 
-![](../../pics/jvm11.png)
+![](../../pics/java/jvm_30.png)
 
 - **Server Compiler** 是一个**充分优化的高级编译器**，专门面向服务端
 
@@ -2052,9 +2048,9 @@ JVM 的**方法调用字节码指令**：
 
 #### 1. 优化技术概览
 
-![](../../pics/jvm12.png)
+![](../../pics/java/jvm_31.png)
 
-![](../../pics/jvm13.png)
+![](../../pics/java/jvm_32.png)
 
 #### 2. 公共子表达式清除
 

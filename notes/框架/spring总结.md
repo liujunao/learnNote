@@ -1759,7 +1759,7 @@ TransactionDefinition 定义的事务传播行为：
 - **支持当前事务的情况**： 
   - `TransactionDefinition.PROPAGATION_REQUIRED`： 如果当前存在事务，则加入该事务；如果当前没有事务，则创建一个新的事务
 
-    > ![](D:/architect_learn/learnNote/pics/spring/spring_7.png)
+    > ![](../../pics/spring/spring_7.png)
 
   - `TransactionDefinition.PROPAGATION_SUPPORTS`： 如果当前存在事务，则加入该事务；如果当前没有事务，则以非事务的方式继续运行
 
@@ -1768,7 +1768,7 @@ TransactionDefinition 定义的事务传播行为：
 - **不支持当前事务的情况**： 
   - `TransactionDefinition.PROPAGATION_REQUIRES_NEW`： 创建一个新的事务，如果当前存在事务，则把当前事务挂起
 
-    > ![](D:/architect_learn/learnNote/pics/spring/spring_8.png)
+    > ![](../../pics/spring/spring_8.png)
 
   - `TransactionDefinition.PROPAGATION_NOT_SUPPORTED`： 以非事务方式运行，如果当前存在事务，则把当前事务挂起
 

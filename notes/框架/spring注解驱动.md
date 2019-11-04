@@ -1600,4 +1600,4 @@ public class HelloAsyncServlet extends HttpServlet {
 
 **图解**： 
 
-![](../../pics/springAnnotation1.png)
+![](../../pics/spring/springAnnotation1.png)

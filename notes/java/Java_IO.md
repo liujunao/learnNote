@@ -17,7 +17,7 @@ Java 的 I/O 大概可以分成以下几类：
 - **网络操作**：Socket
 - **新的输入/输出**：NIO
 
-![](../../pics/javaio.png) 
+![](../../pics/io/io_6.png) 
 
 # 二、磁盘操作
 
@@ -820,7 +820,7 @@ public static void main(String[] args) throws IOException {
 
 服务器和客户端通过 InputStream 和 OutputStream 进行输入输出
 
-<img src="../../pics//ClienteServidorSockets1521731145260.jpg"/>
+![](../../pics/io/io_7.png)
 
 ## 4. Datagram
 
@@ -916,23 +916,23 @@ public void test2(){
 
 ① 新建一个大小为 8 个字节的缓冲区，此时 position 为 0，而 limit = capacity = 8。capacity 变量不会改变
 
-<img src="../../pics//1bea398f-17a7-4f67-a90b-9e2d243eaa9a.png"/>
+![](../../pics/io/io_8.png)
 
 ② 从输入通道中读取 5 个字节数据写入缓冲区中，此时 position 移动设置为 5，limit 保持不变
 
-<img src="../../pics//80804f52-8815-4096-b506-48eef3eed5c6.png"/>
+![](../../pics/io/io_9.png)
 
 ③ 在将缓冲区的数据写到输出通道之前，需要先调用` flip() `方法切换到读取数据模式，这个方法将 limit 设置为当前 position，并将 position 设置为 0
 
-<img src="../../pics//952e06bd-5a65-4cab-82e4-dd1536462f38.png"/>
+![](../../pics/io/io_10.png)
 
 ④ 调用`get()`方法从缓冲区中取 4 个字节到输出缓冲中，此时 position 设为 5
 
-<img src="../../pics//b5bdcbe2-b958-4aef-9151-6ad963cb28b4.png"/>
+![](../../pics/io/io_11.png)
 
 ⑤ 最后需要调用 `clear() ` 方法来清空缓冲区，此时 position 和 limit 都被设置为最初位置。但是缓冲区中的数据依然存在，但数据处于“被遗忘”状态
 
-<img src="../../pics//67bf5487-c45d-49b6-b9c0-a058d8c68902.png"/>
+![](../../pics/io/io_12.png)
 
 ```java
 public void test1(){
@@ -997,9 +997,9 @@ public void test1(){
 - **非直接缓冲区**：通过 allocate() 方法分配缓冲区，将缓冲区建立在 JVM 的内存中
 - **直接缓冲区**：通过 allocateDirect() 方法分配直接缓冲区，将缓冲区建立在物理内存中，可以提高效率
 
-![](../../pics/nio_buffer1.png) 
+![](../../pics/io/nio_13.png) 
 
-![](../../pics/nio_buffer2.png)
+![](../../pics/io/nio_14.png)
 
 ```java
 public void test3(){
@@ -1618,7 +1618,7 @@ public void test8(){
 
   > 只有套接字 Channel 才能配置为非阻塞，而 FileChannel 不能，为 FileChannel 配置非阻塞也没有意义
 
-<img src="../../pics//4d930e22-f493-49ae-8dff-ea21cd6895dc.png"/>
+![](../../pics/io/io_15.png)
 
 ### 1. 创建选择器
 

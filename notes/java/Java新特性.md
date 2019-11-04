@@ -366,7 +366,7 @@ public void test7(){
 
 ### 3. 其他接口
 
-![](C:/Users/lenovo/Desktop/%E6%96%B0%E5%BB%BA%E6%96%87%E4%BB%B6%E5%A4%B9/pics/java8.png)
+![](../../pics/java/javaN_1.png)
 
 ## 3. 方法引用与构造器引用
 
@@ -532,7 +532,7 @@ public void test8(){
 - **中间操作**：一个中间操作链，对数据源的数据进行处理
 - **终止操作(终端操作)**：一个终止操作，执行中间操作链，并产生结果
 
-![](C:/Users/lenovo/Desktop/%E6%96%B0%E5%BB%BA%E6%96%87%E4%BB%B6%E5%A4%B9/pics/java8_2.png)
+![](../../pics/java/javaN_2.png)
 
 ### 3. 创建Stream
 
@@ -918,10 +918,10 @@ List<Employee> emps = Arrays.asList(
      > Collector 接口中方法的实现决定了如何对流执行收集操作(如收集到List、Set、Map)
      >
      > Collectors 实用类提供了很多静态方法，可以方便地创建常见收集器实例
-
-   ![](C:/Users/lenovo/Desktop/%E6%96%B0%E5%BB%BA%E6%96%87%E4%BB%B6%E5%A4%B9/pics/java8_4.png)
-
-   ![](C:/Users/lenovo/Desktop/%E6%96%B0%E5%BB%BA%E6%96%87%E4%BB%B6%E5%A4%B9/pics/java8_5.png)
+  
+     ![](../../pics/java/javaN_4.png)
+  
+     ![](../../pics/java/javaN_5.png)
 
    ```java
    @Test
@@ -1035,9 +1035,7 @@ List<Employee> emps = Arrays.asList(
 
 - **Fork/Join 框架**：就是在必要的情况下，将一个大任务，进行拆分(fork)成若干个小任务（拆到不可再拆时），再将一个个的小任务运算的结果进行join 汇总.
 
-  ![](C:/Users/lenovo/Desktop/%E6%96%B0%E5%BB%BA%E6%96%87%E4%BB%B6%E5%A4%B9/pics/java8_3.png)
-
-
+  ![](../../pics/java/javaN_3.png)
 
 - **Fork/Join 框架与传统线程池的区别：** 
 
@@ -1211,7 +1209,7 @@ public void test1(){
 
 ```
 
-![](C:/Users/lenovo/Desktop/%E6%96%B0%E5%BB%BA%E6%96%87%E4%BB%B6%E5%A4%B9/pics/java8_7.png)
+![](../../pics/java/javaN_7.png)
 
 ### 2. Instant 时间戳
 
@@ -1415,4 +1413,4 @@ public void test7(){
 
 ### 2. 重复注解与类型注解
 
-![](../pics/java8_6.png)
+![](../../pics/java/javaN_6.png)

@@ -10,7 +10,7 @@
 
 - 32 位操作系统的寻址空间（虚拟存储空间）为4G，**0~3G为用户空间，3~4G为内核空间** 
 
-  ![](../../pics/socket/socket_1.png)
+  ![](../../pics/netty/socket_1.png)
 
 - **高端内存**： 
 
@@ -22,7 +22,7 @@
   >
   > 当内核想访问高于896MB物理地址内存时，从0xF8000000 ~ 0xFFFFFFFF地址空间范围内找一段相应大小空闲的逻辑地址空间，建立映射到想访问的那段物理内存，**临时使用，用完后归还**，实现了使用有限的地址空间
   >
-  > ![](../../pics/socket/socket_2.png)
+  > ![](../../pics/netty/socket_2.png)
   >
   > 端内存映射的三种方式：
   >
@@ -42,7 +42,7 @@
   >
   >   > **固定映射空间**： 内核在 FIXADDR_START 到 FIXADDR_TOP 之间，用于特殊需求
   >
-  > ![](../../pics/socket/socket_3.png)
+  > ![](../../pics/netty/socket_3.png)
 
 ### 2. 用户空间与内核空间的进程通信
 
@@ -84,7 +84,7 @@
 
   > Linux 内核提供 `copy_from_user()/copy_to_user()` 函数来实现内核态与用户态数据的拷贝，但这两个函数会引发阻塞，所以不能用在硬、软中断中
   >
-  > ![](../../pics/socket/socket_4.png)
+  > ![](../../pics/netty/socket_4.png)
 
 - **硬、软中断环境**： 
 
@@ -92,7 +92,7 @@
 
     > - 内核线程运行在有进程上下文环境中，这样便可以在内核线程中使用套接字或消息队列来取得用户空间的数据，然后再将数据通过临界区传递给中断过程
     >
-    > ![](../../pics/socket/socket_5.png)
+    > ![](../../pics/netty/socket_5.png)
     >
     > - 中断过程不可能无休止地等待用户态进程发送数据，所以要通过一个内核线程来接收用户空间的数据，再通过临界区传给中断过程
     > - 中断过程向用户空间的数据发送必须是无阻塞的
@@ -110,11 +110,11 @@
 
     > **使用软中断而不是内核线程来接收数据保证数据接收的实时性**
     >
-    > ![](../../pics/socket/socket_6.png)
+    > ![](../../pics/netty/socket_6.png)
     >
     > **内核空间与用户空间的不同创建方式**： 
     >
-    > ![](../../pics/socket/socket_7.png)
+    > ![](../../pics/netty/socket_7.png)
 
 ## 2. 进程切换
 
@@ -163,7 +163,7 @@
 
 - **缓存 IO 的缺点**： 数据在传输过程中需要在应用程序地址空间和内核进行多次数据拷贝操作，增大CPU 以及内存开销
 
-![](../../pics/socket/socket_14.png)
+![](../../pics/netty/socket_14.png)
 
 # 二、I/O 模型
 
@@ -194,7 +194,7 @@
 
 调用 `recv()/recvfrom()` 函数时，发生在内核中等待数据和复制数据的过程，如图：
 
-![](../../pics/socket/socket_8.png)
+![](../../pics/netty/socket_8.png)
 
 ```c
 //recvfrom 用于接收 Socket 传来的数据，并复制到应用进程的缓冲区 buf 中
@@ -215,7 +215,7 @@ ssize_t recvfrom(int sockfd, void *buf, size_t len, int flags, struct sockaddr *
   >
   > 注意： **拷贝数据的过程，进程仍然阻塞**
 
-![](../../pics/socket/socket_9.png)
+![](../../pics/netty/socket_9.png)
 
 - 由于 CPU 要处理更多的系统调用，因此这种模型的 CPU 利用率比较低
 
@@ -273,7 +273,7 @@ ssize_t recvfrom(int sockfd, void *buf, size_t len, int flags, struct sockaddr *
   > }
   > ```
 
-![](../../pics/socket/socket_10.png)
+![](../../pics/netty/socket_10.png)
 
 ## 4. 信号驱动 I/O
 
@@ -281,7 +281,7 @@ ssize_t recvfrom(int sockfd, void *buf, size_t len, int flags, struct sockaddr *
   - 通过系统调用先建立 SIGIO 的信号处理函数，立即返回而不阻塞，应用进程可以继续执行
   - 当内核准备好数据，向用户进程递交 SIGIO 信号，此时进程使用 recvfrom 系统调用，将数据复制到用户空间(阻塞)
 
-![](../../pics/socket/socket_11.png)
+![](../../pics/netty/socket_11.png)
 
 ## 5. 异步 I/O
 
@@ -291,13 +291,13 @@ ssize_t recvfrom(int sockfd, void *buf, size_t len, int flags, struct sockaddr *
   - 异步 I/O 的信号是通知应用进程 I/O 完成
   - 信号驱动 I/O 的信号是通知应用进程可以开始 I/O
 
-![](../../pics/socket/socket_12.png)
+![](../../pics/netty/socket_12.png)
 
 ## 6. 五大 I/O 模型比较
 
 前四种 I/O 模型的主要区别在于第一个阶段，而第二个阶段是一样的：将数据从内核复制到应用进程过程中，应用进程会被阻塞
 
-![](../../pics/socket/socket_13.png)
+![](../../pics/netty/socket_13.png)
 
 # 二、I/O 复用
 
@@ -552,7 +552,7 @@ int epoll_wait(int epfd, struct epoll_event * events, int maxevents, int timeout
    - 调用 Socket 类对象的 getOutputStream() 和 getInputStream ()：获取输出流和输入流，开始网络数据的发送和接收
    - 关闭ServerSocket和Socket对象：客户端访问结束，关闭通信套接字
 
-![](../../pics/socket_1.png)
+![](../../pics/netty_1.png)
 
 **1. TCP编程例一：客户端给服务端发送信息，服务端输出此信息到控制台上：** 
 
@@ -1222,7 +1222,7 @@ public class TestInetAddress {
 
 - **简化的 reactor 模型**： 
 
-  ![](../../pics/socket/socket_15.png)
+  ![](../../pics/netty/socket_15.png)
 
 - **使用线程池改进**： **在阻塞 IO 下，线程池不成立** 
 
@@ -1234,13 +1234,13 @@ public class TestInetAddress {
   >   - 等到有数据时，处理完成，立即进行下一次判断，这个client有没有再次发送请求，如果没有，又block住了
   >   - 线程基本上是用一个少一个，因为对于一个client如果没有断开连接，就相当于这个任务没有处理完，任务没有处理完，线程永远不会返回到池子中，直到这个client断开连接
 
-  ![](../../pics/socket/socket_16.png)
+  ![](../../pics/netty/socket_16.png)
 
 ### 2. NIO Buffer
 
 - **在 NIO 网络编程中，通道直接从 ByteBuffer 中读取数据**
 
-![](../../pics/socket/socket_17.png)
+![](../../pics/netty/socket_17.png)
 
 #### 1. 基础
 
@@ -1299,11 +1299,11 @@ public abstract class ByteBuffer {
   buffer.put(0,"M".getBytes()).put("W".getBytes());
   ```
 
-  ![](../../pics/socket/socket_18.png)
+  ![](../../pics/netty/socket_18.png)
 
 - **翻转 flip() 函数**： 将一个能够继续添加数据元素的填充状态的缓冲区翻转成一个准备读出元素的释放状态
 
-  ![](../../pics/socket/socket_19.png)
+  ![](../../pics/netty/socket_19.png)
 
 - **rewind() 函数**： 与 flip() 相似，但不影响上界属性，即只是将位置值设回 0
 
@@ -1345,21 +1345,21 @@ public abstract class ByteBuffer {
 
   执行 `buffer.position(2).mark().position(4);` 的结果：
 
-  ![](../../pics/socket/socket_20.png)
+  ![](../../pics/netty/socket_20.png)
 
   执行 `reset()` 后的结果： 
 
-  ![](../../pics/socket/socket_21.png)
+  ![](../../pics/netty/socket_21.png)
 
 - **压缩(compact)**： 丢弃已经释放的数据，保留未释放的数据，并使缓冲区对重新填充容量准备就绪
 
   原始状态： 
 
-   ![](../../pics/socket/socket_22.png)
+   ![](../../pics/netty/socket_22.png)
 
   调用 `compact()` 后的状态： 数据元素 2-5 被复制到 0-3 位置
 
-  ![](../../pics/socket/socket_23.png)
+  ![](../../pics/netty/socket_23.png)
 
 - **复制缓冲区 duplicate() 函数**： 
 
@@ -1459,7 +1459,7 @@ public abstract class ByteBuffer {
 
 #### 1. 简介
 
-![](../../pics/socket/socket_24.png)
+![](../../pics/netty/socket_24.png)
 
 - Socket 通道有可以直接创建新 socket 通道的工厂方法
 - FileChannel 对象不能直接创建一个 FileChannel 对象，只能通过在一个打开的 RandomAccessFile、 FileInputStream 或 FileOutputStream对象上调用 getChannel( )方法来获取
@@ -1737,7 +1737,7 @@ public class TimeClient {
 
   > 因为其要于 server 建立连接，也需要进行读、写数据
 
-![](../../pics/socket/socket_25.png)
+![](../../pics/netty/socket_25.png)
 
 - 调用 Selector 对象的 select() 方法时，相关的 SelectionKey 会被更新，用来检查所有被注册到该选择器的通道是否已经准备就绪
 
@@ -1854,7 +1854,7 @@ public abstract class SelectorImpl extends AbstractSelector {
 
 ### 1. netty Channel
 
-![](../../pics/socket/socket_26.png)
+![](../../pics/netty/socket_26.png)
 
 #### 1. ChannelConfig
 
@@ -1866,7 +1866,7 @@ Netty 中，每种 Channel 都有对应的配置，用 `ChannelConfig` 接口来
 
 - `NioServerSocketChannel` 的对应的配置类为 `NioServerSocketChannelConfig` 
 
-![](../../pics/socket/socket_27.png)
+![](../../pics/netty/socket_27.png)
 
 - 在 Channel 接口中定义的 `config()` 方法，用于获取特定通道实现的配置，子类需要实现这个接口
 
@@ -1933,7 +1933,7 @@ Netty 中，每种 Channel 都有对应的配置，用 `ChannelConfig` 接口来
 
 #### 2. ChannelHander
 
-![](../../pics/socket/socket_28.png)
+![](../../pics/netty/socket_28.png)
 
 - **ChannelPipeline**： Netty 通过 `ChannelPipeline` 来保证 ChannelHandler 的处理顺序，每个 Channel 对象创建时，都会自动创建一个关联的 ChannelPipeline 对象
 
@@ -1941,7 +1941,7 @@ Netty 中，每种 Channel 都有对应的配置，用 `ChannelConfig` 接口来
 
 - **ChannelHandlerContext**： ChannelHandler 先封装成`ChannelHandlerContext`，再封装进ChannelPipeline 中
 
-  > ![](../../pics/socket/socket_29.png)
+  > ![](../../pics/netty/socket_29.png)
   >
   > 
 
@@ -1951,17 +1951,17 @@ Netty 中，每种 Channel 都有对应的配置，用 `ChannelConfig` 接口来
 
 - **串行工作者模型**： 
 
-  > ![](../../pics/socket/socket_30.png)
+  > ![](../../pics/netty/socket_30.png)
 
 - **并行工作者模型：**： 一个 accpet thread，多个 worker thread
 
   - 并行工作者线程模型设计方式一：**基于公共任务队列**，如： `ThreadPoolExecutor `
 
-    ![](../../pics/socket/socket_31.png)
+    ![](../../pics/netty/socket_31.png)
 
   - 并行工作者线程模型设计方式二：**每个worker thread维护自己的任务队列**，如： Reactor
 
-    ![](../../pics/socket/socket_32.png)
+    ![](../../pics/netty/socket_32.png)
 
 #### 2. Reactor 线程模型
 
@@ -1969,11 +1969,11 @@ Netty 中，每种 Channel 都有对应的配置，用 `ChannelConfig` 接口来
 
 - **单线程 reactor 线程模型**： 以比较耗时的操作为切分点
 
-  ![](../../pics/socket/socket_33.png)
+  ![](../../pics/netty/socket_33.png)
 
 - **多线程 reactor 线程模型**： 有多个accpet线程
 
-  ![](../../pics/socket/socket_34.png)
+  ![](../../pics/netty/socket_34.png)
 
 - **混合型 reactor 线程模型**： 
 
@@ -1983,7 +1983,7 @@ Netty 中，每种 Channel 都有对应的配置，用 `ChannelConfig` 接口来
 
   - 不同类型的任务，有着不同的处理流程，划分时需要划分成不同的阶段
 
-  ![](../../pics/socket/socket_35.png)
+  ![](../../pics/netty/socket_35.png)
 
 #### 3. Netty 中的 Reactor 线程模型
 
@@ -2007,7 +2007,7 @@ b.group(bossGroup, workerGroup)
         .bind(port);
 ```
 
-![](../../pics/socket/socket_36.png)
+![](../../pics/netty/socket_36.png)
 
 - `group()`： 设置执行任务的线程池
 
@@ -2047,7 +2047,7 @@ b.group(bossGroup, workerGroup)
 
 > TCP 无消息保护边界，需要在消息接收端处理消息边界问题，即粘包、拆包问题；而 UDP 通信则不需要
 
-![](../../pics/socket/socket_37.png)
+![](../../pics/netty/socket_37.png)
 
 假设客户端发送两个数据包 D1和D2 给服务端，由于服务端一次读取字节数不确定，故存在以下四种情况：
 
@@ -2098,7 +2098,7 @@ b.group(bossGroup, workerGroup)
 
 当需要传输的数据大于MSS或者MTU时，数据会被拆分成多个包进行传输
 
-![](../../pics/socket/socket_38.png)
+![](../../pics/netty/socket_38.png)
 
 - 应用层只关心发送的数据 DATA，将数据写入socket在内核中的缓冲区SO_SNDBUF即返回，操作系统会将SO_SNDBUF中的数据取出来进行发送
 - 传输层会在DATA前面加上TCP Header,构成一个完整的TCP报文
@@ -2174,7 +2174,7 @@ b.group(bossGroup, workerGroup)
 
 对于解码器，Netty 提供了抽象基类`ByteToMessageDecoder`和`MessageToMessageDecoder` 
 
-![](../../pics/socket/socket_39.png)
+![](../../pics/netty/socket_39.png)
 
 - `ByteToMessageDecoder`： 用于将接收到的二进制数据(Byte)解码，得到完整的请求报文
 
@@ -2202,7 +2202,7 @@ b.group(bossGroup, workerGroup)
   >
   >   > 使用 List 表示原因： 考虑到粘包问题
   >
-  > ![](../../pics/socket/socket_40.png)
+  > ![](../../pics/netty/socket_40.png)
   >
   > 注意： 
   >
@@ -2230,7 +2230,7 @@ b.group(bossGroup, workerGroup)
   >
   > - `List<Object> out`： 将 msg 经过解析后得到的 java 对象添加到 `List<Object> out` 中
   >
-  > ![](../../pics/socket/socket_41.png)
+  > ![](../../pics/netty/socket_41.png)
 
 ByteToMessageDecoder 除进行解码，还会对不足以构成一个完整数据的报文拆包数据(拆包)进行缓存。而MessageToMessageDecoder则没有这样的逻辑
 
@@ -2241,7 +2241,7 @@ ByteToMessageDecoder 除进行解码，还会对不足以构成一个完整数�
 
 ### 3. 编码器
 
-![](../../pics/socket/socket_42.png)
+![](../../pics/netty/socket_42.png)
 
 - `MessageToByteEncoder`： 是一个泛型类，泛型参数 I 表示将需要编码的对象的类型，编码的结果是将信息转换成二进制流放入 ByteBuf 中，子类通过覆写其抽象方法 `encode` 来实现编码
 
@@ -2260,7 +2260,7 @@ ByteToMessageDecoder 除进行解码，还会对不足以构成一个完整数�
 
 ### 4. 编码解码器
 
-![](../../pics/socket/socket_43.png)
+![](../../pics/netty/socket_43.png)
 
 ## 5. 协议
 
@@ -2630,7 +2630,7 @@ ByteToMessageDecoder 除进行解码，还会对不足以构成一个完整数�
 
 基于长轮循(polling)和websocket推送的浏览器(browser)和服务端(Server)的交互对比图：
 
-![](../../pics/socket/socket_44.png)
+![](../../pics/netty/socket_44.png)
 
 **实现消息推送**： 
 

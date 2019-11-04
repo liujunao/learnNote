@@ -2119,7 +2119,7 @@ URL 别名： 两个 URL 看起来不一样，但实际指向同一资源
   >   > - 该证书包含这个公钥和公钥所有者全局唯一的身份标识信息
   >   > - 由 CA 对这个证书进行数字签名
 
-![](D:/architect_learn/learnNote/pics/net/internet_4.png)
+![](../../pics/net/internet_4.png)
 
 ## 2. HTTPS
 

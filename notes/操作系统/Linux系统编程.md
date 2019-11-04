@@ -209,7 +209,7 @@
 
 - **解决方案**： I/O 复用模型，`select,poll,epoll`
 
-  ![](../../pics/socket/socket_10.png)
+  ![](../../pics/netty/socket_10.png)
 
 ### 4. 内核
 

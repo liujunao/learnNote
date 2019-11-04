@@ -2398,7 +2398,7 @@ CPU 提供了两种方法来实现多处理器的原子操作：总线加锁或�
 
 > 在完成一组正在其他线程中执行的操作之前，允许一个或多个线程一直等待
 
-![](D:/architect_learn/learnNote/pics/concurrent/concurrent_45.png)
+![](../../pics/concurrent/concurrent_45.png)
 
 CountDownLatch 通过计数器来实现，计数器值表示线程的数量，每当一个线程完成自己的任务后，计数器的值就会减 1，当计数器的值变为 0 时，表示所有的线程均已完成任务，然后就可以恢复等待的线程继续执行
 
@@ -4269,7 +4269,7 @@ FutureTask 的三种状态：
 
   例如下图： Thread2 从 Thread1 的队列中拿出最晚的 Task1 任务，Thread1 会拿出 Task2 来执行
 
-  <img src="D:/architect_learn/learnNote/pics/15b45dc6-27aa-4519-9194-f4acfa2b077f.jpg" width=""/>
+  ![](../../pics/concurrent/concurrent_48.png)
 
 - **Fork/Join 框架与线程池的区别:** 
 

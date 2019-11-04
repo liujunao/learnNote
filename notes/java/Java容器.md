@@ -13,7 +13,7 @@
 2. remove(Object obj)，removeAll(Collection coll)，retainAll(Collection coll)，equals(Object obj)，contains(Object obj)，containsAll(Collection coll)，hashCode()
 3. iterator()，toArray()
 
-<img src="../../pics//VP4n3i8m34Ntd28NQ4_0KCJ2q044Oez.png"/>
+![](../../pics/collection/collection.png)
 
 ### 1. Set
 
@@ -78,7 +78,7 @@
 
   - 获取 `get(Object key) size() / keySet() values()  entrySet()`
 
-<img src="../../pics//SoWkIImgAStDuUBAp2j9BKfBJ4vLy4q.png"/>
+![](../../pics/collection/collection_16.png)
 
 - `HashMap`：基于哈希表实现(主要实现类，可以添加null键，null值)
 
@@ -100,7 +100,7 @@
 
 ## 1. 迭代器模式
 
-<img src="../../pics//SoWkIImgAStDuUBAp2j9BKfBJ4vLy0G.png"/>
+![](../../pics/collection/collection_17.png)
 
 - 使用 `foreach` 方法来遍历实现了 Iterable 接口的聚合对象
 
@@ -599,7 +599,7 @@ private E get(Object[] a, int index) {
 
 - 每个链表存储了 first 和 last 指针：
 
-  <img src="../../pics//49495c95-52e5-4c9a-b27b-92cf235ff5ec.png" width="500"/>
+  ![](../../pics/collection/collection_18.png)
 
 #### 2. add
 
@@ -729,7 +729,7 @@ private void checkElementIndex(int index) {
 - Entry 是一个链表，即数组中的每个位置被当成一个桶，一个桶存放一个链表
 - HashMap 使用拉链法来解决冲突，同一个链表中存放哈希值相同的 Entry
 
-<img src="../../pics//8fe838e3-ef77-4f63-bf45-417b6bc5c6bb.png" width="600"/>
+  ![](../../pics/collection/collection_19.png)
 
 ```java
 //JDK1.7
@@ -824,8 +824,8 @@ static class Node<K,V> implements Map.Entry<K,V> {
 - 查找分两步进行：
   - **计算键值对所在的桶**
   - **在链表上顺序查找**，时间复杂度显然和链表的长度成正比
-
-<img src="D:/architect_learn/learnNote/pics/49d6de7b-0d0d-425c-9e49-a1559dc23b10.png" width="600"/>
+  
+  ![](../../pics/collection/collection_20.png)
 
 #### 3. 构造器
 
@@ -1249,7 +1249,7 @@ static final class TreeNode<K,V> extends LinkedHashMap.Entry<K,V> {
 
 推荐阅读： ==[HashMap的死循环](https://www.jianshu.com/p/1e9cf0ac07f4)== 
 
-![](../../pics/collection/hashmap_1.png)
+![](../../pics/collection/collection_21.png)
 
 ### 2. LinkedHashMap
 
@@ -1284,9 +1284,9 @@ static final class TreeNode<K,V> extends LinkedHashMap.Entry<K,V> {
   final boolean accessOrder;
   ```
 
-![](../../pics/collection/LinkedHashMap_2.png)
+![](../../pics/collection/collection_22.png)
 
-![](../../pics/collection/LinkedHashMap_1.png)
+![](../../pics/collection/collection_23.png)
 
 #### 2. 构造器
 
@@ -1880,7 +1880,9 @@ private void deleteEntry(Entry<K,V> p) {
 
 **JDK7 的 ConcurrentHashMap 实现方式**： 采用 Segment 分段锁机制
 
-<img src="../../pics//3fdfc89d-719e-4d93-b518-29fa612b3b18.png"/> ConcurrentHashMap 元素定位过程：**需要进行两次Hash操作**
+![](../../pics/collection/collection_24.png)
+
+ ConcurrentHashMap 元素定位过程：**需要进行两次Hash操作**
 
 - 第一次 Hash 定位到 Segment
 - 第二次 Hash 定位到元素所在的链表头部
@@ -1990,9 +1992,9 @@ public int size() {
 
 - **[ConcurrentHashMap总结](http://www.importnew.com/22007.html)**
 
-JDK8 的 ConcurrentHashMap 实现方式： **直接使用大数组，来提高并发性**
+JDK8 的 ConcurrentHashMap 实现方式： **直接使用大数组，来提高并发性** 
 
-![](../../pics/collection/concurrenthashmap_java8.png)
+![](../../pics/collection/collection_25.png)
 
 **初始化**：`sizeCtl` 的取值决定
 
@@ -2033,7 +2035,7 @@ JDK8 的 ConcurrentHashMap 实现方式： **直接使用大数组，来提高�
 
   - 每当处理了一个节点，就把对应节点设为 forward 节点，另一个线程看到 forward，就向后遍历
 
-![](../../pics/collection/concurrentHashMap.png)
+![](../../pics/collection/collection_26.png)
 
 **put 操作**： 
 
@@ -2310,7 +2312,7 @@ public Object clone() {
   >
   > - LinkedHashSet 和 LinkedHashMap 一样维护着一个运行于所有条目的双向链表
 
-![](../../pics/collection/LinkedHashMap_3.png)
+![](../../pics/collection/collection_27.png)
 
 # 四、工具类
 
