@@ -3,7 +3,23 @@
 - [redis 教程](http://www.runoob.com/redis/redis-tutorial.html) 
 - [reids 面试题汇总](https://www.w3cschool.cn/redis/redis-ydwp2ozz.html) 
 
+---
+
+源码阅读建议： [如何阅读 Redis 源码](http://blog.huangz.me/diary/2014/how-to-read-redis-source-code.html) 
+
+Redis 命令速查： [Redis命令参考](http://redisdoc.com/) 
+
+作者博客： [huangz/blog](http://blog.huangz.me/) 
+
+---
+
+==推荐的另一书籍==： 《**Redis 深度历险：核心原理与应用实践**》
+
 # # 第一部分：数据结构与对象
+
+- [redis3.2 基本数据结构](http://czrzchao.com/redisSourceSds#sds)
+
+
 
 # 一、简单动态字符串(SDS)
 
