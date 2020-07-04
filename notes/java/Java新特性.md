@@ -89,13 +89,13 @@
      };
     ```
 
-    - **语法格式五**：若 Lambda 体中只有一条语句， return 和 大括号都可以省略不写：
+  - **语法格式五**：若 Lambda 体中只有一条语句， return 和 大括号都可以省略不写
 
-      ```java
-      Comparator<Integer> com = (x, y) -> Integer.compare(x, y);
-      ```
+    ```java
+    Comparator<Integer> com = (x, y) -> Integer.compare(x, y);
+    ```
 
-    - **语法格式六**：Lambda 表达式的参数列表的数据类型可以省略不写，因为JVM编译器通过上下文推断出，数据类型，即“类型推断”：`(Integer x, Integer y) -> Integer.compare(x, y);`
+  - **语法格式六**：Lambda 表达式的参数列表的数据类型可以省略不写，因为JVM编译器通过上下文推断出，数据类型，即“类型推断”：`(Integer x, Integer y) -> Integer.compare(x, y);`
 
 ### 2. 类型推断
 
@@ -201,7 +201,6 @@ public List<Employee> filterEmployeeAge(List<Employee> emps){
     }
     return list;
 }
-
 ```
 
 **优化方式一：** 策略设计模式（可以通过修改接口中的实现，来修改功能，提高代码共用行）
@@ -230,7 +229,6 @@ public class FilterEmployeeForAge implements MyPredicate<Employee>{
 		return t.getAge() <= 35;
 	}
 }
-
 ```
 
 **优化方式二：** 匿名内部类
@@ -248,7 +246,6 @@ public void test5(){
         System.out.println(employee);
     }
 }
-
 ```
 
 **优化方式三：** Lambda 表达式
@@ -259,7 +256,6 @@ public void test6(){
     List<Employee> list = filterEmployee(emps, (e) -> e.getAge() <= 35);
     list.forEach(System.out::println);
 }
-
 ```
 
 **优化方式四：** Stream API
@@ -271,7 +267,6 @@ public void test7(){
         .filter((e) -> e.getAge() <= 35)
         .forEach(System.out::println);
 }
-
 ```
 
 ## 2. 函数式接口
@@ -283,7 +278,7 @@ public void test7(){
 
 ### 2. Java 内置四大核心函数式接口
 
-1. **消费型接口：** `void Consumer<T>`，对类型为T的对象应用操作，包含方法：`void accept(T t)` 
+1. **消费型接口：** `void Consumer<T>`，对类型为 T 的对象应用操作，包含方法：`void accept(T t)` 
 
    ```java
    @Test
@@ -294,9 +289,8 @@ public void test7(){
    public void happy(double money, Consumer<Double> con){
        con.accept(money);
    }
-   
    ```
-
+   
 2. **供给型接口：** `T Supplier<T>`，返回类型为T的对象，包含方法：`T get()`
 
    ```java
@@ -317,10 +311,9 @@ public void test7(){
        }
        return list;
    }
-   
    ```
-
-3. **函数型接口：** `R Function<T, R>`，对类型为T的对象应用操作，并返回结果，结果是R类型的对象，包含方法：`R apply(T t)`
+   
+3. **函数型接口：** `R Function<T, R>`，对类型为T的对象应用操作，并返回结果，结果是 R 类型的对象，包含方法：`R apply(T t)`
 
    ```java
    @Test
@@ -336,9 +329,8 @@ public void test7(){
    public String strHandler(String str, Function<String, String> fun){
        return fun.apply(str);
    }
-   
    ```
-
+   
 4. **断定型接口：** `boolean Predicate<T>`，确定类型为 T 的对象是否满足某约束，并返回 boolean 值，包含方法`boolean test(T t)`
 
    ```java
@@ -361,7 +353,6 @@ public void test7(){
        }
        return strList;
    }
-   
    ```
 
 ### 3. 其他接口
@@ -388,9 +379,8 @@ public void test7(){
   
       Consumer<String> con3 = System.out::println;
   }
-  
   ```
-
+  
 - **三种主要使用情况**：
 
   - `对象::实例方法`
@@ -408,12 +398,11 @@ public void test7(){
         Supplier<String> sup2 = emp::getName;
         System.out.println(sup2.get());
     }
-    
     ```
-
-  - `类::静态方法`
-
-    ```java
+    
+- `类::静态方法`
+  
+  ```java
     @Test
     public void test3(){
         BiFunction<Double, Double, Double> fun = (x, y) -> Math.max(x, y);
@@ -433,13 +422,12 @@ public void test7(){
     
         Comparator<Integer> com2 = Integer::compare;
     }
-    
     ```
-
+    
   - `类::实例方法`
 
     ```java
-    @Test
+  @Test
     public void test5(){
         BiPredicate<String, String> bp = (x, y) -> x.equals(y);
         System.out.println(bp.test("abcde", "abcde"));
@@ -456,7 +444,6 @@ public void test7(){
         Function<Employee, String> fun2 = Employee::show;
         System.out.println(fun2.apply(new Employee()));
     }
-    
     ```
 
 **注意：**
@@ -489,7 +476,6 @@ public void test7(){
     Function<String, Employee> fun = Employee::new;
     BiFunction<String, Integer, Employee> fun2 = Employee::new;
 }
-
 ```
 
 ### 3. 数组引用
@@ -509,7 +495,6 @@ public void test8(){
     Employee[] emps = fun2.apply(20);
     System.out.println(emps.length);
 }
-
 ```
 
 ## 4. Stream API
@@ -546,9 +531,8 @@ public void test8(){
     List<String> list = new ArrayList<>();
     Stream<String> stream = list.stream(); //获取一个顺序流
     Stream<String> parallelStream = list.parallelStream(); //获取一个并行流
-    
     ```
-
+  
 - **创建流**： 
 
   - **由数组创建流**： `static <T> Stream<T> stream(T[] array)` 
@@ -562,32 +546,29 @@ public void test8(){
     ```java
     Integer[] nums = new Integer[10];
     Stream<Integer> stream1 = Arrays.stream(nums);
-    
     ```
-
-  - **由值创建流**：使用静态方法 `Stream.of()` 显示值创建一个流，可以接收任意数量的参数
-
-    `public static<T> Stream<T> of(T... values) `
-
-    ```java
+    
+- **由值创建流**：使用静态方法 `Stream.of()` 显示值创建一个流，可以接收任意数量的参数
+  
+  `public static<T> Stream<T> of(T... values) `
+  
+  ```java
     Stream<Integer> stream2 = Stream.of(1,2,3,4,5,6);
-    
     ```
-
+    
   - **由函数创建流**：创建无限流，使用静态方法 `Stream.iterate()` 和 `Stream.generate()`
 
     - 迭代：`public static<T> Stream<T> iterate(final T seed, final UnaryOperator<T> f)`
-    - 生成：`public static<T> Stream<T> generate(Supplier<T> s)` 
-
+  - 生成：`public static<T> Stream<T> generate(Supplier<T> s)` 
+  
     ```java
-    //迭代
+  //迭代
     Stream<Integer> stream3 = Stream.iterate(0, (x) -> x + 2).limit(10);
     stream3.forEach(System.out::println);
     
     //生成
     Stream<Double> stream4 = Stream.generate(Math::random).limit(2);
     stream4.forEach(System.out::println);
-    
     ```
 
 ### 4. Stream 的中间操作
@@ -610,25 +591,23 @@ public void test8(){
         //只有当做终止操作时，所有的中间操作会一次性的全部执行，称为“惰性求值”
         stream.forEach(System.out::println);
     }
-    
     ```
-
-  - `distinct()` ： 筛选，通过流所生成元素的 hashCode() 和equals() 去除重复元素
-
-    ```java
+    
+- `distinct()` ： 筛选，通过流所生成元素的 hashCode() 和equals() 去除重复元素
+  
+  ```java
     @Test
     public void test6(){
         emps.stream()
             .distinct()
             .forEach(System.out::println);
     }
-    
     ```
-
-    要想 distinct() 起作用，必须实现 hashCode() 和equals()  方法
-
-    ```java
-    @Override
+    
+  要想 distinct() 起作用，必须实现 hashCode() 和equals()  方法
+  
+  ```java
+  @Override
     public int hashCode() {
         final int prime = 31;
         int result = 1;
@@ -663,14 +642,13 @@ public void test8(){
             return false;
         return true;
     }
-    
     ```
-
+    
   - `limit(long maxSize)` ： 截断流，使其元素不超过给定数量
-
-    ```java
+  
+  ```java
     @Test
-    public void test4(){
+  public void test4(){
         emps.stream()
             .filter((e) -> {
                 System.out.println("短路！"); // &&  ||
@@ -678,22 +656,20 @@ public void test8(){
             }).limit(3)
             .forEach(System.out::println);
     }
-    
     ```
-
+    
   - `skip(long n)` ：跳过元素，返回一个扔掉了前 n 个元素的流，若流中元素不足，则返回一个空流
-
+  
     ```java
-    @Test
+  @Test
     public void test5(){
-        emps.parallelStream()
+      emps.parallelStream()
             .filter((e) -> e.getSalary() >= 5000)
             .skip(2)
             .forEach(System.out::println);
     }
-    
     ```
-
+  
 - **映射**： 
 
   - `map(Function f)` ：接收一个函数作为参数，该函数会被应用到每个元素上，并将其映射成新的元素
@@ -711,7 +687,6 @@ public void test8(){
       System.out.println("-------------------------------------------");
   
       List<String> strList = Arrays.asList("aaa", "bbb", "ccc", "ddd", "eee");
-  
       Stream<String> stream = strList.stream()
              .map(String::toUpperCase);
       stream.forEach(System.out::println);
@@ -738,9 +713,8 @@ public void test8(){
       }
       return list.stream();
   }
-  
   ```
-
+  
 - **排序**： 
 
   - `sorted()` ：产生一个新流，其中按自然顺序排序
@@ -782,7 +756,6 @@ List<Employee> emps = Arrays.asList(
         new Employee(104, "赵六", 8, 7777.77, Status.FREE),
         new Employee(105, "田七", 38, 5555.55, Status.BUSY)
 );
-
 ```
 
 1. **查找与匹配**
@@ -802,80 +775,73 @@ List<Employee> emps = Arrays.asList(
      boolean bl1 = emps.stream()
                  	  .anyMatch((e) -> e.getStatus().equals(Status.BUSY));
              System.out.println(bl1);
-     
      ```
-
-   - `noneMatch(Predicatep)` ： 检查是否没有匹配所有元素
-
-     ```java
+     
+- `noneMatch(Predicatep)` ： 检查是否没有匹配所有元素
+   
+  ```java
      boolean bl2 = emps.stream()
                        .noneMatch((e) -> e.getStatus().equals(Status.BUSY));
              System.out.println(bl2);
-     
      ```
-
+     
    - `findFirst()` ： 返回第一个元素
 
      ```java
-     Optional<Employee> op = emps.stream()
+  Optional<Employee> op = emps.stream()
              .sorted((e1, e2) -> Double.compare(e1.getSalary(), e2.getSalary()))
              .findFirst();
          System.out.println(op.get());
-     
      ```
-
+     
    - `findAny()` ： 返回当前流中的任意元素
-
-     ```java
+   
+  ```java
      Optional<Employee> op2 = emps.parallelStream()
-     			.filter((e) -> e.getStatus().equals(Status.FREE))
+  			.filter((e) -> e.getStatus().equals(Status.FREE))
      			.findAny();
      		System.out.println(op2.get());
-     
      ```
-
+     
    - `count()` ： 返回流中元素总数
-
+   
      ```java
-     long count = emps.stream()
+  long count = emps.stream()
      			     .filter((e) -> e.getStatus().equals(Status.FREE))
-     				 .count();
+  				 .count();
      		System.out.println(count);
-     
      ```
-
+     
    - `max(Comparatorc)` ： 返回流中最大值
-
+   
      ```java
      Optional<Double> op = emps.stream()
-     			.map(Employee::getSalary)
+  			.map(Employee::getSalary)
      			.max(Double::compare);
-     		System.out.println(op.get());
-     
+  		System.out.println(op.get());
      ```
-
+     
    - `min(Comparatorc)` ： 返回流中最小值
-
+   
      ```java
      Optional<Employee> op2 = emps.stream()
      			.min((e1, e2) -> Double.compare(e1.getSalary(), e2.getSalary())	
-     //等价于
+  //等价于
      Optional<Employee> op2 = emps.stream()
-     							 .min(Double：：compare);
+  							 .min(Double：：compare);
      		System.out.println(op2.get());
-     
      ```
-
+     
    - `forEach(Consumerc)` ： 内部迭代
-
+   
      > **外部迭代：** 使用 Collection 接口需要用户去做迭代
-
+   
 2. **归约**
 
    - `reduce(T iden, BinaryOperator b)` ：可以将流中元素反复结合起来，得到一个值；返回 T
-   - `reduce(BinaryOperator b)` ： 可以将流中元素反复结合起来，得到一个值；返回`Optional<T>` 
+   - `reduce(BinaryOperator b)` ： 可以将流中元素反复结合起来，得到一个值；返回 `Optional<T>` 
 
-   > **备注：** map 和reduce 的连接通常称为map-reduce 模式，因Google 用它来进行网络搜索而出名
+   > **备注：** map 和 reduce 的连接通常称为 map-reduce 模式，因 Google 用它来进行网络搜索而出名
 
    ```java
    @Test
@@ -908,9 +874,8 @@ List<Employee> emps = Arrays.asList(
    
        System.out.println(sum.get());
    }
-   
    ```
-
+   
 3. **收集**
 
    - `collect(Collector c)` ： 将流转换为其他形式，接收一个Collector接口的实现，用于汇总Stream元素
@@ -918,9 +883,9 @@ List<Employee> emps = Arrays.asList(
      > Collector 接口中方法的实现决定了如何对流执行收集操作(如收集到List、Set、Map)
      >
      > Collectors 实用类提供了很多静态方法，可以方便地创建常见收集器实例
-  
+    
      ![](../../pics/java/javaN_4.png)
-  
+    
      ![](../../pics/java/javaN_5.png)
 
    ```java
@@ -1024,7 +989,6 @@ List<Employee> emps = Arrays.asList(
            .collect(Collectors.reducing(Double::sum));
        System.out.println(sum.get());
    }
-   
    ```
 
 ### 6. 并行流与串行流
@@ -1370,17 +1334,15 @@ public void test7(){
       Employee emp = op.get();
       System.out.println(emp);
   }
-  
   ```
-
+  
 - `Optional.empty()` ： 创建一个空的 Optional 实例
 
   ```java
   Optional<Employee> op = Optional.empty();
   System.out.println(op.get());//会报错，因为构建的容器为空，所以不能 get()
-  
   ```
-
+  
 - `Optional.ofNullable(T t)`： 若 t 不为null，创建 Optional 实例，否则创建空实例
 
   ```java
