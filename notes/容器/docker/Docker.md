@@ -1,8 +1,8 @@
-#\#推荐阅读： [docker 教程](https://yeasy.gitbooks.io/docker_practice/content/) 
+# \#推荐阅读： [docker 教程](https://yeasy.gitbooks.io/docker_practice/content/) 
 
 ![](../../pics/docker/docker_1.png)
 
-#\# 概念理解
+# \# 概念理解
 
 # 一、解决的问题
 
@@ -148,7 +148,7 @@ Docker 轻量级的特点使得它很适合用于部署、维护、组合微服�
 
 ## 1. Docker 客户端和服务器
 
-###1. 简介
+### 1. 简介
 
 - Docker 是一个**客户-服务器(C/S)** 架构的程序
 - 客户端只需发出请求，服务器或守护进程将完成所有工作并返回结果
@@ -530,7 +530,7 @@ Nginx 部署流程：
 
 ## 3. Docker 镜像
 
-###1. 简介
+### 1. 简介
 
 - **镜像是构建 Docker 世界的基石**，用户基于镜像来运行自己的容器
 

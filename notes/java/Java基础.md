@@ -1,8 +1,8 @@
 # 一、基础
 
-## 1. 面向对象
+## 1、面向对象
 
-### 1. 面向对象开发的优点
+### (1) 面向对象开发的优点
 
 - 代码开发模块化，更易维护和修改
 - 代码复用
@@ -10,7 +10,7 @@
 - 增加代码的可理解性
 - 面向对象编程有很多重要的特性，比如：**封装，继承，多态**和抽象
 
-### 2. 成员变量与局部变量的区别
+### (2) 成员变量与局部变量的区别
 
 - 从语法形式上：
   - 成员变量属于类，局部变量是在方法中定义的变量或是方法的参数
@@ -20,9 +20,9 @@
 - 从变量在内存中的生存时间上看，成员变量是对象的一部分，它随着对象的创建而存在，而局部变量随着方法的调用而自动消失
 - 成员变量如果没有被赋初值，则会自动以类型的默认值而赋值，而**局部变量不会自动赋值**
 
-## 2. 数据类型
+## 2、数据类型
 
-### 1. 包装类型 
+### (1) 包装类型 
 
 八个基本类型：
 
@@ -47,7 +47,7 @@ Integer i = Integer.valueOf(1); // 装箱
 int j = i.intValue(); // 拆箱
 ```
 
-### 2. 缓存池
+### (2) 缓存池
 
 new Integer(123) 与 Integer.valueOf(123) 的区别在于：
 
@@ -166,9 +166,9 @@ Integer n = new Integer(10);
 System.out.println(m == n);//false
 ```
 
-## 3. 基础类与封装类的区别
+## 3、基础类与封装类的区别
 
-### 1. 传递方式不同
+### (1) 传递方式不同
 
 - 基本类型在传递参数时按值传递，而封装类型按引用传递
 
@@ -176,18 +176,18 @@ System.out.println(m == n);//false
 
 - int 是基本类型，直接存放数值；Integer是类，产生对象时用一个引用指向这个对象
 
-### 2. 封装类都为 final
+### (2) 封装类都为 final
 
 - 封装类可以有方法和属性，利用这些方法和属性来处理数据，如 Integer.parseInt(Strings)
 - **基本数据类型都是final修饰的**，不能继承扩展新的类、新的方法
 
-### 3. 默认初始值不同
+### (3) 默认初始值不同
 
 - int 的预设为 0；Integer 的预设为 null
 
   > 因为封装类产生的是对象，对象默认值为null
 
-### 4. 存储位置不同
+### (4) 存储位置不同
 
 - 基本类型在内存中是存储在栈中，引用类型的引用（值的地址）存储在栈中，而实际的对象（值）是存在堆中
 
@@ -195,7 +195,7 @@ System.out.println(m == n);//false
 
 # 二、String
 
-## 1. 概览
+## 1、概览
 
 - **String 被声明为 final**，因此它不可被继承
 
@@ -210,7 +210,7 @@ public final class String
 
 - 每次对 String 类型进行改变的时候，都会生成一个新的 String 对象，然后将指针指向新的 String 对象
 
-## 2. 不可变的好处
+## 2、不可变的好处
 
 **1. 可以缓存 hash 值** 
 
@@ -232,7 +232,7 @@ public final class String
 
 [Program Creek : Why String is immutable in Java?](https://www.programcreek.com/2013/04/why-string-is-immutable-in-java/)
 
-## 3. String, StringBuffer, StringBuilder
+## 3、String, StringBuffer, StringBuilder
 
 **1. 可变性** 
 
@@ -251,7 +251,7 @@ public final class String
 - 单线程操作字符串缓冲区下操作大量数据 = StringBuilder
 - 多线程操作字符串缓冲区下操作大量数据 = StringBuffer
 
-## 4. String Pool
+## 4、String Pool
 
 - **字符串常量池(String Poll)**： 保存着所有字符串字面量，这些字面量在编译时期确定
 - 可以使用 String 的 intern() 方法在运行过程中将字符串添加到 String Poll 中
@@ -310,7 +310,7 @@ System.out.println(str5.intern() == str4); //false
 
 # 三、运算
 
-## 1. 参数传递
+## 1、参数传递
 
 > **强烈推荐**： ==[Java 有值类型吗](www.yinwang.org/blog-cn/2016/06/08/java-value-type)== 
 
@@ -383,7 +383,7 @@ class PassByValueExample {
 
 [StackOverflow: Is Java “pass-by-reference” or “pass-by-value”?](https://stackoverflow.com/questions/40480/is-java-pass-by-reference-or-pass-by-value)
 
-## 2. float 与 double
+## 2、float 与 double
 
 1.1 字面量属于 double 类型，不能直接将 1.1 直接赋值给 float 变量，因为这是向下转型。Java 不能隐式执行向下转型，因为这会使得精度降低。
 
@@ -397,7 +397,7 @@ class PassByValueExample {
 float f = 1.1f;
 ```
 
-## 3. 隐式类型转换
+## 3、隐式类型转换
 
 **转换规则**： 
 
@@ -425,7 +425,7 @@ s1 = (short) (s1 + 1);
 
 [StackOverflow : Why don't Java's +=, -=, *=, /= compound assignment operators require casting?](https://stackoverflow.com/questions/8710619/why-dont-javas-compound-assignment-operators-require-casting)
 
-## 4. switch
+## 4、switch
 
 - switch 支持 String，但不支持 long
 
@@ -525,7 +525,7 @@ SuperClass()
 SubClass2(int n):200
 ```
 
-## 1. 访问权限
+## 1、访问权限
 
 |           | 同一个类 | 同一个包 | 不同包的子类 | 不同包的非子类 |
 | :-------: | :------: | :------: | :----------: | :------------: |
@@ -558,7 +558,7 @@ SubClass2(int n):200
   - **迪米特法则**： 尽量降低类与类之间的耦合
   - **开闭原则**： 当软件需要变化时，尽量通过扩展软件实体的行为来实现变化，而不是通过修改已有的代码来实现变化
 
-## 2. 抽象类与接口
+## 2、抽象类与接口
 
 **1. 抽象类** 
 
@@ -667,7 +667,7 @@ System.out.println(InterfaceExample.x);
 - [深入理解 abstract class 和 interface](https://www.ibm.com/developerworks/cn/java/l-javainterface-abstract/)
 - [When to Use Abstract Class and Interface](https://dzone.com/articles/when-to-use-abstract-class-and-intreface)
 
-## 3. super
+## 3、super
 
 作用： 
 
@@ -719,7 +719,7 @@ SuperExtendExample.func()
 
 [Using the Keyword super](https://docs.oracle.com/javase/tutorial/java/IandI/super.html)
 
-## 4. this
+## 4、this
 
 1. 使用在类中，可以用来修饰属性、方法、构造器
 2. 表示当前对象或者是当前正在创建的对象
@@ -729,7 +729,7 @@ SuperExtendExample.func()
    1. **要求“this(形参列表)”要声明在构造器的首行**！
    2. 类中若存在n个构造器，那么最多有n-1构造器中使用了this
 
-## 5. 重写与重载
+## 5、重写与重载
 
 **1. 重写（Override）** 
 
@@ -810,13 +810,13 @@ SuperExtendExample.func()
   > >
   > > 举个例子add(int, int)调用此方法时你并不知道函数返回的什么类型(int还是long),  因为int是可以隐式的向上转型为long, 所以JVM并不知道该调用int的返回方法呢还是long的返回方法. 举这个例子可能有些不恰当, 只是为了说明一个函数只有唯一一个输出, 不能出现既可以返回int还可以返回long或者其它什么类型
 
-## 6. 其他关系模型
+## 6、其他关系模型
 
 - **[继承、实现、依赖、关联、聚合、组合的联系与区别](https://www.cnblogs.com/jiqing9006/p/5915023.html)**
 
 # 五、Object 通用方法
 
-## 1. 概览 
+## 1、概览 
 
 ```java
 public final native Class<?> getClass()
@@ -832,7 +832,7 @@ public final void wait() throws InterruptedException
 protected void finalize() throws Throwable {}
 ```
 
-## 2. equals()
+## 2、equals()
 
 - 推荐阅读： **[equals()与hashCode()方法详解](https://www.cnblogs.com/Qian123/p/5703507.html)** 
 
@@ -919,7 +919,7 @@ public class EqualExample {
 
   > 重写 equals 方法，但未重写 hashcode，则返回的是两个对象的内存地址，即 hashcode 不同
 
-## 3. hashCode()
+## 3、hashCode()
 
 - 作用：是获取哈希码(散列码)；实际上返回一个int整数，哈希码的作用是确定该对象在哈希表中的索引位置
 
@@ -943,7 +943,7 @@ public native int hashCode();
 >
 > > 注意： hashCode() 的默认行为是对堆上的对象产生独特值，如果没有重写 hashCode()，则该 class 的两个对象无论如何都不会相等（即使这两个对象指向相同的数据）
 
-## 4. toString()
+## 4、toString()
 
 默认返回 ToStringExample@4554617c 这种形式，其中 @ 后面的数值为散列码的无符号十六进制表示
 
@@ -966,9 +966,9 @@ System.out.println(example.toString());
 ToStringExample@4554617c
 ```
 
-## 5. clone() 
+## 5、clone() 
 
-### 1. 简介
+### (1) 简介
 
 - clone() 是 Object 的 protected 方法，即一个类不显式去重写 clone()，其它类就不能直接去调用该类实例的 clone() 方法
 
@@ -987,7 +987,7 @@ ToStringExample@4554617c
 
 - 如果一个类没有实现 Cloneable 接口又调用了 clone() 方法，就会抛出 CloneNotSupportedException
 
-### 2. 浅拷贝
+### (2) 浅拷贝
 
 - 定义： **拷贝对象和原始对象的引用类型引用同一个对象**
 
@@ -1025,7 +1025,7 @@ e1.set(2, 222);
 System.out.println(e2.get(2)); // 222
 ```
 
-### 3. 深拷贝
+### (3) 深拷贝
 
 - 定义： **拷贝对象和原始对象的引用类型引用不同对象**
 
@@ -1069,7 +1069,7 @@ e1.set(2, 222);
 System.out.println(e2.get(2)); // 2
 ```
 
-### 4. clone() 的替代方案
+### (4) clone() 的替代方案
 
 - 缺点： **使用 clone() 方法来拷贝一个对象即复杂又有风险，它会抛出异常，并且还需要类型转换**
 - 替代： **可以使用拷贝构造函数或者拷贝工厂来拷贝一个对象** 
@@ -1107,7 +1107,7 @@ System.out.println(e2.get(2)); // 2
 
 # 六、关键字
 
-## 1. final
+## 1、final
 
 - 用来修饰数据，包括成员变量和局部变量，该变量只能被赋值一次且它的值无法被改变
 
@@ -1121,25 +1121,25 @@ System.out.println(e2.get(2)); // 2
 
   > final 类中的所有成员方法都会被隐式地指定为 final 方法
 
-## 2. static
+## 2、static
 
 - `static`： 表明一个成员变量或成员方法可以在不实例化类的情况下被访问
 
 - `static` 方法不能被覆盖，因为方法覆盖是运行时动态绑定，而 static 方法是编译时静态绑定，且 static 方法跟类的任何实例都不相关
 
-### 1. 静态变量
+### (1) 静态变量
 
 - **静态变量**：又称为类变量，即该变量属于类的，类所有的实例都共享静态变量，可以直接通过类名来访问
 - **实例变量**：每创建一个实例就会产生一个实例变量，与该实例同生共死
 
-### 2. 静态方法
+### (2) 静态方法
 
 - 静态方法在类加载时已存在，不依赖于任何实例
 - 静态方法必须有实现，即不能是抽象方法
 
 - **静态方法只能访问所属类的静态字段和静态方法**，方法中不能有 this 和 super 关键字
 
-### 3. 静态语句块
+### (3) 静态语句块
 
 - 静态语句块在类初始化时运行一次
 
@@ -1149,7 +1149,7 @@ static{
 }
 ```
 
-### 4. 静态内部类
+### (4) 静态内部类
 
 - 非静态内部类依赖于外部类的实例，而静态内部类不需要
 - 静态内部类不能访问外部类的非静态的变量和方法
@@ -1169,7 +1169,7 @@ public class OuterClass {
 }
 ```
 
-### 5. 静态导包
+### (5) 静态导包
 
 - 在使用静态变量和方法时不用再指明 ClassName，从而简化代码，但可读性大大降低
 - 静态导包后，当调用类的静态方法时，不需要加上类名
@@ -1199,7 +1199,7 @@ public class StaticDemoDriven {
 }
 ```
 
-### 6. 初始化顺序
+### (6) 初始化顺序
 
 - 静态变量和静态语句块优先于实例变量和普通语句块，静态变量和静态语句块的初始化顺序取决于它们在代码中的顺序
 - 存在继承的情况下，**初始化顺序**：
@@ -1211,7 +1211,7 @@ public class StaticDemoDriven {
   - 子类（构造函数）
 
 
-## 3. native 
+## 3、native 
 
 > 实现 java 与其他语言的交互（如：C，C++）
 
@@ -1219,7 +1219,7 @@ public class StaticDemoDriven {
 
 [Java中Native关键字的作用](https://www.cnblogs.com/Qian123/p/5702574.html) 
 
-## 4. transient 
+## 4、transient 
 
 - **[Java 序列化的高级认识](https://www.ibm.com/developerworks/cn/java/j-lo-serial/index.html?mhq=%E4%BB%80%E4%B9%88%E6%98%AF%E5%BA%8F%E5%88%97%E5%8C%96%E4%B8%8E%E5%8F%8D%E5%BA%8F%E5%88%97%E5%8C%96%E3%80%81%E4%B8%BA%E4%BB%80%E4%B9%88%E5%BA%8F%E5%88%97%E5%8C%96)** 
 - **[序列化与单例模式](http://www.cnblogs.com/ixenos/p/5831067.html)** 
@@ -1374,7 +1374,7 @@ public class StaticDemoDriven {
 
   > POC执行流程： TransformedMap->AnnotationInvocationHandler.readObject()->setValue()-> 漏洞成功触发
 
-## 5. abstract
+## 5、abstract
 
 abstract：抽象的，可以用来修饰类、方法
 
@@ -1391,7 +1391,7 @@ abstract：抽象的，可以用来修饰类、方法
    3. 若子类继承抽象类，并重写了所有的抽象方法，则此类是一个"实体类",即可以实例化
    4. 若子类继承抽象类，没有重写所有的抽象方法，意味着此类中仍有抽象方法，则此类必须声明为抽象的
 
-## 6. interface
+## 6、interface
 
 接口是与类并行的一个概念
 
@@ -1403,7 +1403,7 @@ abstract：抽象的，可以用来修饰类、方法
 6. 接口与接口之间也是继承的关系，而且可以实现多继承
 7. 接口与具体的实现类之间也存在多态性
 
-## 7. 代码块
+## 7、代码块
 
 执行顺序：静态代码块>mian方法>构造代码块>构造方法
 作用：用来初始化类的属性
@@ -1428,7 +1428,7 @@ abstract：抽象的，可以用来修饰类、方法
 
 # 七、applet
 
-## 1. 简介
+## 1、简介
 
 - `java applet`： 是能够被包含在 HTML 页面中且能被启用了 java 的客户端浏览器执行的程序
 - 作用： Applet 主要用来创建动态交互的 web 应用程序
@@ -1447,7 +1447,7 @@ abstract：抽象的，可以用来修饰类、方法
 
 推荐阅读： [java中的安全模型(沙箱机制)](<https://blog.csdn.net/qq_30336433/article/details/83268945>)
 
-#### 1. 沙箱简介
+#### (1) 沙箱简介
 
 - 沙箱是一个限制程序运行的环境，沙箱机制就是将 Java 代码限定在虚拟机特定的运行范围中，并且严格限制代码对本地系统资源访问，通过这样的措施来保证对代码的有效隔离，防止对本地系统造成破坏
 
@@ -1476,7 +1476,7 @@ abstract：抽象的，可以用来修饰类、方法
 
   ![](../../pics/java/java_4.png)
 
-#### 2. 沙箱基本组件
+#### (2) 沙箱基本组件
 
 - **字节码校验器**：确保 Java 类文件遵循 Java 语言规范，实现 Java 内存保护
 
@@ -1510,7 +1510,7 @@ abstract：抽象的，可以用来修饰类、方法
 
   > 安全特性： **安全提供者、消息摘要、数字签名、加密、鉴别**
 
-#### 3. 沙箱包含的要素
+#### (3) 沙箱包含的要素
 
 - **权限**： 指允许代码执行的操作
 
@@ -1530,7 +1530,7 @@ abstract：抽象的，可以用来修饰类、方法
 
 - **密钥库**： 保存密钥证书
 
-#### 4. 启动沙箱
+#### (4) 启动沙箱
 
 > 通过 Java 命令行启动的 Java 应用程序，默认不启用沙箱
 
@@ -1542,7 +1542,7 @@ abstract：抽象的，可以用来修饰类、方法
 
 - 如果要求启动时只遵循一个策略文件，则启动参数要加等号：`java -D java.security.policy==<URL>`
 
-## 2. 生命周期
+## 2、生命周期
 
 - `init`：初始化 Applet，在 Applet 标记内的 param 标签被处理后调用该方法
 
@@ -1558,13 +1558,13 @@ abstract：抽象的，可以用来修饰类、方法
 
   > 因为 Applet 只有在 HTML 网页上有效，所以你不应该在用户离开包含 Applet 的页面后遗漏任何资源
 
-## 3. 和普通 Java 区别
+## 3、和普通 Java 区别
 
 - applet 是运行在启用了 java 的浏览器中，Java应用程序是可以在浏览器之外运行的独立的Java程序
 - Java应用程序需要一个有特定方法签名的main函数来开始执行，Java applet不需要这样的函数来开始执行
 - Java applet一般会使用很严格的安全策略，Java应用一般使用比较宽松的安全策略
 
-## 4. applet 限制条件
+## 4、applet 限制条件
 
 - applet 不能够载入类库或者定义本地方法
 - applet 不能在宿主机上读写文件
@@ -1590,7 +1590,7 @@ abstract：抽象的，可以用来修饰类、方法
 
 推荐阅读： [Java RMI详解](<https://blog.csdn.net/a19881029/article/details/9465663>)
 
-## 1. 简介
+## 1、简介
 
 - **Java 远程方法调用(Java RMI)**： 是 Java API 对远程过程调用(RPC)提供的面向对象的等价形式，支持直接传输序列化的 Java 对象和分布式垃圾回收
 
@@ -1613,7 +1613,7 @@ abstract：抽象的，可以用来修饰类、方法
 
   >  反之称为 `demarshalling` 
 
-## 2. 调用步骤
+## 2、调用步骤
 
 - 客户对象调用客户端辅助对象上的方法
 
@@ -1631,7 +1631,7 @@ abstract：抽象的，可以用来修饰类、方法
 
 ![](../../pics/java/java_5.png)
 
-## 3. 搭建 RMI
+## 3、搭建 RMI
 
 1. 创建远程方法接口，该接口必须继承 Remote 接口：
 
@@ -1773,7 +1773,7 @@ Class 和 java.lang.reflect 一起对反射提供了支持，java.lang.reflect �
 - **Method** ：可以使用 invoke() 方法调用与 Method 对象关联的方法（代表类的方法）
 - **Constructor** ：可以用 Constructor 创建新的对象（代表类的构造方法）
 
-##1.  理解Class类并实例化Class类对象
+## 1、理解Class类并实例化Class类对象
 
 在Object类中定义了以下的方法，此方法将被所有子类继承：
 
@@ -1799,7 +1799,7 @@ public void test3(){
 
 ![](../../pics/java/java_9.png)
 
-### 1. 实例化Class类对象(四种方法) 
+### (1) 实例化Class类对象(四种方法) 
 
 1. 前提：若已知具体的类，**通过类的class属性获取**，该方法最为安全可靠，程序性能最高       
 
@@ -1862,7 +1862,7 @@ public void test4() throws ClassNotFoundException{
 
   > SpringIoc 的实现
 
-### 2. 创建对象的四种方法
+### (2) 创建对象的四种方法
 
 推荐阅读： [java创建对象的四种方式](https://www.cnblogs.com/yunche/p/9530927.html) 
 
@@ -1916,7 +1916,7 @@ public void test4() throws ClassNotFoundException{
    >
    > 若对象通过 ObjectInputStream 类的 readObject() 方法创建，则 Java 虚拟机通过从输入流中读入的序列化数据来初始化那些非暂时性的实例变量
 
-### 3. 类的加载过程
+### (3) 类的加载过程
 
 当程序主动使用某个类时，如果该类还未被加载到内存中，则系统会通过如下三个步骤来对该类进行初始化：
 
@@ -1926,7 +1926,7 @@ public void test4() throws ClassNotFoundException{
 
 ![](../../pics/java/java_10.png)
 
-### 4. ClassLoader
+### (4) ClassLoader
 
 类加载器是用来把类(class)装载进内存的
 
@@ -1981,9 +1981,9 @@ public void test5() throws Exception{
 }
 ```
 
-##2. 运行时创建类对象并获取类的完整结构
+## 2、运行时创建类对象并获取类的完整结构
 
-### 1. 通过Class对象创建类的对象
+### (1) 通过Class对象创建类的对象
 
 1. 调用Class对象的 **newInstance()方法** 
 
@@ -2011,7 +2011,7 @@ public void test5() throws Exception{
    - 向构造器的形参中传递一个对象数组进去，里面包含了构造器中所需的各个参数
    - 在 Constructor  类中存在一个方法： public T newInstance(Object... initargs)
 
-### 2. 通过反射调用类的完整结构
+### (2) 通过反射调用类的完整结构
 
 **使用反射可以取得：** 
 
@@ -2364,9 +2364,9 @@ public @interface MyAnnotation {
 }
 ```
 
-##3. 通过反射调用类的指定方法、指定属性
+## 3、通过反射调用类的指定方法、指定属性
 
-### 1. 调用指定方法
+### (1) 调用指定方法
 
 通过反射，调用类中的方法，通过Method类完成。步骤：
 
@@ -2409,7 +2409,7 @@ public void test3() throws Exception{
 }
 ```
 
-### 2. 调用指定属性
+### (2) 调用指定属性
 
 在反射机制中，可以直接通过 Field 类操作类中的属性，通过Field类提供的set()和get()方法就可以完成设置和取得属性内容的操作：
 
@@ -2494,9 +2494,9 @@ public void test3() throws Exception{
 }
 ```
 
-##4. 动态代理
+## 4、动态代理
 
-###1. 动态代理简介
+### (1) 动态代理简介
 
 - 动态代理：指客户通过代理类来调用其它对象的方法，且是在程序运行时根据需要动态创建目标类的代理对象
 - 动态代理使用场合：
@@ -2508,9 +2508,9 @@ public void test3() throws Exception{
   - `static Class<?> getProxyClass(ClassLoader loader, Class<?>... interfaces)`  创建一个动态代理类所对应的Class对象
   - `static Object newProxyInstance(ClassLoader loader, Class<?>[] interfaces, InvocationHandler h)`  直接创建一个动态代理对象
 
-### 2. 代理实现方式
+### (2) 代理实现方式
 
-#### 1. 静态代理模式
+#### a. 静态代理模式
 
 - **实现**： 定义接口或父类，被代理对象与代理对象实现相同接口或继承相同父类
 - **优点**： 在不修改目标对象的功能前提下，对目标功能扩展
@@ -2551,7 +2551,7 @@ public class TestClothProduct {
 }
 ```
 
-#### 2. 动态代理
+#### b. 动态代理
 
 1. 创建一个实现接口 InvocationHandler 的类，它必须实现 invoke 方法，以完成代理的具体操作
 
@@ -2614,7 +2614,7 @@ public class App {
 }
 ```
 
-#### 3. Cglib代理
+#### c. Cglib代理
 
 - **Cglib 代理**：也叫子类代理，在内存中构建一个子类对象从而实现对目标对象功能的扩展
 
@@ -2674,7 +2674,7 @@ public class App {
 }
 ```
 
-#### 4. 动态代理与Cglib 代理的比较
+#### d. 动态代理与Cglib 代理的比较
 
 - **原理区别**： 
   - java 动态代理利用反射机制生成一个实现代理接口的匿名类，调用具体方法前调用 InvokeHandler来处理
@@ -2698,7 +2698,7 @@ public class App {
   - CGLib 在创建代理对象时，所花费的时间却比 JDK 多
   - 对于单例的对象，因无需频繁创建对象，用 CGLib 合适；其他场景使用 java 动态代理合适
 
-### 3. 动态代理与AOP
+### (3) 动态代理与AOP
 
 - 使用 Proxy 生成动态代理时，通常都是为指定的目标对象生成动态代理
 - AOP代理： 可代替目标对象，AOP代理包含了目标对象的全部方法
@@ -2900,6 +2900,8 @@ Throwable 可以用来表示任何可以作为异常抛出的类，分为两种�
 - **[JAVA自定义注解、元注解介绍及自定义注解使用场景](https://blog.csdn.net/bluuusea/article/details/79996572)** 
 - **[注解 Annotation 实现原理与自定义注解例子](https://www.cnblogs.com/acm-bingzi/p/javaAnnotation.html)** 
 
+## 1、定义注解
+
 1. JDK提供的常用的三个注解
 
    @Override: 限定重写父类方法, 该注释只能用于方法
@@ -2913,20 +2915,133 @@ Throwable 可以用来表示任何可以作为异常抛出的类，分为两种�
 3. 元注解：可以对已有的注解进行解释说明
 
    - `@Retention`： 注解的保留位置
-     - `SOURCE`：注解仅存在于源码中，在class字节码文件中不包含
-     - `CLASS`：默认的保留策略，注解在class字节码文件中存在，但运行时无法获得
-     - `RUNTIME`：注解在class字节码文件中存在，在运行时可以通过反射获取到
+     - `RetentionPolicy.SOURCE`：注解仅存在于源码中，在class字节码文件中不包含
+     - `RetentionPolicy.CLASS`：默认的保留策略，注解在class字节码文件中存在，但运行时无法获得
+     - `RetentionPolicy.RUNTIME`：注解在class字节码文件中存在，在运行时可以通过反射获取到
    - `@Target`： 用来声明注解范围
-     - `TYPE`：接口、类、枚举、注解
-     - `FIELD`：字段、枚举的常量
-     - `METHOD`：方法
-     - `PARAMETER`：方法参数
-     - `CONSTRUCTOR`：构造函数
-     - `LOCAL_VARIABLE`：局部变量
-     - `ANNOTATION_TYPE`：注解
-     - `PACKAGE`：包
-   - `@Documented`： 声明注解能够被javadoc等识别
-   - `@Inherited`： 声明子类可以继承此注解
+     - `ElementType.TYPE`：接口、类、枚举、注解
+     - `ElementType.FIELD`：字段、枚举的常量
+     - `ElementType.METHOD`：方法
+     - `ElementType.PARAMETER`：方法参数
+     - `ElementType.CONSTRUCTOR`：构造函数
+     - `ElementType.LOCAL_VARIABLE`：局部变量
+     - `ElementType.ANNOTATION_TYPE`：注解
+     - `ElementType.PACKAGE`：包
+   - `@Repeatable`：定义注解是否可重复
+   - `@Documented`：声明注解能够被javadoc等识别
+   - `@Inherited`：声明子类可以继承父类的注解
+
+```java
+@Target(ElementType.TYPE)
+@Retention(RetentionPolicy.RUNTIME)
+public @interface Report {
+    int type() default 0;
+    String level() default "info";
+    String value() default "";
+}
+```
+
+## 2、处理注解
+
+> 因为注解定义后也是一种 `class`，所有的注解都继承自 `java.lang.annotation.Annotation`，因此，读取注解需要使用反射 API
+
+Java 提供的使用反射 API 读取 `Annotation` 的方法：
+
+- **判断某个注解是否存在**于 `Class`、`Field`、`Method`、`Constructor`：
+
+  - `Class.isAnnotationPresent(Class)` 
+  - `Field.isAnnotationPresent(Class)` 
+  - `Method.isAnnotationPresent(Class)` 
+  - `Constructor.isAnnotationPresent(Class)` 
+
+  ```java
+  // 判断@Report是否存在于Person类:
+  Person.class.isAnnotationPresent(Report.class);
+  ```
+
+- 使用反射 API **读取注解**：
+
+  - `Class.getAnnotation(Class)` 
+  - `Field.getAnnotation(Class)` 
+  - `Method.getAnnotation(Class)` 
+  - `Constructor.getAnnotation(Class)` 
+
+  ```java
+  // 获取Person定义的@Report注解:
+  Report report = Person.class.getAnnotation(Report.class);
+  int type = report.type();
+  String level = report.level();
+  ```
+
+---
+
+**使用反射 API 读取注解**的两种方法：
+
+- 方法一：先判断注解是否存在，如果存在，就直接读取
+
+  ```java
+  Class cls = Person.class;
+  if (cls.isAnnotationPresent(Report.class)) {
+      Report report = cls.getAnnotation(Report.class);
+      ...
+  }
+  ```
+
+- 方法二：直接读取注解，如果注解不存在，返回 `null`
+
+  ```java
+  Class cls = Person.class;
+  Report report = cls.getAnnotation(Report.class);
+  if (report != null) {
+     ...
+  }
+  ```
+
+读取方法参数的注解，先用反射获取 `Method` 实例，然后读取方法参数的所有注解：
+
+```java
+// 获取Method实例:
+Method m = ...
+// 获取所有参数的Annotation:
+Annotation[][] annos = m.getParameterAnnotations();
+// 第一个参数（索引为0）的所有Annotation:
+Annotation[] annosOfName = annos[0];
+for (Annotation anno : annosOfName) {
+    if (anno instanceof Range) { // @Range注解
+        Range r = (Range) anno;
+    }
+    if (anno instanceof NotNull) { // @NotNull注解
+        NotNull n = (NotNull) anno;
+    }
+}
+```
+
+---
+
+编写一个 `Person` 实例的检查方法，检查 `Person` 实例的 `String` 字段长度是否满足 `@Range` 的定义：
+
+```java
+void check(Person person) throws IllegalArgumentException, ReflectiveOperationException {
+    // 遍历所有Field:
+    for (Field field : person.getClass().getFields()) {
+        // 获取Field定义的@Range:
+        Range range = field.getAnnotation(Range.class);
+        // 如果@Range存在:
+        if (range != null) {
+            // 获取Field的值:
+            Object value = field.get(person);
+            // 如果值是String:
+            if (value instanceof String) {
+                String s = (String) value;
+                // 判断值是否满足@Range的min/max:
+                if (s.length() < range.min() || s.length() > range.max()) {
+                    throw new IllegalArgumentException("Invalid field: " + field.getName());
+                }
+            }
+        }
+    }
+}
+```
 
 ---
 
@@ -2934,7 +3049,7 @@ Java 注解是附加在代码中的一些元信息，用于一些工具在编译
 
 # 十一、枚举类
 
-## 1. 自定义枚举类
+## 1、自定义枚举类
 
 ```java
 public class TestSeason {
@@ -2978,7 +3093,7 @@ class Season{
 }
 ```
 
-## 2.  enum 关键字用于定义枚举类
+## 2、enum 关键字用于定义枚举类
 
 ```java
 public class TestSeason1 {
@@ -3056,7 +3171,7 @@ enum Season1 implements Info{
 }
 ```
 
-##3. 枚举类详解
+## 3、枚举类详解
 
 1. 枚举类的属性:
    - 枚举类对象的属性不应允许被改动, 所以应该使用 private final 修饰
@@ -3076,7 +3191,7 @@ enum Season1 implements Info{
 
 # 十二、网络编程
 
-## 1. 网络编程概述
+## 1、网络编程概述
 
 ![](../../pics/java/java_14.png)
 
@@ -3084,7 +3199,7 @@ enum Season1 implements Info{
 
 
 
-## 2. InetAddress类
+## 2、InetAddress类
 
 ```java
 public class TestInetAddress {
@@ -3105,9 +3220,9 @@ public class TestInetAddress {
 }
 ```
 
-## 3. TCP网络通信(传输控制协议)
+## 3、TCP网络通信(传输控制协议)
 
-###1. TCP 简介
+### (1) TCP 简介
 
 - 使用TCP协议前，须先建立TCP连接，形成传输数据通道
 - 传输前，采用“三次握手”方式，是可靠的
@@ -3119,7 +3234,7 @@ public class TestInetAddress {
 
 > TCP/IP协议模型从更实用的角度出发，形成了高效的四层体系结构，即物理链路层、IP层、传输层和应用层
 
-### 2. Socket
+### (2) Socket
 
 1. 客户端Socket的工作过程： 
    - 创建 Socket：根据指定服务端的 IP 地址或端口号构造 Socket 类对象。若服务器端响应，则建立客户端到服务器的通信线路。若连接失败，会出现异常
@@ -3132,7 +3247,7 @@ public class TestInetAddress {
    - 调用 该Socket类对象的 getOutputStream() 和 getInputStream ()：获取输出流和输入流，开始网络数据的发送和接收
    - 关闭ServerSocket和Socket对象：客户端访问结束，关闭通信套接字。
 
-### 3. Socket实现 TCP 实例
+### (3) Socket实现 TCP 实例
 
 **1. TCP编程例一：客户端给服务端发送信息。服务端输出此信息到控制台上：** 
 
@@ -3388,16 +3503,16 @@ public class TestTCP3 {
 }
 ```
 
-## 5. UDP网络通信(用户数据报协议)
+## 4、UDP网络通信(用户数据报协议)
 
-###1. UDP 简介
+### (1) UDP 简介
 
 - 将数据、源、目的封装成数据包，不需要建立连接
 - 每个数据报的大小限制在64K内
 - 因无需连接，故是不可靠的
 - 发送数据结束时无需释放资源，速度快
 
-### 2. 编程实例
+### (2) 编程实例
 
 ```java
 public class TestUDP {
@@ -3444,9 +3559,9 @@ public class TestUDP {
 }
 ```
 
-## 6. URL编程
+## 5、URL编程
 
-###1. URL 简介
+### (1) URL 简介
 
 - URL(Uniform Resource Locator)：统一资源定位符，它表示 Internet 上某一资源的地址。通过 URL 我们可以访问 Internet 上的各种网络资源，比如最常见的 www，ftp 站点。浏览器通过解析给定的 URL 可以在网络上查找相应的文件或其他资源。  
 
@@ -3464,7 +3579,7 @@ public class TestUDP {
   public String getQuery(   )        获取该URL的查询名
   ```
 
-### 2. 针对HTTP协议的URLConnection类
+### (2) 针对HTTP协议的URLConnection类
 
 - URL的方法 openStream()：能从网络上读取数据
 - 若希望输出数据，例如向服务器端的 CGI （公共网关接口-Common Gateway Interface-的简称，是用户浏览器和服务器端的应用程序进行连接的接口）程序发送一些数据，则必须先与URL建立连接，然后才能对其进行读写，此时需要使用 URLConnection 。
