@@ -732,24 +732,20 @@ public class TestRandomAccessFile {
 
 ```java
 public static void main(String[] args) throws IOException, ClassNotFoundException {
-
     A a1 = new A(123, "abc");
     String objectFile = "file/a1";
 
-    ObjectOutputStream objectOutputStream 
-        = new ObjectOutputStream(new FileOutputStream(objectFile));
+    ObjectOutputStream objectOutputStream = new ObjectOutputStream(new FileOutputStream(objectFile));
     objectOutputStream.writeObject(a1);
     objectOutputStream.close();
 
-    ObjectInputStream objectInputStream 
-        = new ObjectInputStream(new FileInputStream(objectFile));
+    ObjectInputStream objectInputStream = new ObjectInputStream(new FileInputStream(objectFile));
     A a2 = (A) objectInputStream.readObject();
     objectInputStream.close();
     System.out.println(a2);
 }
 
 private static class A implements Serializable {
-
     private int x;
     private String y;
 
@@ -884,17 +880,14 @@ public void test2(){
     buf.get(dst, 0, 2);
     System.out.println(new String(dst, 0, 2));
     System.out.println(buf.position());
-
     //mark() : 标记
     buf.mark();
     buf.get(dst, 2, 2);
     System.out.println(new String(dst, 2, 2));
     System.out.println(buf.position());
-
     //reset() : 恢复到 mark 的位置
     buf.reset();
     System.out.println(buf.position());
-
     //判断缓冲区中是否还有剩余数据
     if(buf.hasRemaining()){
         //获取缓冲区中可以操作的数量
@@ -1048,7 +1041,7 @@ public void test1(){//10874-10953
     try {
         fis = new FileInputStream("1.mkv");
         fos = new FileOutputStream("2.mkv");
-		//① 获取通道
+				//① 获取通道
         inChannel = fis.getChannel();
         outChannel = fos.getChannel();
         //② 分配指定大小的缓冲区
@@ -1100,17 +1093,13 @@ public void test1(){//10874-10953
 public void test2() throws IOException{//2127-1902-1777
     long start = System.currentTimeMillis();
 
-    FileChannel inChannel = 
-        FileChannel.open(Paths.get("1.mkv"), StandardOpenOption.READ);
-    FileChannel outChannel = 
-        FileChannel.open(Paths.get("2.mkv"), StandardOpenOption.WRITE, 
-                         StandardOpenOption.READ, StandardOpenOption.CREATE);
+    FileChannel inChannel = FileChannel.open(Paths.get("1.mkv"), StandardOpenOption.READ);
+    FileChannel outChannel = FileChannel.open(Paths.get("2.mkv"), StandardOpenOption.WRITE, 
+                        												StandardOpenOption.READ, StandardOpenOption.CREATE);
 
     //内存映射文件
-    MappedByteBuffer inMappedBuf = 
-        inChannel.map(MapMode.READ_ONLY, 0, inChannel.size());
-    MappedByteBuffer outMappedBuf = 
-        outChannel.map(MapMode.READ_WRITE, 0, inChannel.size());
+    MappedByteBuffer inMappedBuf = inChannel.map(MapMode.READ_ONLY, 0, inChannel.size());
+    MappedByteBuffer outMappedBuf = outChannel.map(MapMode.READ_WRITE, 0, inChannel.size());
 
     //直接对缓冲区进行数据的读写操作
     byte[] dst = new byte[inMappedBuf.limit()];
@@ -1133,13 +1122,11 @@ public void test2() throws IOException{//2127-1902-1777
 ```java
 //通道之间的数据传输(直接缓冲区)
 public void test3() throws IOException{
-    FileChannel inChannel = 
-        FileChannel.open(Paths.get("1.mkv"), StandardOpenOption.READ);
-    FileChannel outChannel = 
-        FileChannel.open(Paths.get("2.mkv"), StandardOpenOption.WRITE, 
-                         StandardOpenOption.READ, StandardOpenOption.CREATE);
+    FileChannel inChannel = FileChannel.open(Paths.get("1.mkv"), StandardOpenOption.READ);
+    FileChannel outChannel = FileChannel.open(Paths.get("2.mkv"), StandardOpenOption.WRITE, 
+                         												StandardOpenOption.READ, StandardOpenOption.CREATE);
 
-	inChannel.transferTo(0, inChannel.size(), outChannel);
+		inChannel.transferTo(0, inChannel.size(), outChannel);
     outChannel.transferFrom(inChannel, 0, inChannel.size());
 
     inChannel.close();
@@ -1149,7 +1136,7 @@ public void test3() throws IOException{
 
 #### 5. 分散(Scatter)与聚集(Gather)
 
- * **分散读取**：将通道的数据分散到多个缓冲区，按缓冲区顺序，从 Channel 中读取的数据依次将Buffer 填满
+ * **分散读取**：将通道的数据分散到多个缓冲区，按缓冲区顺序，从 Channel 中读取的数据依次将 Buffer 填满
  * **聚集写入**：将多个缓冲区的数据聚集到通道中，按缓冲区顺序，写入 position 和 limit 间的数据到 Channel
 
 ```java
@@ -1282,10 +1269,8 @@ public class TestBlockingNIO {
     //客户端
     public void client() throws IOException{
         //1. 获取通道
-        SocketChannel sChannel = 
-            SocketChannel.open(new InetSocketAddress("127.0.0.1", 9898));
-        FileChannel inChannel = 
-            FileChannel.open(Paths.get("1.jpg"), StandardOpenOption.READ);
+        SocketChannel sChannel = SocketChannel.open(new InetSocketAddress("127.0.0.1", 9898));
+        FileChannel inChannel = FileChannel.open(Paths.get("1.jpg"), StandardOpenOption.READ);
         //2. 分配指定大小的缓冲区
         ByteBuffer buf = ByteBuffer.allocate(1024);
         //3. 读取本地文件，并发送到服务端
@@ -1303,9 +1288,8 @@ public class TestBlockingNIO {
     public void server() throws IOException{
         //1. 获取通道
         ServerSocketChannel ssChannel = ServerSocketChannel.open();
-        FileChannel outChannel = 
-            FileChannel.open(Paths.get("2.jpg"), 
-                             StandardOpenOption.WRITE, StandardOpenOption.CREATE);
+        FileChannel outChannel = FileChannel.open(Paths.get("2.jpg"), 
+                             												StandardOpenOption.WRITE, StandardOpenOption.CREATE);
         //2. 绑定连接
         ssChannel.bind(new InetSocketAddress(9898));
         //3. 获取客户端连接的通道
@@ -1331,10 +1315,8 @@ public class TestBlockingNIO {
 public class TestBlockingNIO2 {
 	//客户端
 	public void client() throws IOException{
-		SocketChannel sChannel = 
-            SocketChannel.open(new InetSocketAddress("127.0.0.1", 9898));
-		FileChannel inChannel = 
-            FileChannel.open(Paths.get("1.jpg"), StandardOpenOption.READ);
+		SocketChannel sChannel = SocketChannel.open(new InetSocketAddress("127.0.0.1", 9898));
+		FileChannel inChannel = FileChannel.open(Paths.get("1.jpg"), StandardOpenOption.READ);
 		ByteBuffer buf = ByteBuffer.allocate(1024);
 		while(inChannel.read(buf) != -1){
 			buf.flip();
@@ -1357,9 +1339,8 @@ public class TestBlockingNIO2 {
 	//服务端
 	public void server() throws IOException{
 		ServerSocketChannel ssChannel = ServerSocketChannel.open();
-		FileChannel outChannel = 
-            FileChannel.open(Paths.get("2.jpg"), 
-                             StandardOpenOption.WRITE, StandardOpenOption.CREATE);
+		FileChannel outChannel = FileChannel.open(Paths.get("2.jpg"), 
+                             										StandardOpenOption.WRITE, StandardOpenOption.CREATE);
 		ssChannel.bind(new InetSocketAddress(9898));
 		SocketChannel sChannel = ssChannel.accept();
 		ByteBuffer buf = ByteBuffer.allocate(1024);
@@ -1386,12 +1367,10 @@ public class TestBlockingNIO2 {
 
 ```java
 public class TestNonBlockingNIO {
-	
 	//客户端
 	public void client() throws IOException{
 		//1. 获取通道
-		SocketChannel sChannel = 
-            SocketChannel.open(new InetSocketAddress("127.0.0.1", 9898));
+		SocketChannel sChannel = SocketChannel.open(new InetSocketAddress("127.0.0.1", 9898));
 		//2. 切换非阻塞模式
 		sChannel.configureBlocking(false);
 		//3. 分配指定大小的缓冲区
@@ -1543,14 +1522,11 @@ public class TestPipe {
 //自动资源管理：自动关闭实现 AutoCloseable 接口的资源
 public void test8(){
     try(
-        FileChannel inChannel = 
-        	FileChannel.open(Paths.get("1.jpg"), StandardOpenOption.READ);
-        FileChannel outChannel = 
-        	FileChannel.open(Paths.get("2.jpg"), 
-                         StandardOpenOption.WRITE, StandardOpenOption.CREATE)
-       ){
-        ByteBuffer buf = ByteBuffer.allocate(1024);
-        inChannel.read(buf);
+        FileChannel inChannel = FileChannel.open(Paths.get("1.jpg"), StandardOpenOption.READ);
+        FileChannel outChannel = FileChannel.open(Paths.get("2.jpg"), 
+                         														StandardOpenOption.WRITE, StandardOpenOption.CREATE)){
+        		ByteBuffer buf = ByteBuffer.allocate(1024);
+        		inChannel.read(buf);
     }catch(IOException e){
 
     }
@@ -1610,7 +1586,7 @@ public void test8(){
 
 - **NIO 实现了 IO 多路复用中的 Reactor 模型**：
 
-  - 一个线程 Thread 使用一个选择器 Selector 通过轮询的方式去监听多个通道 Channel 上的事件，从而让一个线程就可以处理多个事件
+  - 一个线程 Thread 使用一个选择器 Selector 通过轮询的方式去监听多个通道 Channel 上的事件，从而让一个线程处理多个事件
 
   - 通过配置监听的通道 Channel 为非阻塞，则当 Channel 上的 IO 事件还未到达时，不会一直等待，而是继续轮询其它 Channel，找到 IO 事件已经到达的 Channel 执行
 
@@ -1718,15 +1694,12 @@ while (true) {
 public class NIOServer {
     public static void main(String[] args) throws IOException {
         Selector selector = Selector.open();
-
         ServerSocketChannel ssChannel = ServerSocketChannel.open();
         ssChannel.configureBlocking(false);
         ssChannel.register(selector, SelectionKey.OP_ACCEPT);
-
         ServerSocket serverSocket = ssChannel.socket();
         InetSocketAddress address = new InetSocketAddress("127.0.0.1", 8888);
         serverSocket.bind(address);
-
         while (true) {
             selector.select();
             Set<SelectionKey> keys = selector.selectedKeys();
@@ -1734,8 +1707,7 @@ public class NIOServer {
             while (keyIterator.hasNext()) {
                 SelectionKey key = keyIterator.next();
                 if (key.isAcceptable()) {
-                    ServerSocketChannel ssChannel1 
-                        = (ServerSocketChannel) key.channel();
+                    ServerSocketChannel ssChannel1 = (ServerSocketChannel) key.channel();
                     // 服务器会为每个新连接创建一个 SocketChannel
                     SocketChannel sChannel = ssChannel1.accept();
                     sChannel.configureBlocking(false);
