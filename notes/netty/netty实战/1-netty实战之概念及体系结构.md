@@ -6,7 +6,7 @@
 
 ### (1) 阻塞 IO(OIO)
 
-![](../../pics/netty/netty_1.png)
+![](../../../pics/netty/netty_1.png)
 
 ### (2) NIO
 
@@ -16,7 +16,7 @@
 
 ### (3) 选择器
 
-![](../../pics/netty/netty_2.png)
+![](../../../pics/netty/netty_2.png)
 
 ## 2、Netty 简介
 
@@ -24,8 +24,8 @@
 
 |   分类   | Netty 特性                                                   |
 | :------: | ------------------------------------------------------------ |
-|   设计   | 1、统一的 API，支持多种传输类型，阻塞的和非阻塞的<br>2、简单而强大的线程模型<br>3、真正的无连接数据报套接字支持<br>4、链接逻辑组件以支持复用 |
-|   性能   | 1、拥有比 Java 的核心 API 更高的吞吐量以及更低的延迟<br>2、得益于池化和复用，拥有更低的资源消耗<br>3、最少的内存复制 |
+|   设计   | 1、统一的 API，支持多种传输类型，阻塞的和非阻塞的<br>2、简单而**强大的线程模型**<br>3、真正的**无连接数据报套接字支持**<br>4、链接逻辑组件以支持复用 |
+|   性能   | 1、拥有比 Java 的核心 API 更高的吞吐量以及更低的延迟<br>2、得益于**池化和复用**，拥有更低的资源消耗<br>3、最少的内存复制 |
 |  健壮性  | 1、不会因为慢速、快速或超载的连接而导致 OutOfMemoryError<br>2、消除在高速网络中 NIO 应用程序常见的不公平读/写比率 |
 |  安全性  | 1、完整的 SSL/TLS 以及 StartTLS 支持<br>2、可用于受限环境下，如 Applet 和OSGI |
 | 社区驱动 | 发布快速而且频繁                                             |
@@ -46,7 +46,7 @@
 
 ### (1) Channel
 
-- **Channel**：是 NIO 的一个基本构造，代表一个到实体(如：文件、网络套接字或能执行 I/O 操作的程序组件)的开放连接，如：读操作和写操作
+- **Channel**：NIO 的一个基本构造，代表一个到实体(如：文件、网络套接字或能执行 I/O 操作的程序组件)的开放连接(如：读/写操作)
 
     > 可以把 Channel 看作是传入或传出数据的载体，可以被打开或被关闭、连接或断开连接
 
@@ -58,7 +58,7 @@
 
     > 当一个新的连接已经被建立时，ChannelHandler 的 channelActive() 回调方法将会被调用，并将打印出一条信息
     >
-    > ![](../../pics/netty/netty_3.png)
+    > ![](../../../pics/netty/netty_3.png)
 
 ### (3) Future
 
@@ -83,7 +83,7 @@
 
     > connect() 方法将会直接返回，而不会阻塞，该调用将会在后台完成
     >
-    > ![](../../pics/netty/netty_4.png)
+    > ![](../../../pics/netty/netty_4.png)
 
 - 代码 1-4：显示了如何利用 ChannelFutureListener
 
@@ -93,7 +93,7 @@
     >     - 如果操作成功，则将数据写到该 Channel
     >     - 否则，从 ChannelFuture 中检索对应的 Throwable
     >
-    > ![](../../pics/netty/netty_5.png)
+    > ![](../../../pics/netty/netty_5.png)
 
 ### (4) 事件和 ChannelHandler
 
@@ -117,7 +117,7 @@
 
 下图展示了一个事件如何被一个 ChannelHandler 链处理：
 
-![](../../pics/netty/netty_6.png)
+![](../../../pics/netty/netty_6.png)
 
 ### (5) 选择器、事件、EventLoop
 
@@ -135,7 +135,7 @@
 
 ## 1、Netty 客户端/服务器概览
 
-![](../../pics/netty/netty_7.png)
+![](../../../pics/netty/netty_7.png)
 
 ## 2、服务端
 
@@ -155,9 +155,9 @@ Netty 服务端必须的两部分：
 - **channelReadComplete()**：通知 ChannelInboundHandler 最后一次对 channelRead() 的调用是当前批量读取中的最后一条消息
 - **exceptionCaught()**：在读取操作期间，有异常抛出时会调用
 
-![](../../pics/netty/netty_8.png)
+![](../../../pics/netty/netty_8.png)
 
-![](../../pics/netty/netty_9.png)
+![](../../../pics/netty/netty_9.png)
 
 ### (2) 引导服务器
 
@@ -167,9 +167,9 @@ Netty 服务端必须的两部分：
 
 - 配置 Channel，以将有关的入站消息通知给 EchoServerHandler 实例
 
-![](../../pics/netty/netty_10.png)
+![](../../../pics/netty/netty_10.png)
 
-![](../../pics/netty/netty_11.png)
+![](../../../pics/netty/netty_11.png)
 
 - EchoServerHandler 实现了业务逻辑
 
@@ -199,9 +199,9 @@ Netty 服务端必须的两部分：
 
 - **exceptionCaught()**：处理过程中引发异常时被调用
 
-![](../../pics/netty/netty_12.png)
+![](../../../pics/netty/netty_12.png)
 
-![](../../pics/netty/netty_13.png)
+![](../../../pics/netty/netty_13.png)
 
 ### (2) 引导客户端
 
@@ -209,7 +209,7 @@ Netty 服务端必须的两部分：
 
 - 区别是：客户端是使用主机和端口参数来连接远程地址，即服务端地址，而不是绑定到一个一直被监听的端口
 
-![](../../pics/netty/netty_14.png)
+![](../../../pics/netty/netty_14.png)
 
 - 为初始化客户端，创建一个 Bootstrap 实例
 - 为进行事件处理分配一个 NioEventLoopGroup 实例，其中事件处理包括创建新的连接以及处理入站和出站数据
@@ -245,7 +245,7 @@ Netty 服务端必须的两部分：
 
 EventLoop 定义了 Netty 的核心抽象，用于处理连接的生命周期中所发生的事件
 
-![](../../pics/netty/netty_15.png)
+![](../../../pics/netty/netty_15.png)
 
 - 一个 EventLoopGroup 包含一个或多个 EventLoop
 - 一个 EventLoop 在它的生命周期内只和一个 Thread 绑定
@@ -267,7 +267,7 @@ EventLoop 定义了 Netty 的核心抽象，用于处理连接的生命周期中
 
 - ChannelHandler 的方法由网络事件触发
 
-![](../../pics/netty/netty_16.png)
+![](../../../pics/netty/netty_16.png)
 
 下面是编写自定义 ChannelHandler 时经常会用到的适配器类：
 
@@ -301,7 +301,7 @@ ChannelPipeline 是 ChannelHandler 的编排顺序：
 - ChannelHandler 对象接收事件、执行它们所实现的处理逻辑，并将数据传递给链中的下一个 ChannelHandler
 - ChannelHandler 的执行顺序是由它们被添加的顺序决定
 
-![](../../pics/netty/netty_17.png)
+![](../../../pics/netty/netty_17.png)
 
 > Netty 会确保数据只在具有相同定向类型的两个 ChannelHandler 之间传递
 
@@ -339,7 +339,7 @@ Netty 的引导类为应用程序的网络层配置提供了容器，涉及：
 - **ServerBootstrap**：用于服务端，将一个进程绑定到某个指定的端口
 - **Bootstrap**：用于客户端，将一个进程连接到另一个运行在某个指定主机的指定端口上的进程
 
-![](../../pics/netty/netty_18.png)
+![](../../../pics/netty/netty_18.png)
 
 ---
 
@@ -348,7 +348,7 @@ Netty 的引导类为应用程序的网络层配置提供了容器，涉及：
 - 第一组：将只包含一个 ServerChannel，代表服务器自身的已绑定到某个本地端口的正在监听的套接字
 - 第二组：将包含所有已创建的用来处理传入客户端连接(对于每个服务器已经接受的连接都有一个)的 Channel
 
-![](../../pics/netty/netty_19.png)
+![](../../../pics/netty/netty_19.png)
 
 > - 与 ServerChannel 相关联的 EventLoopGroup 将分配一个负责为传入连接请求创建 Channel 的 EventLoop
 >
@@ -364,31 +364,31 @@ Netty 的引导类为应用程序的网络层配置提供了容器，涉及：
 
 **JDK 的 阻塞 IO**：
 
-![](../../pics/netty/netty_20.png)
+![](../../../pics/netty/netty_20.png)
 
 ---
 
 **JDK 的非阻塞 IO**：
 
-![](../../pics/netty/netty_21.png)
+![](../../../pics/netty/netty_21.png)
 
-![](../../pics/netty/netty_22.png)
+![](../../../pics/netty/netty_22.png)
 
 ### (2) 通过 Netty 使用 OIO
 
-![](../../pics/netty/netty_23.png)
+![](../../../pics/netty/netty_23.png)
 
-![](../../pics/netty/netty_24.png)
+![](../../../pics/netty/netty_24.png)
 
 ### (3) 通过 Netty 使用 NIO(非阻塞)
 
-![](../../pics/netty/netty_25.png)
+![](../../../pics/netty/netty_25.png)
 
 ## 2、传输 API
 
 ### (1) Channel 接口的层次结构
 
-![](../../pics/netty/netty_26.png)
+![](../../../pics/netty/netty_26.png)
 
 - 由于 Channel 独一无二，所以为了保证顺序将 Channel 声明为 java.lang.Comparable 的子接口
 
@@ -420,29 +420,29 @@ ChannelPipeline 实现了拦截过滤器，可以根据需要通过添加或移�
 
 除了访问所分配的 ChannelPipeline 和 ChannelConfig 之外，也可以利用 Channel 的其他方法
 
-![](../../pics/netty/netty_27.png)
+![](../../../pics/netty/netty_27.png)
 
 ### (3) 案例
 
 **案例一**：通过 Channel.writeAndFlush() 来实现：写数据并将其冲刷到远程节点
 
-![](../../pics/netty/netty_28.png)
+![](../../../pics/netty/netty_28.png)
 
-![](../../pics/netty/netty_29.png)
+![](../../../pics/netty/netty_29.png)
 
 ---
 
 **案例二**：多线程写数据
 
-![](../../pics/netty/netty_30.png)
+![](../../../pics/netty/netty_30.png)
 
 ## 3、内置的传输
 
-![](../../pics/netty/netty_31.png)
+![](../../../pics/netty/netty_31.png)
 
-![](../../pics/netty/netty_32.png)
+![](../../../pics/netty/netty_32.png)
 
-### (1) NIO：分阻塞 IO
+### (1) NIO：非阻塞 IO
 
 - NIO 提供了一个所有 I/O 操作的全异步的实现，利用了基于选择器的 API
 
@@ -454,11 +454,11 @@ ChannelPipeline 实现了拦截过滤器，可以根据需要通过添加或移�
 
 选择器运行在一个检查状态变化并对其做出相应响应的线程上，**在应用程序对状态的改变做出响应后，选择器会被重置，并重复这个过程**
 
-![](../../pics/netty/netty_33.png)
+![](../../../pics/netty/netty_33.png)
 
 **选择器的处理状态变化**：
 
-![](../../pics/netty/netty_34.png)
+![](../../../pics/netty/netty_34.png)
 
 ### (2) OIO：旧的阻塞 IO
 
@@ -470,7 +470,7 @@ ChannelPipeline 实现了拦截过滤器，可以根据需要通过添加或移�
 - Netty 将捕获这个异常并继续处理循环
 - 在 EventLoop下一次运行时，将再次尝试
 
-![](../../pics/netty/netty_35.png)
+![](../../../pics/netty/netty_35.png)
 
 ### (3) Epoll：用于 Linux 的本地非阻塞传输
 
@@ -481,7 +481,7 @@ ChannelPipeline 实现了拦截过滤器，可以根据需要通过添加或移�
 - 将 NioEventLoopGroup 替换为 EpollEventLoopGroup
 - 将 NioServerSocketChannel.class 替换为 EpollServerSocketChannel.class
 
-![](../../pics/netty/netty_25.png)
+![](../../../pics/netty/netty_25.png)
 
 ### (4) Local：用于 JVM 内部通信
 
@@ -513,7 +513,7 @@ ChannelPipeline 实现了拦截过滤器，可以根据需要通过添加或移�
     >
     > 你的类将仍然符合常规的 API 事件流，保证该 ChannelHandler 在和真实的传输一起使用时能够正确地工作
 
-![](../../pics/netty/netty_36.png)
+![](../../../pics/netty/netty_36.png)
 
 # 五、ByteBuf
 
@@ -521,7 +521,7 @@ ChannelPipeline 实现了拦截过滤器，可以根据需要通过添加或移�
 
 ## 1、ByteBuf 简介
 
-Netty 的数据处理 API 通过两个组件暴露：`abstract class ByteBuf `和 `interfaceByteBufHolder` 
+Netty 的数据处理 API 通过两个组件暴露：`abstract class ByteBuf `和 `interface ByteBufHolder` 
 
 **ByteBuf API 的优点**：
 
@@ -541,7 +541,7 @@ Netty 的数据处理 API 通过两个组件暴露：`abstract class ByteBuf `�
 - 一个用于读取：当读取 ByteBuf 时，readerIndex 将会被递增已经被读取的字节数
 - 一个用于写入：当写入 ByteBuf 时，writerIndex 也会被递增
 
-![](../../pics/netty/netty_37.png)
+<img src="../../../pics/netty/netty_37.png" width="700">
 
 - 当读取字节 readerIndex 达到和 writerIndex 同样的值时，若试图读取超出该点的数据会触发 IndexOutOfBoundsException
     - 名称以 read 或 write 开头的 ByteBuf 方法，将会推进其对应的索引
@@ -557,7 +557,7 @@ Netty 的数据处理 API 通过两个组件暴露：`abstract class ByteBuf `�
 
 - **支撑数组**：最常用的 ByteBuf 模式，将数据存储在 JVM 的堆空间中，能在没有使用池化的情况下提供快速的分配和释放
 
-![](../../pics/netty/netty_38.png)
+![](../../../pics/netty/netty_38.png)
 
 ### (2) 直接缓冲区
 
@@ -569,7 +569,7 @@ Netty 的数据处理 API 通过两个组件暴露：`abstract class ByteBuf `�
 
     > 处理遗留代码时，可能会遇到另一个缺点：因为数据不是在堆上，所以不得不进行一次复制
 
-![](../../pics/netty/netty_39.png)
+![](../../../pics/netty/netty_39.png)
 
 ### (3) 复合缓冲区
 
@@ -585,17 +585,17 @@ Netty 的数据处理 API 通过两个组件暴露：`abstract class ByteBuf `�
 
 **案例：包含头部和主体的 HTTP 消息**，使用 CompositeByteBuf 能完美的存储
 
-![](../../pics/netty/netty_40.png)
+![](../../../pics/netty/netty_40.png)
 
 - **JDK ByteBuffer**：创建一个包含两个 ByteBuffer 的数组来保存消息组件，同时创建第三个 ByteBuffer 来保存数据的副本
 
     > 分配和复制操作，以及对数组管理，使得这个版本的实现效率低下而且笨拙
 
-    ![](../../pics/netty/netty_41.png)
+    ![](../../../pics/netty/netty_41.png)
 
 - **CompositeByteBuf**：
 
-    ![](../../pics/netty/netty_42.png)
+    ![](../../../pics/netty/netty_42.png)
 
 - Netty 使用 CompositeByteBuf 来优化套接字的 I/O操作，尽可能消除由 JDK 缓冲区实现所导致的性能以及内存使用率的惩罚
 
@@ -611,7 +611,7 @@ Netty 的数据处理 API 通过两个组件暴露：`abstract class ByteBuf `�
 
 ### (2) ByteBuf 内部分段
 
-<img src="../../pics/netty/netty_43.png" width="600">
+<img src="../../../pics/netty/netty_43.png" width="600">
 
 - **可丢弃字节**：初始大小为 0，存储在 readerIndex 中，随着 read 操作的执行而增加( get 操作不会移动 readerIndex)
 
@@ -620,7 +620,7 @@ Netty 的数据处理 API 通过两个组件暴露：`abstract class ByteBuf `�
     > - 注意：只是移动了可以读取的字节以及 writerIndex，而没**有对所有可写字节进行擦除写** 
     > - **避免频繁调用**：因为可读字节必须被移动到缓冲区的开始位置，所以**会导致内存复制**
     >
-    > <img src="../../pics/netty/netty_44.png" width="600">
+    > <img src="../../../pics/netty/netty_44.png" width="600">
 
 - **可读字节**：**存储实际数据**。新分配的、包装的、复制的等缓冲区 readerIndex 值默认为 0
 
@@ -648,7 +648,7 @@ Netty 的数据处理 API 通过两个组件暴露：`abstract class ByteBuf `�
 
     - `clear()`：将 readerIndex 和 writerIndex 都设置为 0
 
-        > 注意：不会清除内存中的内容
+        > 注意：**不会清除内存中的内容**
         >
         > <figure>
         >   <img src="../../pics/netty/netty_45.png" width="430">
@@ -665,7 +665,7 @@ Netty 的数据处理 API 通过两个组件暴露：`abstract class ByteBuf `�
 
     > 这个接口只定义了一个方法：`boolean process(byte value)`，将检查输入值是否是正在查找的值
     >
-    > <img src="../../pics/netty/netty_47.png">
+    > <img src="../../../pics/netty/netty_47.png">
 
 ### (5) 派生缓冲区
 
@@ -679,13 +679,13 @@ Netty 的数据处理 API 通过两个组件暴露：`abstract class ByteBuf `�
 
     > 注意：**如果修改了它的内容，也同时修改了其对应的源实例**，所以要小心
 
-<img src="../../pics/netty/netty_48.png">
+<img src="../../../pics/netty/netty_48.png">
 
 ---
 
 `copy()` 或 `copy(int, int)` 方法：构建一个现有缓冲区的真实副本，不同于派生缓冲区，其所返回的 ByteBuf 拥有独立的数据副本
 
-<img src="../../pics/netty/netty_49.png">
+<img src="../../../pics/netty/netty_49.png">
 
 ### (6) 读/写操作
 
@@ -695,27 +695,25 @@ Netty 的数据处理 API 通过两个组件暴露：`abstract class ByteBuf `�
 
 - **read() 和 write() 操作**：从给定的索引开始，并且会根据已经访问过的字节数**对索引进行调整**
 
-<figure>
-  <img src="../../pics/netty/netty_50.png" width="470">
-  <img src="../../pics/netty/netty_51.png" width="480">
-</figure>
+<img src="../../../pics/netty/netty_50.png">
+  <img src="../../../pics/netty/netty_51.png">
 
-![](../../pics/netty/netty_54.png)
+
+![](../../../pics/netty/netty_54.png)
 
 ---
 
-<figure>
-  <img src="../../pics/netty/netty_52.png" width="470">
-  <img src="../../pics/netty/netty_53.png" width="480">
-</figure>
+<img src="../../../pics/netty/netty_52.png">
+  <img src="../../../pics/netty/netty_53.png">
 
-![](../../pics/netty/netty_55.png)
+
+![](../../../pics/netty/netty_55.png)
 
 ### (7) 其他操作
 
-![](../../pics/netty/netty_56.png)
+![](../../../pics/netty/netty_56.png)
 
-![](../../pics/netty/netty_57.png)
+![](../../../pics/netty/netty_57.png)
 
 ## 4、ByteBufHolder 接口
 
@@ -723,13 +721,13 @@ Netty 的数据处理 API 通过两个组件暴露：`abstract class ByteBuf `�
 
 > 比如：HTTP 消息的字节内容、状态码、cookie 等
 
-![](../../pics/netty/netty_58.png)
+![](../../../pics/netty/netty_58.png)
 
 ## 5、ByteBuf 分配
 
 ### (1) 按需分配：ByteBufAllocator 接口
 
-为了降低分配和释放内存的开销，Netty 通过ByteBufAllocator 接口实现了 ByteBuf 的池化：
+为了降低分配和释放内存的开销，**Netty 通过 ByteBufAllocator 接口实现了 ByteBuf 的池化**：
 
 - 池化可以用来分配我们所描述过的任意类型的 ByteBuf 实例
 - 使用池化是特定于应用程序的决定，其并不会以任何方式改变 ByteBuf API 的语义
@@ -738,7 +736,7 @@ Netty 的数据处理 API 通过两个组件暴露：`abstract class ByteBuf `�
 
 可以通过Channel 或绑定到 ChannelHandler 的 ChannelHandlerContext 获取一个到 ByteBufAllocator 的引用
 
-![](../../pics/netty/netty_60.png)
+![](../../../pics/netty/netty_60.png)
 
 ---
 
@@ -750,13 +748,13 @@ Netty 的数据处理 API 通过两个组件暴露：`abstract class ByteBuf `�
 
 - `UnpooledByteBufAllocator`：不池化 ByteBuf 实例，并且在每次被调用时都会返回一个新的实例
 
-![](../../pics/netty/netty_59.png)
+![](../../../pics/netty/netty_59.png)
 
 ### (2) Unpooled 缓冲区
 
 若未能获取一个到 ByteBufAllocator 的引用，则 **Unpooled 提供了静态的辅助方法来创建未池化的 ByteBuf 实例**
 
-![](../../pics/netty/netty_61.png)
+![](../../../pics/netty/netty_61.png)
 
 ### (3) ByteBufUtil 类
 
@@ -778,7 +776,7 @@ Netty 的数据处理 API 通过两个组件暴露：`abstract class ByteBuf `�
 
 - **引用计数**：一种通过在某个对象所持有的资源不再被其他对象引用时，释放该对象所持有的资源来优化内存使用和性能的技术
 
-    > ByteBuf 和 ByteBufHolder 引入了引用计数技术，它们都实现了 ReferenceCounted 接口
+    > ByteBuf 和 ByteBufHolder 引入了引用计数，它们都实现了 ReferenceCounted 接口
 
 **引用计数的实现**：涉及跟踪到某个特定对象的活动引用的数量
 
@@ -788,9 +786,9 @@ Netty 的数据处理 API 通过两个组件暴露：`abstract class ByteBuf `�
 
 ---
 
-引用计数对于池化实现(如：PooledByteBufAllocator)很重要，它**降低了内存分配的开销**
+**引用计数对于池化实现(如：PooledByteBufAllocator)很重要**，它**降低了内存分配的开销**
 
-![](../../pics/netty/netty_62.png)
+![](../../../pics/netty/netty_62.png)
 
 # 六、ChannelHandler 和 ChannelPipline
 
@@ -798,13 +796,13 @@ Netty 的数据处理 API 通过两个组件暴露：`abstract class ByteBuf `�
 
 ### (1) Channel 生命周期
 
-![](../../pics/netty/netty_63.png)
+![](../../../pics/netty/netty_63.png)
 
-![](../../pics/netty/netty_64.png)
+![](../../../pics/netty/netty_64.png)
 
 当状态发生改变时，将会生成对应的事件，这些事件将会被转发给 ChannelPipeline 中的 ChannelHandler，其可以随后对它们做出响应
 
-<img src="../../pics/netty/netty_65.png" width="600">
+<img src="../../../pics/netty/netty_65.png" width="600">
 
 ### (2) ChannelHandler 生命周期
 
@@ -812,7 +810,7 @@ Netty 的数据处理 API 通过两个组件暴露：`abstract class ByteBuf `�
 
 > 这些方法中的每一个都接受一个 ChannelHandlerContext 参数
 
-<img src="../../pics/netty/netty_66.png">
+<img src="../../../pics/netty/netty_66.png">
 
 Netty 定义了下面两个重要的 ChannelHandler 子接口：
 
@@ -824,13 +822,13 @@ Netty 定义了下面两个重要的 ChannelHandler 子接口：
 
 **ChannelInboundHandler 生命周期方法**：这些方法将会在数据被接收时或与其对应的 Channel 状态发生改变时被调用
 
-<img src="../../pics/netty/netty_67.png">
+<img src="../../../pics/netty/netty_67.png">
 
 - 当某个 ChannelInboundHandler 的实现重写 channelRead() 方法时，它将负责显式地释放与池化的 ByteBuf 实例相关的内存
 
     Netty 为此提供了一个实用方法 `ReferenceCountUtil.release()`
 
-    <img src="../../pics/netty/netty_68.png">
+    <img src="../../../pics/netty/netty_68.png">
 
 - Netty 使用 WARN 级别的日志消息记录未释放的资源，使得可以非常简单地在代码中发现违规的实例
 
@@ -838,7 +836,7 @@ Netty 定义了下面两个重要的 ChannelHandler 子接口：
 
     > SimpleChannelInboundHandler 会自动释放资源，所以不应该存储指向任何消息的引用供将来使用，因为这些引用将会失效
 
-    <img src="../../pics/netty/netty_69.png">
+    <img src="../../../pics/netty/netty_69.png">
 
 ### (4) ChannelOutboundHandler
 
@@ -848,7 +846,7 @@ Netty 定义了下面两个重要的 ChannelHandler 子接口：
 
     > 例如：如果到远程节点的写入被暂停了，则可以推迟冲刷操作并在稍后继续
 
-<img src="../../pics/netty/netty_70.png">
+<img src="../../../pics/netty/netty_70.png">
 
 - ChannelOutboundHandler 中的大部分方法都需要一个 ChannelPromise 参数，以便在操作完成时得到通知
 
@@ -861,7 +859,7 @@ Netty 定义了下面两个重要的 ChannelHandler 子接口：
 - 这两个适配器分别提供了 `ChannelInboundHandler` 和 `ChannelOutboundHandler` 的基本实现
 - 通过扩展抽象类 `ChannelHandlerAdapter`，获得了它们共同的超接口 `ChannelHandler` 的方法
 
-<img src="../../pics/netty/netty_71.png" width="700">
+<img src="../../../pics/netty/netty_71.png" width="700">
 
 - ChannelHandlerAdapter 的 `isSharable()`：若对应实现被标注为 Sharable，返回true，表示可以被添加到多个ChannelPipeline中
 
@@ -877,13 +875,13 @@ Netty 定义了下面两个重要的 ChannelHandler 子接口：
 
     Netty 目前定义了**4 种泄漏检测级别**：`java -D io.netty.leakDetectionLevel=ADVANCED`
 
-    <img src="../../pics/netty/netty_72.png">
+    <img src="../../../pics/netty/netty_72.png">
 
 ---
 
-<img src="../../pics/netty/netty_73.png">
+<img src="../../../pics/netty/netty_73.png">
 
-<img src="../../pics/netty/netty_74.png">
+<img src="../../../pics/netty/netty_74.png">
 
 - 注意：**不仅要释放资源，还要通知 ChannelPromise**，否则会出现 ChannelFutureListener 收不到某个消息已被处理的通知
 
@@ -910,7 +908,7 @@ Netty 定义了下面两个重要的 ChannelHandler 子接口：
 
     > 若一个入站事件被触发，则将从 ChannelPipeline 的头部开始一直被传播到 Channel Pipeline 的尾端
 
-    <img src="../../pics/netty/netty_75.png" width="700">
+    <img src="../../../pics/netty/netty_75.png" width="700">
 
 - ChannelPipeline 传播事件时，会测试下一个 ChannelHandler 的类型是否和事件的运动方向相匹配
 - 若不匹配，将跳过该ChannelHandler 并前进到下一个，直到找到和该事件所期望的运动方向相匹配的 ChannelHandler 为止
@@ -922,11 +920,11 @@ Netty 定义了下面两个重要的 ChannelHandler 子接口：
 
     > 也可以将它自己从 ChannelPipeline 中移除
 
-    <img src="../../pics/netty/netty_76.png">
+    <img src="../../../pics/netty/netty_76.png">
 
-    <img src="../../pics/netty/netty_78.png">
+    <img src="../../../pics/netty/netty_78.png">
 
-    <img src="../../pics/netty/netty_77.png">
+    <img src="../../../pics/netty/netty_77.png">
 
 ---
 
@@ -940,9 +938,9 @@ Netty 定义了下面两个重要的 ChannelHandler 子接口：
 
 ### (3) 触发事件
 
-<img src="../../pics/netty/netty_79.png">
+<img src="../../../pics/netty/netty_79.png">
 
-<img src="../../pics/netty/netty_80.png">
+<img src="../../../pics/netty/netty_80.png">
 
 - ChannelPipeline 保存了与 Channel 相关联的 ChannelHandler
 - ChannelPipeline 可以根据需要，通过添加或删除 ChannelHandler 来动态地修改
@@ -963,9 +961,9 @@ Netty 定义了下面两个重要的 ChannelHandler 子接口：
 
 - 若调用 ChannelHandlerContext 上的方法，则将从当前所关联的 ChannelHandler 开始，并且只传播给位于该 ChannelPipeline 中的下一个能够处理该事件的 ChannelHandler
 
-<img src="../../pics/netty/netty_81.png">
+<img src="../../../pics/netty/netty_81.png">
 
-<img src="../../pics/netty/netty_82.png">
+<img src="../../../pics/netty/netty_82.png">
 
 **使用 ChannelHandlerContext 的 API 时，请牢记两点**：
 
@@ -975,17 +973,17 @@ Netty 定义了下面两个重要的 ChannelHandler 子接口：
 
 ### (2) 使用
 
-<img src="../../pics/netty/netty_83.png" width="800">
+<img src="../../../pics/netty/netty_83.png" width="800">
 
 - ChannelHandlerContext 获取 Channel 引用，调用 Channel 的 write() 方法会导致写入事件从尾端到头部地流经ChannelPipeline
 
-<img src="../../pics/netty/netty_84.png">
+<img src="../../../pics/netty/netty_84.png">
 
-<img src="../../pics/netty/netty_85.png">
+<img src="../../../pics/netty/netty_85.png">
 
 - 写入 ChannelPipeline
 
-    <img src="../../pics/netty/netty_86.png">
+    <img src="../../../pics/netty/netty_86.png">
 
 为什么会想要从 ChannelPipeline 中的**某个特定点开始传播事件**：
 
@@ -993,14 +991,14 @@ Netty 定义了下面两个重要的 ChannelHandler 子接口：
 
 - 为了**避免**将事件传经那些可能会对它感兴趣的 ChannelHandler
 
-<img src="../../pics/netty/netty_87.png">
+<img src="../../../pics/netty/netty_87.png">
 
 ---
 
 - 调用从某个特定的 ChannelHandler 开始的处理过程，必须获取到(ChannelPipeline)该 ChannelHandler 之前的 ChannelHandler 所关联的 ChannelHandlerContext
 - 这个 ChannelHandlerContext 将调用和它所关联的 ChannelHandler 之后的 ChannelHandler
 
-<img src="../../pics/netty/netty_88.png">
+<img src="../../../pics/netty/netty_88.png">
 
 ### (3) 高级用法
 
@@ -1012,7 +1010,7 @@ Netty 定义了下面两个重要的 ChannelHandler 子接口：
 
     > 这可能会发生在任何的 ChannelHandler 方法之外，甚至来自于不同的线程
     >
-    > <img src="../../pics/netty/netty_89.png">
+    > <img src="../../../pics/netty/netty_89.png">
 
 ---
 
@@ -1024,9 +1022,9 @@ Netty 定义了下面两个重要的 ChannelHandler 子接口：
 
 - 为了安全地被用于多个并发的 Channel(即连接)，这样的 ChannelHandler 必须线程安全
 
-    <img src="../../pics/netty/netty_90.png">
+    <img src="../../../pics/netty/netty_90.png">
 
-    <img src="../../pics/netty/netty_91.png">
+    <img src="../../../pics/netty/netty_91.png">
 
     > **代码问题**：**拥有状态**，即用于跟踪方法调用次数的实例变量 count
     >
@@ -1046,7 +1044,7 @@ Netty 定义了下面两个重要的 ChannelHandler 子接口：
     >
     > - **确保所有入站异常都会被处理**：重写 `exceptionCaught` 的 ChannelInboundHandler 应**位于 ChannelPipeline 的最后** 
 
-<img src="../../pics/netty/netty_92.png">
+<img src="../../../pics/netty/netty_92.png">
 
 ---
 
@@ -1068,11 +1066,11 @@ Netty 定义了下面两个重要的 ChannelHandler 子接口：
     >
     > - **方法一**：调用**出站操作**(如：write() 方法)所返回的 ChannelFuture 上的 addListener() 方法
     >
-    >     <img src="../../pics/netty/netty_93.png">
+    >     <img src="../../../pics/netty/netty_93.png">
     >
     > - **方法二**：将 ChannelFutureListener 添加到即将作为参数传递给 ChannelOutboundHandler 方法的 **ChannelPromise**
     >
-    >     <img src="../../pics/netty/netty_94.png">
+    >     <img src="../../../pics/netty/netty_94.png">
 
 - ChannelPromise 作为 ChannelFuture 子类， 可以被分配用于异步通知的监听器，同时还具有提供立即通知的可写方法
 
@@ -1090,7 +1088,7 @@ Netty 定义了下面两个重要的 ChannelHandler 子接口：
 
 - 当任务完成时，将该 Thread 返回给该列表，使其可被重用
 
-<img src="../../pics/netty/netty_95.png">
+<img src="../../../pics/netty/netty_95.png">
 
 ## 2、EventLoop 接口
 
@@ -1099,7 +1097,7 @@ Netty 的 EventLoop 是协同设计的一部分，采用两个基本的 API：�
 - 首先，`io.netty.util.concurrent` 包构建在 JDK 的 `java.util.concurrent` 包上，**用来提供线程执行器**
 - 其次，`io.netty.channel` 包中的类，**为了与 Channel 的事件进行交互，扩展了这些接口/类**
 
-<img src="../../pics/netty/netty_96.png" width="700">
+<img src="../../../pics/netty/netty_96.png" width="700">
 
 **在这个模型中**：
 
@@ -1126,23 +1124,23 @@ public interface EventLoop extends EventExecutor, EventLoopGroup {
 
 ### (1) JDK 任务调度
 
-<img src="../../pics/netty/netty_97.png">
+<img src="../../../pics/netty/netty_97.png">
 
-<img src="../../pics/netty/netty_98.png">
+<img src="../../../pics/netty/netty_98.png">
 
 ### (2) EventLoop 任务调度
 
 - 经过 60 秒后，Runnable 实例将由分配给 Channel 的 EventLoop 执行
 
-    <img src="../../pics/netty/netty_99.png">
+    <img src="../../../pics/netty/netty_99.png">
 
 - 调度任务每隔 60 秒执行一次
 
-    <img src="../../pics/netty/netty_100.png">
+    <img src="../../../pics/netty/netty_100.png">
 
 - 取消或者检查(被调度任务的)执行状态，可以使用每个异步操作所返回的 ScheduledFuture
 
-    <img src="../../pics/netty/netty_101.png">
+    <img src="../../../pics/netty/netty_101.png">
 
 ## 4、实现细节
 
@@ -1160,7 +1158,7 @@ public interface EventLoop extends EventExecutor, EventLoopGroup {
 
         > 当 EventLoop 下次处理它的事件时，会执行队列中的那些任务/事件
 
-<img src="../../pics/netty/netty_102.png">
+<img src="../../../pics/netty/netty_102.png">
 
 ### (2) EventLoop 线程分配
 
@@ -1168,7 +1166,7 @@ public interface EventLoop extends EventExecutor, EventLoopGroup {
 
 - **异步传输**：通过**少量的 Thread 来支撑大量的 Channel**，而不是每个 Channel 分配一个 Thread
 
-    > <img src="../../pics/netty/netty_103.png">
+    > <img src="../../../pics/netty/netty_103.png">
     >
     > EventLoopGroup 负责为每个新创建的 Channel 分配一个 EventLoop：
     >
@@ -1178,7 +1176,7 @@ public interface EventLoop extends EventExecutor, EventLoopGroup {
 
 - **阻塞传输**：**每一个 Channel 都将被分配给一个 EventLoop(以及它的 Thread)**
 
-    > <img src="../../pics/netty/netty_104.png">
+    > <img src="../../../pics/netty/netty_104.png">
 
 # 八、引导
 
@@ -1190,11 +1188,11 @@ public interface EventLoop extends EventExecutor, EventLoopGroup {
 
 引导类的层次结构包括一个抽象的父类和两个具体的引导子类
 
-<img src="../../pics/netty/netty_105.png" width="700">
+<img src="../../../pics/netty/netty_105.png" width="700">
 
 - 服务端和客户端之间的**通用引导步骤由 AbstractBootstrap 处理**
 
-- 客户端或服务器的**特定引导步骤则分别由 Bootstrap 或ServerBootstrap 处理**
+- 客户端或服务器的**特定引导步骤则分别由 Bootstrap 或 ServerBootstrap 处理**
 
 ---
 
@@ -1212,25 +1210,25 @@ public interface EventLoop extends EventExecutor, EventLoopGroup {
 
 > Bootstrap 类被用于客户端或使用无连接协议的应用程序
 
-<img src="../../pics/netty/netty_106.png">
+<img src="../../../pics/netty/netty_106.png">
 
-<img src="../../pics/netty/netty_107.png">
+<img src="../../../pics/netty/netty_107.png">
 
 ### (1) 引导客户端
 
 **Bootstrap 类负责为客户端和使用无连接协议的应用程序创建 Channel**
 
-<img src="../../pics/netty/netty_108.png" width="700">
+<img src="../../../pics/netty/netty_108.png" width="700">
 
-<img src="../../pics/netty/netty_109.png">
+<img src="../../../pics/netty/netty_109.png">
 
-<img src="../../pics/netty/netty_110.png">
+<img src="../../../pics/netty/netty_110.png">
 
 ### (2) Channel 和 EventLoopGroup 的兼容性
 
-<img src="../../pics/netty/netty_111.png">
+<img src="../../../pics/netty/netty_111.png">
 
-<img src="../../pics/netty/netty_112.png">
+<img src="../../../pics/netty/netty_112.png">
 
 引导过程中，调用 bind() 或 connect() 方法之前，必须调用以下方法来设置所需的组件：
 
@@ -1244,7 +1242,7 @@ public interface EventLoop extends EventExecutor, EventLoopGroup {
 
 ### (1) ServerBootstrap 类
 
-<img src="../../pics/netty/netty_113.png">
+<img src="../../../pics/netty/netty_113.png">
 
 ### (2) 引导服务端
 
@@ -1252,9 +1250,9 @@ public interface EventLoop extends EventExecutor, EventLoopGroup {
 
 - 因此，负责引导 ServerChannel 的 ServerBootstrap 提供了 `childHandler()、childAttr()、childOption()`，以简化到子 Channel 的 ChannelConfig 任务
 
-<img src="../../pics/netty/netty_114.png">
+<img src="../../../pics/netty/netty_114.png">
 
-<img src="../../pics/netty/netty_115.png">
+<img src="../../../pics/netty/netty_115.png">
 
 ## 4、从 Channel 引导客户端
 
@@ -1268,11 +1266,11 @@ public interface EventLoop extends EventExecutor, EventLoopGroup {
 
     > 优势：因为分配给 EventLoop 的 Channel 都使用同一个线程，所以避免了额外的线程创建，以及相关的上下文切换
     >
-    > <img src="../../pics/netty/netty_116.png">
+    > <img src="../../../pics/netty/netty_116.png">
 
-<img src="../../pics/netty/netty_117.png">
+<img src="../../../pics/netty/netty_117.png">
 
-<img src="../../pics/netty/netty_118.png">
+<img src="../../../pics/netty/netty_118.png">
 
 ## 5、引导过程添加多个 ChannelHandler
 
@@ -1289,7 +1287,7 @@ public abstract class ChannelInitializer<C extends Channel> extends ChannelInbou
 - 只需向 Bootstrap 或 ServerBootstrap 提供 ChannelInitializer 实现，当 Channel 被注册到 EventLoop 后，就会调用 initChannel()
 - 在该方法返回后，ChannelInitializer 的实例将会从 ChannelPipeline 中移除
 
-<img src="../../pics/netty/netty_119.png"><img src="../../pics/netty/netty_120.png">
+<img src="../../../pics/netty/netty_119.png"><img src="../../../pics/netty/netty_120.png">
 
 > 若应用程序使用了多个 ChannelHandler，请定义 ChannelInitializer 实现来将它们安装到 ChannelPipeline 中
 
@@ -1299,15 +1297,15 @@ public abstract class ChannelInitializer<C extends Channel> extends ChannelInbou
 
     > 可用的 ChannelOption 包括了底层连接的详细信息，如：keep-alive 或超时属性以及缓冲区设置
 
-<img src="../../pics/netty/netty_121.png">
+<img src="../../../pics/netty/netty_121.png">
 
-<img src="../../pics/netty/netty_122.png">
+<img src="../../../pics/netty/netty_122.png">
 
 ## 7、引导 DatagramChannel
 
 **DatagramChannel 实现的区别**：不再调用 connect() 方法，**只调用 bind() 方法**
 
-<img src="../../pics/netty/netty_123.png">
+<img src="../../../pics/netty/netty_123.png">
 
 ## 8、关闭
 
@@ -1316,9 +1314,9 @@ public abstract class ChannelInitializer<C extends Channel> extends ChannelInbou
 - 这个方法调用将返回一个 Future，这个 Future 将在关闭完成时接收到通知
 - 注意：该方法是一个**异步操作**，所以要阻塞等待直到它完成，或向所返回的 Future 注册一个监听器以在关闭完成时获得通知
 
-<img src="../../pics/netty/netty_124.png">
+<img src="../../../pics/netty/netty_124.png">
 
-# 九、单元测试(得重新看)
+# 九、单元测试
 
 > EmbeddedChannel 是 Netty 为改进针对 ChannelHandler 的单元测试而提供
 
@@ -1329,7 +1327,7 @@ public abstract class ChannelInitializer<C extends Channel> extends ChannelInbou
 - 将入站数据或出站数据写入 EmbeddedChannel 中，然后检查是否有任何东西到达了 ChannelPipeline 尾端
 - 以这种方式，可以确定消息是否已经被编码或被解码，以及是否触发了任何的 ChannelHandler 动作
 
-<img src="../../pics/netty/netty_125.png">
+<img src="../../../pics/netty/netty_125.png">
 
 - 入站数据由 ChannelInboundHandler 处理，代表从远程节点读取的数据
 - 出站数据由 ChannelOutboundHandler 处理，代表将要写到远程节点的数据
@@ -1337,7 +1335,7 @@ public abstract class ChannelInitializer<C extends Channel> extends ChannelInbou
 
 ---
 
-<img src="../../pics/netty/netty_126.png">
+<img src="../../../pics/netty/netty_126.png">
 
 - 在每种情况下，消息都将经过 ChannelPipeline 传递，并且被相关的 ChannelInboundHandler 或 ChannelOutboundHandler 处理
 - 若消息没有被消费，则可以使用 readInbound() 或 readOutbound() 方法来在处理过这些消息后，酌情把它们从 Channel 中读出来
@@ -1346,30 +1344,28 @@ public abstract class ChannelInitializer<C extends Channel> extends ChannelInbou
 
 ### (1) 测试入站消息
 
-<img src="../../pics/netty/netty_127.png">
+<img src="../../../pics/netty/netty_127.png">
 
 ---
 
-<img src="../../pics/netty/netty_128.png">
+<img src="../../../pics/netty/netty_128.png">
 
-<img src="../../pics/netty/netty_129.png">
+<img src="../../../pics/netty/netty_129.png">
 
-<img src="../../pics/netty/netty_130.png">
-
-
+<img src="../../../pics/netty/netty_130.png">
 
 ### (2) 测试出战消息
 
-<img src="../../pics/netty/netty_131.png">
+<img src="../../../pics/netty/netty_131.png">
 
-<img src="../../pics/netty/netty_132.png">
+<img src="../../../pics/netty/netty_132.png">
 
-<img src="../../pics/netty/netty_133.png">
+<img src="../../../pics/netty/netty_133.png">
 
 ## 3、测试异常处理
 
-<img src="../../pics/netty/netty_134.png">
+<img src="../../../pics/netty/netty_134.png">
 
-<img src="../../pics/netty/netty_135.png">
+<img src="../../../pics/netty/netty_135.png">
 
-<img src="../../pics/netty/netty_136.png">
+<img src="../../../pics/netty/netty_136.png">

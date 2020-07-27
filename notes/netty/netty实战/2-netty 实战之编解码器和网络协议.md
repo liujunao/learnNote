@@ -22,13 +22,9 @@
 - 每次从入站 ByteBuf 中读取 4 字节，将其解码为一个 int，然后将它添加到一个 List 中
 - 当没有更多的元素可以被添加到该 List 中时，它的内容将会被发送给下一个 ChannelInboundHandler
 
-<img src="/Users/yinren/allText/learnNote/pics/netty/netty_137.png" width="700">
+<img src="../../../pics/netty/netty_137.png" width="700">
 
-<img src="/Users/yinren/allText/learnNote/pics/netty/netty_138.png">
-
-。
-
-可以重写该方法以提供特殊的处理
+<img src="../../../pics/netty/netty_138.png">
 
 ### (2) ReplayingDecoder
 
@@ -47,7 +43,7 @@ ReplayingDecoder 扩展了 ByteToMessageDecoder 类，使得不必调用 readabl
 - 若没有足够的字节可用，这个 readInt() 方法的实现将会抛出一个 Error
 - 当有更多的数据可供读取时，该 decode() 方法将会被再次调用
 
-<img src="/Users/yinren/allText/learnNote/pics/netty/netty_139.png">
+<img src="../../../pics/netty/netty_139.png">
 
 > **建议**：若使用 ByteToMessageDecoder 不会引入太多的复杂性，那么请使用它；否则，请使用 ReplayingDecoder
 
@@ -65,11 +61,11 @@ ReplayingDecoder 扩展了 ByteToMessageDecoder 类，使得不必调用 readabl
 
 > 解码的 String 将被添加到传出的 List 中，并转发给下一个 ChannelInboundHandler
 
-<img src="/Users/yinren/allText/learnNote/pics/netty/netty_140.png" width="700">
+<img src="../../../pics/netty/netty_140.png" width="700">
 
-<img src="/Users/yinren/allText/learnNote/pics/netty/netty_141.png">
+<img src="../../../pics/netty/netty_141.png">
 
-<img src="/Users/yinren/allText/learnNote/pics/netty/netty_142.png">
+<img src="../../../pics/netty/netty_142.png">
 
 ### (4) TooLongFrameException
 
@@ -79,7 +75,7 @@ ReplayingDecoder 扩展了 ByteToMessageDecoder 类，使得不必调用 readabl
 
 - 可以设置一个最大字节数的阈值，如果超出该阈值，则抛出一个 TooLongFrameException
 
-<img src="/Users/yinren/allText/learnNote/pics/netty/netty_143.png">
+<img src="../../../pics/netty/netty_143.png">
 
 ## 2、编码器
 
@@ -98,9 +94,9 @@ ReplayingDecoder 扩展了 ByteToMessageDecoder 类，使得不必调用 readabl
 - 随后转发给 ChannelPipeline 中的下一个 ChannelOutboundHandler
 - 每个传出的 Short 值都将会占用 ByteBuf 中的 2 字节
 
-<img src="/Users/yinren/allText/learnNote/pics/netty/netty_145.png" width="700">
+<img src="../../../pics/netty/netty_145.png" width="700">
 
-<img src="/Users/yinren/allText/learnNote/pics/netty/netty_144.png">
+<img src="../../../pics/netty/netty_144.png">
 
 ### (2) MessageToMessageEncoder
 
@@ -114,9 +110,9 @@ ReplayingDecoder 扩展了 ByteToMessageDecoder 类，使得不必调用 readabl
 
 **案例**：
 
-<img src="/Users/yinren/allText/learnNote/pics/netty/netty_146.png" width="700">
+<img src="../../../pics/netty/netty_146.png" width="700">
 
-<img src="/Users/yinren/allText/learnNote/pics/netty/netty_147.png">
+<img src="../../../pics/netty/netty_147.png">
 
 ## 3、编解码器的抽象类
 
@@ -152,13 +148,13 @@ ReplayingDecoder 扩展了 ByteToMessageDecoder 类，使得不必调用 readabl
 
 **案例**：参数化 MessageToMessageCodec 时将使用 INBOUND_IN 类型的 WebSocketFrame，以及OUTBOUND_IN 类型的 MyWebSocketFrame
 
-<img src="/Users/yinren/allText/learnNote/pics/netty/netty_151.png">
+<img src="../../../pics/netty/netty_151.png">
 
-<img src="/Users/yinren/allText/learnNote/pics/netty/netty_152.png">
+<img src="../../../pics/netty/netty_152.png">
 
-<img src="/Users/yinren/allText/learnNote/pics/netty/netty_153.png">
+<img src="../../../pics/netty/netty_153.png">
 
-<img src="/Users/yinren/allText/learnNote/pics/netty/netty_154.png">
+<img src="../../../pics/netty/netty_154.png">
 
 ### (3) CombinedChannelDuplexHandler
 
@@ -176,27 +172,27 @@ ReplayingDecoder 扩展了 ByteToMessageDecoder 类，使得不必调用 readabl
 
 - **案例一(解码器)**：一次从 ByteBuf 中提取 2 字节，并将它们作为 char 写入到 List中，其将会被自动装箱为 Character 对象
 
-    <img src="/Users/yinren/allText/learnNote/pics/netty/netty_148.png">
+    <img src="../../../pics/netty/netty_148.png">
 
 - **案例二(编码器)**：将 Character 转换回字节，即通过直接写入ByteBuf，将 char 消息编码到 ByteBuf 中
 
-    <img src="/Users/yinren/allText/learnNote/pics/netty/netty_149.png">
+    <img src="../../../pics/netty/netty_149.png">
 
 - **案例三**：构建一个编解码器
 
-    <img src="/Users/yinren/allText/learnNote/pics/netty/netty_150.png">
+    <img src="../../../pics/netty/netty_150.png">
 
 # 十一、预置 ChannelHandler 和编解码器
 
 ## 1、通过 SSL/TLS 保护 Netty 应用程序
 
-<img src="/Users/yinren/allText/learnNote/pics/netty/netty_155.png">
+<img src="../../../pics/netty/netty_155.png">
 
-<img src="/Users/yinren/allText/learnNote/pics/netty/netty_156.png">
+<img src="../../../pics/netty/netty_156.png">
 
 **建议将 SslHandler 定为 ChannelPipeline 的第一个 ChannelHandler**，确保其他 ChannelHandler 的逻辑应用到数据后，才进行加密
 
-<img src="/Users/yinren/allText/learnNote/pics/netty/netty_157.png">
+<img src="../../../pics/netty/netty_157.png">
 
 ## 2、构建基于 Netty 的 HTTP/HTTPS 应用程序
 
@@ -204,19 +200,19 @@ ReplayingDecoder 扩展了 ByteToMessageDecoder 类，使得不必调用 readabl
 
 - **HTTP 基于请求/响应模式**：客户端向服务器发送一个 HTTP 请求，然后服务器将会返回一个HTTP 响应
 
-    <img src="/Users/yinren/allText/learnNote/pics/netty/netty_158.png">
+    <img src="../../../pics/netty/netty_158.png">
 
 ---
 
-<img src="/Users/yinren/allText/learnNote/pics/netty/netty_159.png">
+<img src="../../../pics/netty/netty_159.png">
 
-<img src="/Users/yinren/allText/learnNote/pics/netty/netty_160.png">
+<img src="../../../pics/netty/netty_160.png">
 
 ### (2) 聚合 HTTP 消息
 
 Netty 提供了一个聚合器，可以将多个消息部分合并为 FullHttpRequest 或 FullHttpResponse 消息
 
-<img src="/Users/yinren/allText/learnNote/pics/netty/netty_161.png">
+<img src="../../../pics/netty/netty_161.png">
 
 ### (3) HTTP 压缩
 
@@ -224,23 +220,23 @@ Netty 提供了一个聚合器，可以将多个消息部分合并为 FullHttpRe
 
     > 当使用 HTTP 时，建议开启压缩功能以尽可能减小传输数据的大小
 
-<img src="/Users/yinren/allText/learnNote/pics/netty/netty_162.png">
+<img src="../../../pics/netty/netty_162.png">
 
-<img src="/Users/yinren/allText/learnNote/pics/netty/netty_163.png">
+<img src="../../../pics/netty/netty_163.png">
 
 ### (4) 使用 HTTPS
 
-<img src="/Users/yinren/allText/learnNote/pics/netty/netty_164.png">
+<img src="../../../pics/netty/netty_164.png">
 
-<img src="/Users/yinren/allText/learnNote/pics/netty/netty_165.png">
+<img src="../../../pics/netty/netty_165.png">
 
 ### (5) WebSocket
 
-<img src="/Users/yinren/allText/learnNote/pics/netty/netty_166.png">
+<img src="../../../pics/netty/netty_166.png" width="700">
 
 - **WebSocketFrame 可以被归类为数据帧或控制帧**
 
-<img src="/Users/yinren/allText/learnNote/pics/netty/netty_167.png">
+<img src="../../../pics/netty/netty_167.png">
 
 ---
 
@@ -249,13 +245,13 @@ Netty 提供了一个聚合器，可以将多个消息部分合并为 FullHttpRe
 - 这个类处理协议升级握手，以 及 3 种控制帧(Close、Ping、Pong)
 - Text 和 Binary 数据帧将会被传递给下一个 ChannelHandler 进行处理
 
-<img src="/Users/yinren/allText/learnNote/pics/netty/netty_168.png">
+<img src="../../../pics/netty/netty_168.png">
 
-<img src="/Users/yinren/allText/learnNote/pics/netty/netty_169.png">
+<img src="../../../pics/netty/netty_169.png">
 
 ## 3、空闲的连接和超时
 
-<img src="/Users/yinren/allText/learnNote/pics/netty/netty_170.png">
+<img src="../../../pics/netty/netty_170.png">
 
 ---
 
@@ -264,9 +260,9 @@ Netty 提供了一个聚合器，可以将多个消息部分合并为 FullHttpRe
 - 若 60 秒内没有接收或发送任何的数据，将如何得到通知
 - 若没有响应，则连接会被关闭
 
-<img src="/Users/yinren/allText/learnNote/pics/netty/netty_171.png">
+<img src="../../../pics/netty/netty_171.png">
 
-<img src="/Users/yinren/allText/learnNote/pics/netty/netty_172.png">
+<img src="../../../pics/netty/netty_172.png">
 
 - 若连接超过 60 秒没有接收或发送数据，则 IdleStateHandler 将使用一个 IdleStateEvent 事件来调用 fireUserEventTriggered 方法
 
@@ -278,11 +274,11 @@ Netty 提供了一个聚合器，可以将多个消息部分合并为 FullHttpRe
 
 - **基于分隔符(delimited)的消息协议**：使用定义的字符来标记消息或消息段(帧)的开头或结尾
 
-<img src="/Users/yinren/allText/learnNote/pics/netty/netty_173.png">
+<img src="../../../pics/netty/netty_173.png">
 
-<img src="/Users/yinren/allText/learnNote/pics/netty/netty_174.png" width="700">
+<img src="../../../pics/netty/netty_174.png" width="700">
 
-<img src="/Users/yinren/allText/learnNote/pics/netty/netty_175.png">
+<img src="../../../pics/netty/netty_175.png">
 
 > 若正在使用除了行尾符之外的分隔符分隔的帧，则可以以类似的方式使用 DelimiterBasedFrameDecoder，只需将特定的分隔符序列指定到其构造函数即可，这些解码器是实现自定义的基于分隔符的协议的工具
 
@@ -304,24 +300,23 @@ Netty 提供了一个聚合器，可以将多个消息部分合并为 FullHttpRe
 - `CmdHandler`：从 CmdDecoder 获取解码的 Cmd 对象，并进行处理
 - `CmdHandlerInitializer`：将上述类定义为 ChannelInitializer 嵌套类，其会把这些 ChannelInboundHandler 安装到ChannelPipeline 中
 
-<img src="/Users/yinren/allText/learnNote/pics/netty/netty_176.png">
+<img src="../../../pics/netty/netty_176.png">
 
-<img src="/Users/yinren/allText/learnNote/pics/netty/netty_177.png">
+<img src="../../../pics/netty/netty_177.png">
 
 ### (2) 基于长度的协议
 
 - **基于长度的协议**：通过**将长度编码到帧的头部**来定义帧，而不是使用特殊的分隔符来标记结束
 
-<img src="/Users/yinren/allText/learnNote/pics/netty/netty_178.png">
+<img src="../../../pics/netty/netty_178.png">
 
 <figure>
   <img src="/Users/yinren/allText/learnNote/pics/netty/netty_179.png" width="460">
   <img src="/Users/yinren/allText/learnNote/pics/netty/netty_180.png" width="480">
 </figure>
-
 ---
 
-<img src="/Users/yinren/allText/learnNote/pics/netty/netty_181.png">
+<img src="../../../pics/netty/netty_181.png">
 
 ## 5、写大型数据
 
@@ -333,7 +328,7 @@ Netty 提供了一个聚合器，可以将多个消息部分合并为 FullHttpRe
 
 **案例**：通过从 FileInputStream 创建一个 DefaultFileRegion，并将其写入 Channel，从而**利用零拷贝特性来传输文件内容**
 
-<img src="/Users/yinren/allText/learnNote/pics/netty/netty_182.png">
+<img src="../../../pics/netty/netty_182.png">
 
 > 这个示例**只适用于文件内容的直接传输**，不包括应用程序对数据的任何处理
 
@@ -341,7 +336,7 @@ Netty 提供了一个聚合器，可以将多个消息部分合并为 FullHttpRe
 
 - **若要将数据从文件系统复制到用户内存中**，使用 ChunkedWriteHandler，支持异步写大型数据流，而又不会导致大量的内存消耗
 
-<img src="/Users/yinren/allText/learnNote/pics/netty/netty_183.png">
+<img src="../../../pics/netty/netty_183.png">
 
 **案例**：下面代码说明了 ChunkedStream 的用法
 
@@ -354,7 +349,7 @@ Netty 提供了一个聚合器，可以将多个消息部分合并为 FullHttpRe
 
 - 数据在传输之前将会由 SslHandler 加密
 
-<img src="/Users/yinren/allText/learnNote/pics/netty/netty_184.png">
+<img src="../../../pics/netty/netty_184.png">
 
 ## 6、序列化数据
 
@@ -370,7 +365,7 @@ Netty 提供了一个聚合器，可以将多个消息部分合并为 FullHttpRe
 
 下表列出了 Netty 提供的用于和 JDK 进行互操作的序列化类：
 
-<img src="/Users/yinren/allText/learnNote/pics/netty/netty_185.png">
+<img src="../../../pics/netty/netty_185.png">
 
 ### (2) JBoss Marshalling 序列化
 
@@ -386,13 +381,13 @@ Netty 提供了两组解码器/编码器对为 Boss Marshalling 提供支持：
 - 第一组兼容只使用 JDK 序列化的远程节点
 - 第二组提供了最大的性能，适用于和使用 JBoss Marshalling 的远程节点一起使用
 
-<img src="/Users/yinren/allText/learnNote/pics/netty/netty_186.png">
+<img src="../../../pics/netty/netty_186.png">
 
 ---
 
-<img src="/Users/yinren/allText/learnNote/pics/netty/netty_187.png">
+<img src="../../../pics/netty/netty_187.png">
 
-<img src="/Users/yinren/allText/learnNote/pics/netty/netty_188.png">
+<img src="../../../pics/netty/netty_188.png">
 
 ### (3) Protocol Buffers 序列化
 
@@ -402,13 +397,13 @@ Netty 提供了两组解码器/编码器对为 Boss Marshalling 提供支持：
 
 Netty 为支持 protobuf 所提供的 ChannelHandler 实现：
 
-<img src="/Users/yinren/allText/learnNote/pics/netty/netty_189.png">
+<img src="../../../pics/netty/netty_189.png">
 
 ---
 
-<img src="/Users/yinren/allText/learnNote/pics/netty/netty_190.png">
+<img src="../../../pics/netty/netty_190.png">
 
-<img src="/Users/yinren/allText/learnNote/pics/netty/netty_191.png">
+<img src="../../../pics/netty/netty_191.png">
 
 # # 第三部分：网络协议
 
@@ -418,13 +413,13 @@ Netty 为支持 protobuf 所提供的 ChannelHandler 实现：
 
 **应用程序约定**：
 
-- 如果被请求的 URL 以 /ws 结尾，则 把该协议升级为 WebSocket
+- 如果被请求的 URL 以 /ws 结尾，则把该协议升级为 WebSocket
 
     > 在连接升级完成后，所有数据都将会使用 WebSocket 进行传输
 
 - 否则，服务器将使用基本的 HTTP/S
 
-<img src="/Users/yinren/allText/learnNote/pics/netty/netty_192.png" width="800">
+<img src="../../../pics/netty/netty_192.png" width="800">
 
 ### (1) 处理 HTTP 请求
 
@@ -432,9 +427,9 @@ Netty 为支持 protobuf 所提供的 ChannelHandler 实现：
 
     > 代表聊天服务器的第一个部分：管理纯粹的 HTTP 请求和响应
 
-<img src="/Users/yinren/allText/learnNote/pics/netty/netty_193.png">
+<img src="../../../pics/netty/netty_193.png">
 
-<img src="/Users/yinren/allText/learnNote/pics/netty/netty_194.png">
+<img src="../../../pics/netty/netty_194.png">
 
 **步骤**：
 
@@ -456,13 +451,13 @@ Netty 为支持 protobuf 所提供的 ChannelHandler 实现：
 
 **WEBSOCKET 帧**：WebSocket 以帧的方式传输数据，每一帧代表消息的一部分，一个完整的消息可能会包含许多帧
 
-<img src="/Users/yinren/allText/learnNote/pics/netty/netty_195.png">
+<img src="../../../pics/netty/netty_195.png">
 
 ---
 
-<img src="/Users/yinren/allText/learnNote/pics/netty/netty_196.png">
+<img src="../../../pics/netty/netty_196.png">
 
-<img src="/Users/yinren/allText/learnNote/pics/netty/netty_197.png">
+<img src="../../../pics/netty/netty_197.png">
 
 **步骤**：
 
@@ -472,17 +467,17 @@ Netty 为支持 protobuf 所提供的 ChannelHandler 实现：
 
 ### (3) 初始化 ChannelPipeline
 
-<img src="/Users/yinren/allText/learnNote/pics/netty/netty_199.png">
+<img src="../../../pics/netty/netty_199.png">
 
 ---
 
-<img src="/Users/yinren/allText/learnNote/pics/netty/netty_198.png">
+<img src="../../../pics/netty/netty_198.png">
 
 ---
 
 - **WebSocket 协议升级之前**的 ChannelPipeline 状态：代表刚刚被 ChatServerInitializer 初始化之后的 ChannelPipeline
 
-    <img src="/Users/yinren/allText/learnNote/pics/netty/netty_200.png">
+    <img src="../../../pics/netty/netty_200.png">
 
 - **WebSocket 协议升级完成之后**，WebSocketServerProtocolHandler 会：
 
@@ -492,25 +487,25 @@ Netty 为支持 protobuf 所提供的 ChannelHandler 实现：
 
     > 注意：Netty 支持 4 个版本的 WebSocket 协议，Netty 会根据客户端(指浏览器)支持的版本，选择合适的WebSocketFrameDecoder 和 WebSocketFrameEncoder
 
-    <img src="/Users/yinren/allText/learnNote/pics/netty/netty_201.png">
+    <img src="../../../pics/netty/netty_201.png">
 
 ### (4) 引导
 
-<img src="/Users/yinren/allText/learnNote/pics/netty/netty_202.png">
+<img src="../../../pics/netty/netty_202.png">
 
-<img src="/Users/yinren/allText/learnNote/pics/netty/netty_203.png">
+<img src="../../../pics/netty/netty_203.png">
 
-<img src="/Users/yinren/allText/learnNote/pics/netty/netty_204.png">
+<img src="../../../pics/netty/netty_204.png">
 
 ## 2、WebSocket 加密
 
-<img src="/Users/yinren/allText/learnNote/pics/netty/netty_205.png">
+<img src="../../../pics/netty/netty_205.png">
 
-<img src="/Users/yinren/allText/learnNote/pics/netty/netty_206.png">
+<img src="../../../pics/netty/netty_206.png">
 
 ---
 
-<img src="/Users/yinren/allText/learnNote/pics/netty/netty_207.png">
+<img src="../../../pics/netty/netty_207.png">
 
 # 十三、使用 UDP 广播事件
 
@@ -528,35 +523,35 @@ Netty 为支持 protobuf 所提供的 ChannelHandler 实现：
 
 **案例**：将打开一个文件，随后将会通过 UDP 把每一行都作为一个消息广播到一个指定的端口
 
-<img src="/Users/yinren/allText/learnNote/pics/netty/netty_208.png" width="700">
+<img src="../../../pics/netty/netty_208.png" width="700">
 
 ### (1) 消息 POJO：LogEvent
 
-<img src="/Users/yinren/allText/learnNote/pics/netty/netty_209.png">
+<img src="../../../pics/netty/netty_209.png">
 
-<img src="/Users/yinren/allText/learnNote/pics/netty/netty_210.png">
+<img src="../../../pics/netty/netty_210.png">
 
 ### (2) 编写广播者
 
 - Netty 的 DatagramPacket 是一个简单的消息容器，DatagramChannel 实现用它来和远程节点通信，包含接收者(和可选的发送者)的地址以及消息的有效负载本身
 
-<img src="/Users/yinren/allText/learnNote/pics/netty/netty_211.png">
+<img src="../../../pics/netty/netty_211.png">
 
 ---
 
-<img src="/Users/yinren/allText/learnNote/pics/netty/netty_212.png">
+<img src="../../../pics/netty/netty_212.png">
 
 ---
 
-<img src="/Users/yinren/allText/learnNote/pics/netty/netty_213.png" width="700">
+<img src="../../../pics/netty/netty_213.png" width="700">
 
 - 要被传输的数据都被封装在 LogEvent 消息中
 - LogEventBroadcaster 将把它们写入到 Channel 中，并通过 ChannelPipeline 发送，同时将它们转换(编码)为 DatagramPacket 消息
 - 最后，所有数据都将通过 UDP 被广播，并由远程节点(监视器)所捕获
 
-<img src="/Users/yinren/allText/learnNote/pics/netty/netty_214.png">
+<img src="../../../pics/netty/netty_214.png">
 
-<img src="/Users/yinren/allText/learnNote/pics/netty/netty_215.png">
+<img src="../../../pics/netty/netty_215.png">
 
 ### (3) 编写监视器
 
@@ -568,20 +563,20 @@ LogEventMonitor 的功能：
 
 - 将 LogEvent 消息写出到 System.out
 
-<img src="/Users/yinren/allText/learnNote/pics/netty/netty_216.png">
+<img src="../../../pics/netty/netty_216.png">
 
 ---
 
 - **LogEventDecoder 负责将传入的 DatagramPacket解码为LogEvent 消息**
 
-    <img src="/Users/yinren/allText/learnNote/pics/netty/netty_217.png">
+    <img src="../../../pics/netty/netty_217.png">
 
 - **处理 LogEvent 消息**
 
-    <img src="/Users/yinren/allText/learnNote/pics/netty/netty_218.png">
+    <img src="../../../pics/netty/netty_218.png">
 
 - **将 LogEventDecoder 和 LogEventHandler 安装到 ChannelPipeline 中**
 
-    <img src="/Users/yinren/allText/learnNote/pics/netty/netty_219.png">
+    <img src="../../../pics/netty/netty_219.png">
 
-    <img src="/Users/yinren/allText/learnNote/pics/netty/netty_220.png">
+    <img src="../../../pics/netty/netty_220.png">
