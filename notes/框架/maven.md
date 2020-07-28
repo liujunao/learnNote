@@ -268,7 +268,7 @@ maven：是一个**跨平台的项目管理工具**，主要服务于 Java 平�
 
   - **简介**： 当项目 A 依赖于 B 包，而 B 包又依赖于 C 包，故使用 Maven只 需要引入 B 包即可，C 包由Maven 通过传递性依赖引入
 
-  - **作用**： Maven 通过传递性依赖机制，解析各个直接依赖的POM，将那些必要的间接依赖，以传递性依赖的形式引入到当前的项目中
+  - **作用**： Maven 通过传递性依赖机制，解析各个直接依赖的POM，将必要的间接依赖，以传递性依赖的形式引入到当前的项目中
 
   - **范围**： 由第一直接依赖和第二直接依赖决定
 
@@ -294,7 +294,7 @@ maven：是一个**跨平台的项目管理工具**，主要服务于 Java 平�
 
 - **归类依赖**： 引入同一项目的不同模块时，这些依赖的版本都相同
 
-  > 首先使用 `properties` 元素声明 Maven 属性(定义版本)，并在 dependency声 明中引用这个版本 `${}` 
+  > 首先使用 `properties` 元素声明 Maven 属性(定义版本)，并在 dependency声明中引用这个版本 `${}` 
   >
   > ```xml
   > <project>
@@ -367,7 +367,7 @@ maven：是一个**跨平台的项目管理工具**，主要服务于 Java 平�
 
 - Maven 仓库： Maven 在某个位置上**统一存储所有 Maven 项目共享的构件**
 
-  > Maven 项目不用各自存储依赖文件，只需**声明依赖的坐标**，在需要时（编译、运行、打包），Maven 会自动根据坐标找到 Maven 仓库中的构件，并使用它们
+  > Maven 项目只需**声明依赖的坐标**，需要时(编译、运行、打包)，Maven 会自动根据坐标找到 Maven 仓库中的构件，并使用它们
 
 ### 2. 仓库布局
 
@@ -438,17 +438,17 @@ maven：是一个**跨平台的项目管理工具**，主要服务于 Java 平�
             <!-- true/false 控制发布版本构件的下载 -->
             <enabled>...</enabled>    
             <!-- 更新策略：
-				daily(默认，每天一次)
-				never(从不)
-				always（每次构建）
-				interval:X（间隔X分钟） 
-			-->
+										daily(默认，每天一次)
+										never(从不)
+										always（每次构建）
+										interval:X（间隔X分钟） 
+						-->
             <updatePolicy>...</updatePolicy>    
             <!-- 检查检验和文件的策略： 
-				warn(默认，校验失败，输出警告信息)
-				fail（校验失败，无法完成构建）
-				ignore(忽略校验失败) 
-			-->
+										warn(默认，校验失败，输出警告信息)
+										fail（校验失败，无法完成构建）
+										ignore(忽略校验失败) 
+						-->
             <checksumPolicy>...</checksumPolicy>    
         </releases>
         <!-- 重要： 控制 Maven 对于快照版本构件的下载 -->
@@ -547,7 +547,7 @@ maven：是一个**跨平台的项目管理工具**，主要服务于 Java 平�
 
 `LATEST和RELEASE` 的基于 groupId 和 artifactId 的 `maven-metadata.xml`： 
 
-> 不推荐依赖声明中使用 `LATEST和RELEASE`，Maven 随机解析到不同的构件，当构件发生变化，可能会造成项目构建失败，且不易排查
+> 不推荐依赖声明中使用 `LATEST和RELEASE`，Maven 随机解析到不同的构件，当构件变化，可能会造成项目构建失败，且不易排查
 
 ```xml
 <?xml version="1.0" encoding="UTF-8"?>
@@ -921,7 +921,7 @@ Maven 的生命周期与插件目标相互绑定，用以完成实际的构建�
 
 - **解析插件版本**： 用户未提供插件的版本时，Maven 会自动解析插件版本
 
-  > Maven 在超级 POM 中为所有核心插件设定了版本，超级POM是所有Maven项目的父POM，所有项目都继承了这个超级POM配置
+  > Maven 在超级 POM 中为所有核心插件设定了版本，所有项目都继承超级 POM 配置
   >
   > 所以用户使用插件**未设定插件版本**的情况有以下几种：
   >
@@ -956,8 +956,8 @@ Maven 的生命周期与插件目标相互绑定，用以完成实际的构建�
 
 ## 4. 聚合与继承
 
-> Maven聚合特性，将项目的各个模块聚合在一起**构建** 
-> Maven继承特性，**抽取**各模块相同的依赖和插件等配置
+> - Maven 聚合特性：将项目的各个模块聚合在一起**构建** 
+> - Maven 继承特性：**抽取**各模块相同的依赖和插件等配置
 
 ### 1. 聚合
 
@@ -978,10 +978,10 @@ Maven 的生命周期与插件目标相互绑定，用以完成实际的构建�
 
   > ```xml
   > <parent>
-  >     	<groupId>...</groupId>              <!-- 必须，声明父工程的groupId -->
-  >     	<artifactId>...</artifactId>        <!-- 必须，声明父工程的artifactId -->
-  >     	<version>...</version>              <!-- 必须，声明父工程的version -->
-  >     	<relativePath>...</relativePath>    <!-- 可省略，默认为../pom.xml,声明父工程的POM文件所在路径 -->
+  >     		<groupId>...</groupId>              <!-- 必须，声明父工程的groupId -->
+  >     		<artifactId>...</artifactId>        <!-- 必须，声明父工程的artifactId -->
+  >     		<version>...</version>              <!-- 必须，声明父工程的version -->
+  >     		<relativePath>...</relativePath>    <!-- 可省略，默认为../pom.xml,声明父工程的POM文件所在路径 -->
   > </parent>
   > 
   > <dependencies>
@@ -1036,12 +1036,6 @@ Maven 的生命周期与插件目标相互绑定，用以完成实际的构建�
   > ```
 
 - **插件管理**： `pluginManagement` 元素用于管理插件，在该元素中配置的依赖不会造成实际的插件调用方式，当其子类声明该插件依赖时，可复用该配置，起到约束和简化作用
-
-！！！
-
-什么情况下可以用到依赖管理和插件管理： 
-
-当一些依赖或插件只有部分子模块需要时，应该由子模块自身去声明引入依赖并配置，而这些配置都是重复的，通过依赖管理和插件管理可以实现配置的复用，并且不会给其他模块引入不必要的依赖
 
 ### 3. 聚合与继承的关系
 
@@ -1109,7 +1103,7 @@ Maven 的生命周期与插件目标相互绑定，用以完成实际的构建�
 ### 5. 反应堆（Reactor）
 
 - 在一个多模块的 Maven 项目中，反应堆是指所有模块组成的一个构建结构
-- 对于单模块的项目，反应堆就是其本身，对于多模块而言，反应堆包含了各模块之间继承与依赖的关系，从而能够自动计算出合理的模块构建顺序
+- 对于单模块项目，反应堆是其本身，对于多模块项目，反应堆包含模块间继承与依赖的关系，从而能自动计算出合理的模块构建顺序
 
 #### 1. 反应堆的构建顺序
 
@@ -1451,17 +1445,17 @@ Mave 提供很多命令行选择支持裁剪反应堆，输入 `mvn -h` 可以�
                 <enabled>true</enabled>
                 <!-- 
                     Maven 从远程仓库更新的频率
-                    never(从不)
-                    daily(每天一次,默认)
-                    always(每次构建都检查更新)
-                    interval:X(每隔X分钟检查一次,X为任意整数) 
+                    	never(从不)
+                    	daily(每天一次,默认)
+                    	always(每次构建都检查更新)
+                    	interval:X(每隔X分钟检查一次,X为任意整数) 
                 -->
                 <updatePolicy>never</updatePolicy>
                 <!-- 
                     检验文件的策略,如果校验失败: 
-                    warn(默认):输出警告信息
-                    fail: 构建失败
-                    ignore: 忽略 
+                    	warn(默认):输出警告信息
+                    	fail: 构建失败
+                    	ignore: 忽略 
                 -->
                 <checksumPolicy>warn</checksumPolicy>
             </releases> 
@@ -1511,7 +1505,7 @@ Mave 提供很多命令行选择支持裁剪反应堆，输入 `mvn -h` 可以�
     <!-- 
 		此处声明的依赖会被子模块继承,但不是声明了就一定会被继承
 		如果子模块不引入这些依赖，就不会强制加给子模块 
-	-->
+		-->
     <dependencyManagement>
         <dependencies>
             <dependency>
@@ -1531,7 +1525,7 @@ Mave 提供很多命令行选择支持裁剪反应堆，输入 `mvn -h` 可以�
                 <artifactId>account-xxx</artifactId>
                 <version>0.0.1-SNAPSHOT</version>
                 <!-- import 只在 dependencyManagement 中,
-					 且目标 POM 的 packaging 必须为 pom,本项目 POM 的 type 为 pom -->
+					 					 且目标 POM 的 packaging 必须为 pom,本项目 POM 的 type 为 pom -->
                 <type>pom</type>
                 <scope>import</scope>
             </dependency>
@@ -1547,11 +1541,11 @@ Mave 提供很多命令行选择支持裁剪反应堆，输入 `mvn -h` 可以�
             <!-- 依赖类型,默认是 jar -->
             <type>jar</type>
             <!-- 依赖范围,默认 compile,可以是 test/provided/runtime/system,
-				 当为 system 时需要 systemPath 指定 jar 包路径-->
+				 				 当为 system 时需要 systemPath 指定 jar 包路径-->
             <scope>system</scope>
             <systemPath>${JAVA_HOME}/lib/rt.jar</systemPath>
             <!-- 是否可选,默认 false,如果是 ture,则当其他项目依赖此项目时,
-				 其他项目不会依赖这个jar包,不建议在项目中使用可选依赖 -->
+				 				 其他项目不会依赖这个jar包,不建议在项目中使用可选依赖 -->
             <optional>true</optional>
             <exclusions>
                 <!--排除掉spark-sql_2.11-2.3.0.jar依赖的hadoop-client-x.x.x.jar -->
@@ -1754,8 +1748,7 @@ Mave 提供很多命令行选择支持裁剪反应堆，输入 `mvn -h` 可以�
                 <artifactId>maven-surefire-plugin</artifactId>
                 <version>2.22.0</version>
                 <configuration>
-                    <!-- 修改测试报告的存放为位置,
-						 默认为${project.build.directory}/surefire-reports -->
+                    <!-- 修改测试报告的存放为位置，默认为${project.build.directory}/surefire-reports -->
                     <reportsDirectory>
                         ${project.build.directory}/test-reports
                     </reportsDirectory>
@@ -1795,7 +1788,6 @@ Mave 提供很多命令行选择支持裁剪反应堆，输入 `mvn -h` 可以�
             </plugin>
         </plugins>
     </build>
-
 </project>
 ```
 
@@ -1928,37 +1920,5 @@ Mave 提供很多命令行选择支持裁剪反应堆，输入 `mvn -h` 可以�
             </build>
         </profile>
     </profiles>
-
 </project>
 ```
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

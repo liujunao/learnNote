@@ -2838,7 +2838,8 @@ Throwable 可以用来表示任何可以作为异常抛出的类，分为两种�
 
 # 九、泛型
 
-- **[Java 泛型详解](http://www.importnew.com/24029.html)**
+## 1、简介
+
 - **[10 道 Java 泛型面试题](https://cloud.tencent.com/developer/article/1033693)** 
 
 **java 泛型面试题**： 
@@ -2860,40 +2861,144 @@ Throwable 可以用来表示任何可以作为异常抛出的类，分为两种�
   - `List<? extends T>` 可以接受任何继承自 T 类型的List
   - `List<? super T>` 可以接受任何 T 的父类构成的List
 
-- **编写一个能接受泛型参数并返回泛型类型的泛型方法**： 
 
-  ```java
-   public V put(K key, V value) {
-        return cache.put(key, value);
-  }
-  ```
+---
 
-- **使用泛型编写带有参数的类**： 
+**PECS 原则**：
 
+- 上界 `<? extends T>` 不能往里存，只能往外取，**适合频繁往外面读取内容的场景**
+- 下界 `<? super T>` 不影响往里存，但往外取只能放在 Object 对象里，**适合经常往里面插入数据的场景** 
 
+## 2、三种类型判断方式
 
-- **编写一段泛型程序来实现 LRU 缓存**： 
+|      |                instanceof                 |                       isInstance                       |                       isAssignableFrom                       |
+| ---- | :---------------------------------------: | :----------------------------------------------------: | :----------------------------------------------------------: |
+| 形式 |                  关键字                   |                          方法                          |                             方法                             |
+| 使用 |           `obj instanceof Type`           |                `class.isInstance(obj)`                 |              `class1.isAssignableFrom(class2)`               |
+| 简介 | 判断对象`obj`是否为类`Type`或其子类的实例 | 判断对象`obj`是否为`class`对象所表示的类或其子类的实例 | 判断`class1`是否与`class2`对象为同一类型或是`class2`的超类或接口 |
 
-  **提示**： 
+## 3、泛型擦除缺陷及补救
 
-  - LinkedHashMap 可以用来实现固定大小的LRU缓存，当LRU缓存已满时，会把最老的键值对移出缓存
-  - LinkedHashMap 提供了一个称为 removeEldestEntry() 的方法，该方法会被put()和putAll()调用来删除最老的键值对
+推荐阅读：[深入理解Java泛型](https://juejin.im/post/5b614848e51d45355d51f792#heading-7) 
 
-- **不能把 `List<String>` 传递给一个接受 `List<Object>` 参数的方法**：
+- **缺陷**：泛型不能显式地运用在运行时类型的操作当中，例如：**转型、instanceof 和 new**
 
-  因为 `List<Object>` 可以存储任何类型的对象，而 `List<String>` 只能存储String
+    > 因为在运行时，所有参数的类型信息都丢失了
+    >
+    > ```java
+    > public class Erased<T> {
+    >     private final int SIZE = 100;
+    >     public static void f(Object arg) {
+    >         //编译不通过
+    >         if (arg instanceof T) {
+    >         }
+    >         //编译不通过
+    >         T var = new T();
+    >         //编译不通过
+    >         T[] array = new T[SIZE];
+    >         //编译不通过
+    >         T[] array = (T) new Object[SIZE];
+    >     }
+    > }
+    > ```
 
-  ```java
-  List<Object> objectList;
-  List<String> stringList;
-  objectList = stringList;  //compilation error incompatible types
-  ```
+### (1) 类型判断问题
 
-- **Array 不支持泛型**：建议使用 List 来代替 Array，因为 List 可以提供编译期的类型安全保证，Array 不能
+**解决泛型无法进行类型判断**的问题：
 
-- **如果把泛型和原始类型混合起来使用， Java 5的 javac 编译器会产生类型未检查警告**： 
+```java
+//泛型类型判断封装类
+class GenericType<T> {
+    Class<?> classType;
+    
+    public GenericType(Class<?> type) {
+        classType = type;
+    }
+    
+    public boolean isInstance(Object object) {
+        return classType.isInstance(object);
+    }
+}
+```
 
-  如代码： ` List<String> rawList = new ArrayList()` 
+---
+
+main 方法的调用：**通过记录类型参数的 Class 对象，然后通过这个 Class 对象进行类型判断**
+
+```java
+GenericType<A> genericType=new GenericType<>(A.class);
+System.out.println("------------");
+System.out.println(genericType.isInstance(new A()));
+System.out.println(genericType.isInstance(new B()));
+```
+
+### (2) 创建类型实例
+
+泛型不能 `new T()` 的原因：
+
+- 原因一：因为擦除，不能确定类型
+- 原因二：无法确定 T 是否包含无参构造函数
+
+解决：**使用显式的工厂模式**
+
+```java
+//使用工厂方法来创建实例
+interface Factory<T> {
+    T create();
+}
+
+class Creater<T> {
+    T instance;
+    public <F extends Factory<T>> T newInstance(F f) {
+    	instance = f.create();
+    	return instance;
+    }
+}
+
+class IntegerFactory implements Factory<Integer> {
+    @Override
+    public Integer create() {
+    	Integer integer = new Integer(9);
+    	return integer;
+    }
+}
+```
+
+---
+
+调用代码如下：
+
+```java
+Creater<Integer> creater=new Creater<>();
+System.out.println(creater.newInstance(new IntegerFactory()));
+```
+
+### (3) 创建泛型数组
+
+> 一般不建议创建泛型数组。尽量使用 `ArrayList` 来代替泛型数组
+
+```java
+public class GenericArrayWithTypeToken<T> {
+    private T[] array;
+
+    @SuppressWarnings("unchecked")
+    public GenericArrayWithTypeToken(Class<T> type, int sz) {
+        array = (T[]) Array.newInstance(type, sz);
+    }
+
+    public void put(int index, T item) {
+        array[index] = item;
+    }
+
+    public T[] rep() {
+        return array;
+    }
+
+    public static void main(String[] args) {
+        //...
+    }
+}
+```
 
 # 十、注解 
 
