@@ -1523,8 +1523,8 @@ public class TestPipe {
 public void test8(){
     try(
         FileChannel inChannel = FileChannel.open(Paths.get("1.jpg"), StandardOpenOption.READ);
-        FileChannel outChannel = FileChannel.open(Paths.get("2.jpg"), 
-                         														StandardOpenOption.WRITE, StandardOpenOption.CREATE)){
+        FileChannel outChannel = FileChannel.open(Paths.get("2.jpg"), 								
+                                                  StandardOpenOption.WRITE, StandardOpenOption.CREATE)){
         		ByteBuffer buf = ByteBuffer.allocate(1024);
         		inChannel.read(buf);
     }catch(IOException e){
