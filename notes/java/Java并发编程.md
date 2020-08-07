@@ -2024,7 +2024,7 @@ public static class ReadLock implements Lock, java.io.Serializable {
   >             return 1;
   >    	}
   >    }
-  >    ```
+  > ```
   
 - **读锁的释放**： 
 
@@ -2219,7 +2219,7 @@ Contition 提供的方法：
   >            t = next;
   >        }
   >    }
-  >    ```
+  > ```
   
 - `signal/signalAll`： 会唤醒在等待队列中等待最长时间的节点（条件队列里的首节点），在唤醒节点前，会将节点移到CLH同步队列中
 
@@ -3523,6 +3523,8 @@ LinkedBlockingDeque 是可选容量的：
 
 # 七、线程池(Executor)
 
+> **不允许使用  Executors 创建线程池**
+
 ## 1. ThreadPoolExecutor
 
 ### 1. 内部状态
@@ -4148,10 +4150,241 @@ public ThreadPoolExecutor(int corePoolSize, int maximumPoolSize, long keepAliveT
   }
   ```
 
+## 3、Future
 
-## 3. FutureTask
+> Future 通常和线程池搭配使用，用来获取线程池执行结果的返回值
 
-### 1. 简介
+推荐阅读：**[JAVA Future类详解](https://blog.csdn.net/u014209205/article/details/80598209)** 
+
+### (1) 简介
+
+假设通过 Executors 构建一个线程池 es ，es 执行任务的两种方式：
+
+- `es.execute(runnable)`：这种情况没有返回值
+- `es.submit(runnale)` 或`es.submit(callable)`：这种情况返回一个 Future 对象，调用 `Future.get()` 来获取返回值
+
+#### 1. 主要方法
+
+```java
+public interface Future<V> {
+    boolean cancel(boolean mayInterruptIfRunning);
+ 
+    boolean isCancelled();
+ 
+    boolean isDone();
+ 
+    V get() throws InterruptedException, ExecutionException;
+ 
+    V get(long timeout, TimeUnit unit) throws InterruptedException, ExecutionException, TimeoutException;
+}
+```
+
+- `get`：当任务结束后返回一个结果，如果调用时，工作还没有结束，则会阻塞线程，直到任务执行完毕
+
+- `get(long timeout, TimeUnit unit)`：最多等待 timeout 的时间就会返回结果
+
+- `cancel`：用来停止一个任务，当任务被成功停止后，无法再次执行
+
+    > - 返回 `true`：任务已完成或已停止
+    > - 返回 `false`：任务无法停止
+
+- `isDone`：判断当前方法是否完成
+
+- `isCancel`：判断当前方法是否取消
+
+#### 2. 主要实现类
+
+![](../../pics/concurrent/concurrent_49.png)
+
+- `RunnableFuture`：同时继承 Future 和 Runnable，在成功执行 run 方法后，可通过 Future 访问执行结果
+
+    - `FutureTask`：提供了 Future 的基本实现，实现了启动和取消一个计算，查询这个计算是否已完成，恢复计算结果
+
+        > 注：
+        >
+        > - 计算结果只能在计算已完成的情况下恢复，若计算未完成，get 方法会阻塞
+        > - 一旦计算完成，这个计算将不能被重启和取消，除非调用 runAndReset 方法
+
+- `SchedualFuture`：表示一个延时的行为可以被取消，用于获取定时任务 SchedualedExecutorService 的 future 结果
+
+- `CompleteFuture`：当两个或多个线程要执行完成或取消操作时，只有一个能够成功
+
+- `ForkJoinTask`：基于任务的抽象类，可以通过 ForkJoinPool 来执行
+
+    > - 一个 ForkJoinTask 类似线程实体，但对于线程实体是轻量级的。
+    >
+    > - 大量的任务和子任务会被 ForkJoinPool 池中的真实线程挂起来，以某些使用限制为代价
+
+### (2) 代码分析
+
+- 线程池中有以下几个方法：
+
+    ```java
+    public Future<?> submit(Runnable task) {
+        if (task == null) throw new NullPointerException();
+        RunnableFuture<Void> ftask = newTaskFor(task, null);
+        execute(ftask);
+        return ftask;
+    }
+    ```
+
+    ```java
+    public <T> Future<T> submit(Runnable task, T result) {
+        if (task == null) throw new NullPointerException();
+        RunnableFuture<T> ftask = newTaskFor(task, result);
+        execute(ftask);
+        return ftask;
+    }
+    ```
+
+    ```java
+    public <T> Future<T> submit(Callable<T> task) {
+        if (task == null) throw new NullPointerException();
+        RunnableFuture<T> ftask = newTaskFor(task);
+        execute(ftask);
+        return ftask;
+    }
+    ```
+
+- 所有的方法最终都将 runnable 或 callable 转变成一个 RunnableFuture 对象：
+
+    ```java
+    public interface RunnableFuture<V> extends Runnable, Future<V> {
+        void run();
+    }
+    ```
+
+    然后调用 executor(runnable) 方法，最后返回一个 RunnableFuture 对象
+
+- 将 Runnable 对象转为 RunnableFuture：
+
+    ```java
+    protected <T> RunnableFuture<T> newTaskFor(Runnable runnable, T value) {
+        return new FutureTask<T>(runnable, value);
+    }
+    
+    protected <T> RunnableFuture<T> newTaskFor(Callable<T> callable) {
+        return new FutureTask<T>(callable);
+    }
+    ```
+
+    ```java
+    public FutureTask(Runnable runnable, V result) {
+        this.runnable = Executors.callable(runnable, result);
+        this.state = NEW;       // ensure visibility of callable
+    }
+    
+    public FutureTask(Callable<V> callable) {
+        if (callable == null)
+            throw new NullPointerException();
+        this.callable = callable;
+        this.state = NEW;       // ensure visibility of callable
+    }
+    ```
+
+    ```java
+    public class FutureTask<V> implements RunnableFuture<V>
+    ```
+
+- Executors::callable()
+
+    ```java
+    public static <T> Callable<T> callable(Runnable task, T result) {
+        if (task == null)
+            throw new NullPointerException();
+        return new RunnableAdapter<T>(task, result);
+    }
+    ```
+
+- Executors 的内部类 RunnableAdapter
+
+    ```java
+    static final class RunnableAdapter<T> implements Callable<T> {
+        final Runnable task;
+        final T result;
+        RunnableAdapter(Runnable task, T result) {
+            this.task = task;
+            this.result = result;
+        }
+        public T call() {
+            task.run();
+            return result;
+        }
+    }
+    ```
+
+- execute(runnbale) 的执行过程：
+
+    - Step 1：若当前线程池的的线程数小于核心线程数，就会调用 addWorker 检查运行状态和正在运行的线程数量，通过返回 false来防止错误地添加线程，然后执行当前任务
+    - Step 2：若当前线程池的的线程数大于核心线程数量，仍需要先判断是否需要添加一个新的线程来执行这个任务，因为可能存在空闲线程，否则创建一个新的线程来执行此任务
+    - Step 3：如果不能再添加新的任务，就拒绝
+
+    ```java
+    public void execute(Runnable command) {
+        if (command == null)
+            throw new NullPointerException();
+        int c = ctl.get();
+        if (workerCountOf(c) < corePoolSize) {
+            if (addWorker(command, true))
+                return;
+            c = ctl.get();
+        }
+        if (isRunning(c) && workQueue.offer(command)) {
+            int recheck = ctl.get();
+            if (! isRunning(recheck) && remove(command))
+                reject(command);
+            else if (workerCountOf(recheck) == 0)
+                addWorker(null, false);
+        }
+        else if (!addWorker(command, false))
+            reject(command);
+    }
+    ```
+
+    执行 execute(runnable) 最终会回调 runnable 的 run() 方法，即 FutureTask对象的run()方法，源码如下：
+
+    ```java
+    public void run() {
+        if (state != NEW || !UNSAFE.compareAndSwapObject(this, runnerOffset, null, Thread.currentThread()))
+            return;
+        try {
+            Callable<V> c = callable;
+            if (c != null && state == NEW) {
+                V result;
+                boolean ran;
+                try {
+                    result = c.call();
+                    ran = true;
+                } catch (Throwable ex) {
+                    result = null;
+                    ran = false;
+                    setException(ex);
+                }
+                if (ran)
+                    set(result);
+            }
+        } finally {
+            // runner must be non-null until state is settled to
+            // prevent concurrent calls to run()
+            runner = null;
+            // state must be re-read after nulling runner to prevent
+            // leaked interrupts
+            int s = state;
+            if (s >= INTERRUPTING)
+                handlePossibleCancellationInterrupt(s);
+        }
+    }
+    ```
+
+    > 通过执行 result = c.call() 拿到返回值，然后 set(result) ，因此 get() 方法获得的值正是这个 result
+
+## 4、FutureTask
+
+### (1) 简介
+
+```java
+public class FutureTask<V> implements RunnableFuture<V>
+```
 
 - 在 Executors 框架体系中，FutureTask 用来表示可获取结果的异步任务
 
@@ -4181,7 +4414,7 @@ FutureTask 的三种状态：
 
   ![](../../pics/concurrent/concurrent_42.jpg)
 
-### 2. 方法
+### (2) 方法
 
 - `get()` 方法： 
   - 当 FutureTask 处于**未启动或已启动状态**时，执行 FutureTask.get() 方法将导致调用线程阻塞
@@ -4199,14 +4432,365 @@ FutureTask 的三种状态：
 
   ![](../../pics/concurrent/concurrent_43.jpg)
 
-### 3. 应用场景
+### (3) 应用场景
 
 > - FutureTask 实现了 Future 接口与 Runnable 接口，因此 FutureTask 可以交给 Executor 执行，也可以由调用的线程直接执行（FutureTask.run()）
 > - FutureTask 的获取也可以通过 ExecutorService.submit() 方法返回一个 FutureTask 对象，然后在通过FutureTask.get() 或 FutureTask.cancel 方法
 
 **应用场景**： 当一个线程需要等待另一个线程把某个任务执行完后才能继续执行，可以使用 FutureTask
 
-## 4. ForkJoin 分支/合并框架(工作窃取)
+### (4) 源码分析
+
+#### 1. state 字段
+
+表示 FutureTask 当前所处的状态，可能的转换过程见注释：
+
+```java
+/**
+ * Possible state transitions:
+ * NEW -> COMPLETING -> NORMAL
+ * NEW -> COMPLETING -> EXCEPTIONAL
+ * NEW -> CANCELLED
+ * NEW -> INTERRUPTING -> INTERRUPTED
+ */
+private volatile int state;
+private static final int NEW          = 0;
+private static final int COMPLETING   = 1;
+private static final int NORMAL       = 2;
+private static final int EXCEPTIONAL  = 3;
+private static final int CANCELLED    = 4;
+private static final int INTERRUPTING = 5;
+private static final int INTERRUPTED  = 6;
+```
+
+#### 2. 其他变量
+
+```java
+/** 任务 */
+private Callable<V> callable;
+/** 储存结果*/
+private Object outcome; // non-volatile, protected by state reads/writes
+/** 执行任务的线程*/
+private volatile Thread runner;
+/** get方法阻塞的线程队列 */
+private volatile WaitNode waiters;
+
+//FutureTask的内部类，get方法的等待队列
+static final class WaitNode {
+    volatile Thread thread;
+    volatile WaitNode next;
+    WaitNode() { thread = Thread.currentThread(); }
+}
+```
+
+#### 3. CAS 工具初始化
+
+```java
+// Unsafe mechanics
+private static final sun.misc.Unsafe UNSAFE;
+private static final long stateOffset;
+private static final long runnerOffset;
+private static final long waitersOffset;
+static {
+    try {
+        UNSAFE = sun.misc.Unsafe.getUnsafe();
+        Class<?> k = FutureTask.class;
+        stateOffset = UNSAFE.objectFieldOffset(k.getDeclaredField("state"));
+        runnerOffset = UNSAFE.objectFieldOffset(k.getDeclaredField("runner"));
+        waitersOffset = UNSAFE.objectFieldOffset(k.getDeclaredField("waiters"));
+    } catch (Exception e) {
+        throw new Error(e);
+    }
+}
+```
+
+#### 4. 构造函数
+
+```java
+public FutureTask(Callable<V> callable) {
+    if (callable == null)
+        throw new NullPointerException();
+    this.callable = callable;
+    this.state = NEW;       // ensure visibility of callable
+}
+    
+public FutureTask(Runnable runnable, V result) {
+    this.callable = Executors.callable(runnable, result);
+    this.state = NEW;       // ensure visibility of callable
+}
+```
+
+两个构造函数的区别：
+
+- 使用第一个构造函数最后获取线程的执行结果就是 callable 的执行的返回结果
+- 使用第二个构造函数最后获取线程的执行结果就是参数中的 result
+
+#### 5. run 方法及其他
+
+```java
+public void run() {
+    //如果状态不是new，或者runner旧值不为null(已经启动过了)，就结束
+    if (state != NEW ||
+        !UNSAFE.compareAndSwapObject(this, runnerOffset, null, Thread.currentThread()))
+        return;
+    try {
+        Callable<V> c = callable; // 这里的callable是从构造方法里面传人的
+        if (c != null && state == NEW) {
+            V result;
+            boolean ran;
+            try {
+                result = c.call(); //执行任务，并将结果保存在result字段里。
+                ran = true;
+            } catch (Throwable ex) {
+                result = null;
+                ran = false;
+                setException(ex); // 保存call方法抛出的异常
+            }
+            if (ran)
+                set(result); // 保存call方法的执行结果
+        }
+    } finally {
+        // runner must be non-null until state is settled to
+        // prevent concurrent calls to run()
+        runner = null;
+        // state must be re-read after nulling runner to prevent
+        // leaked interrupts
+        int s = state;
+        if (s >= INTERRUPTING)
+            handlePossibleCancellationInterrupt(s);
+    }
+}
+```
+
+----
+
+catch 语句中的 setException(ex) 如下：
+
+```java
+//发生异常时设置state和outcome
+protected void setException(Throwable t) {
+    if (UNSAFE.compareAndSwapInt(this, stateOffset, NEW, COMPLETING)) {
+        outcome = t;
+        UNSAFE.putOrderedInt(this, stateOffset, EXCEPTIONAL); 
+        finishCompletion();// 唤醒get()方法阻塞的线程
+    }
+}
+```
+
+正常完成时，set(result) 方法如下：
+
+```java
+//正常完成时，设置state和outcome
+protected void set(V v) {
+    //正常完成时，NEW->COMPLETING->NORMAL
+    if (UNSAFE.compareAndSwapInt(this, stateOffset, NEW, COMPLETING)) {
+        outcome = v;
+        UNSAFE.putOrderedInt(this, stateOffset, NORMAL); 
+            finishCompletion(); // 唤醒get方法阻塞的线程
+        }
+    }
+}
+```
+
+`finishCompletion()` 唤醒 get 方法阻塞的线程：
+
+```java
+//移除并唤醒所有等待的线程，调用done，并清空callable
+private void finishCompletion() {
+    // assert state > COMPLETING;
+    for (WaitNode q; (q = waiters) != null;) {
+        if (UNSAFE.compareAndSwapObject(this, waitersOffset, q, null)) {
+            for (;;) {
+                Thread t = q.thread;
+                if (t != null) {
+                    q.thread = null;
+                    LockSupport.unpark(t); //唤醒线程
+                }
+                //将当前节点剥离出队列，然后将 q 指向下一个等待节点
+                //被剥离的节点由于thread和next都为null，所以会被GC回收
+                WaitNode next = q.next;
+                if (next == null)
+                    break;
+                q.next = null; // unlink to help gc
+                q = next;
+            }
+            break;
+        }
+    }
+    done(); //这个是空的方法，子类可以覆盖，实现回调的功能
+    callable = null;        // to reduce footprint
+}
+```
+
+---
+
+get 方法有两个：
+
+- 有超时时间设置：
+
+    ```java
+    public V get() throws InterruptedException, ExecutionException {
+        int s = state;
+        if (s <= COMPLETING)
+            s = awaitDone(false, 0L);
+        return report(s);
+    }
+    ```
+
+- 没有超时时间设置：
+
+    ```java
+    public V get(long timeout, TimeUnit unit) 
+        			throws InterruptedException, ExecutionException, TimeoutException {
+        // get(timeout, unit) 也很简单, 主要还是在 awaitDone里面
+        if(unit == null){
+            throw new NullPointerException();
+        }
+        int s = state;
+        // 判断state状态是否 <= Completing, 调用awaitDone进行自旋等待
+        if(s <= COMPLETING && (s = awaitDone(true, unit.toNanos(timeout))) <= COMPLETING){
+            throw new TimeoutException();
+        }
+        // 根据state的值进行返回结果或抛出异常
+        return report(s);
+    }
+    ```
+
+`awaitDone()` 方法的作用： 等待任务执行完成、被中断或超时
+
+```java
+//等待完成，可能是是中断、异常、正常完成，timed:true，考虑等待时长，false:不考虑等待时长
+private int awaitDone(boolean timed, long nanos) throws InterruptedException {
+    final long deadline = timed ? System.nanoTime() + nanos : 0L; //如果设置了超时时间
+    WaitNode q = null;
+    boolean queued = false;
+    for (;;) {
+        /**
+        *  有优先级顺序
+        *  1、如果线程已中断，则直接将当前节点q从waiters中移出
+        *  2、如果state已经是最终状态了，则直接返回state
+        *  3、如果state是中间状态(COMPLETING),意味很快将变更过成最终状态，让出cpu时间片即可
+        *  4、如果发现尚未有节点，则创建节点
+        *  5、如果当前节点尚未入队，则将当前节点放到waiters中的首节点，并替换旧的waiters
+        *  6、线程被阻塞指定时间后再唤醒
+        *  7、线程一直被阻塞直到被其他线程唤醒
+        */
+        if (Thread.interrupted()) {// 1
+            removeWaiter(q);
+            throw new InterruptedException();
+        }
+
+        int s = state;
+        if (s > COMPLETING) {// 2
+            if (q != null)
+                q.thread = null;
+            return s; 
+        }
+        else if (s == COMPLETING) // 3
+            Thread.yield();
+        else if (q == null) // 4
+            q = new WaitNode();
+        else if (!queued) // 5
+            queued = UNSAFE.compareAndSwapObject(this, waitersOffset, q.next = waiters, q);
+        else if (timed) {// 6
+            nanos = deadline - System.nanoTime();
+            if (nanos <= 0L) {
+                removeWaiter(q); //从waiters中移出节点q
+                return state; 
+            }
+            LockSupport.parkNanos(this, nanos); 
+        }
+        else // 7
+            LockSupport.park(this);
+    }
+}
+```
+
+`removeWaiter()`：移除等待节点
+
+```java
+private void removeWaiter(WaitNode node) {
+    if (node != null) {
+        node.thread = null; // 将移除的节点的thread＝null, 为移除做标示
+        retry:
+        for (;;) {          // restart on removeWaiter race
+            for (WaitNode pred = null, q = waiters, s; q != null; q = s) {
+                s = q.next;
+                //通过 thread 判断当前 q 是否是需要移除的 q 节点(刚才标示过)
+                if (q.thread != null) 
+                    pred = q; //当不是要移除的节点，就往下走
+                else if (pred != null) { 
+                    pred.next = s; //把 q 从队列移除
+                    //p.thread==null(在多线程进行并发 removeWaiter 时产生)
+                    //此时正好移除节点 node 和 pred, 所以loop跳到retry, 从新进行这个过程
+                    //并发的情况下，其他线程把 pred 的线程置为空，则说明这个链表不应包含 pred，所以需要跳到retry从新开始
+                    if (pred.thread == null) // check for race
+                        continue retry;
+                }
+                //到这步说明p.thread==null 并且 pred==null。说明node是头结点。
+                else if (!UNSAFE.compareAndSwapObject(this, waitersOffset, q, s))
+                    continue retry;
+            }
+            break;
+        }
+    }
+}
+```
+
+`report(s)`：根据状态 `s` 的不同进行返回结果或抛出异常
+
+```java
+private V report(int s) throws ExecutionException {
+    Object x = outcome;  //之前我们set的时候，已经设置过这个值了。所以直接用。
+    if (s == NORMAL)
+        return (V)x;  //正常执行结束，返回结果
+    if (s >= CANCELLED)
+        throw new CancellationException(); //被取消或中断了，就抛异常。
+    throw new ExecutionException((Throwable)x);
+}
+```
+
+#### 6. 案例
+
+```java
+public class FutureTaskTest {
+    public static void main(String[] args) throws InterruptedException, ExecutionException {
+        long starttime = System.currentTimeMillis();
+        //input2生成， 需要耗费3秒
+        FutureTask<Integer> input2_futuretask = new FutureTask<>(new Callable<Integer>() {
+            @Override
+            public Integer call() throws Exception {
+                Thread.sleep(3000);
+                return 5;
+            }
+        });
+        new Thread(input2_futuretask).start();
+        
+        //input1生成，需要耗费2秒
+        FutureTask<Integer> input1_futuretask = new FutureTask<>(new Callable<Integer>() {
+            @Override
+            public Integer call() throws Exception {
+                Thread.sleep(2000);
+                return 3;
+            }
+        });
+        new Thread(input1_futuretask).start();
+
+        Integer integer2 = input2_futuretask.get();
+        Integer integer1 = input1_futuretask.get();
+        System.out.println(algorithm(integer1, integer2));
+        long endtime = System.currentTimeMillis();
+        System.out.println("用时：" + String.valueOf(endtime - starttime));
+    }
+    
+    //这是我们要执行的算法
+    public static int algorithm(int input, int input2) {
+        return input + input2;
+    }
+}
+```
+
+## 5、ForkJoin 分支/合并框架(工作窃取)
 
 - 主要用于并行计算，类似 MapReduce，即把**大的计算任务拆分成多个小任务并行计算**
 
