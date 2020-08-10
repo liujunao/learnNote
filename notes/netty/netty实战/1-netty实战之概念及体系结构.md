@@ -133,9 +133,89 @@
 
 # 二、第一款 Netty 应用程序
 
-## 1、Netty 客户端/服务器概览
+## 1、Netty 客户端/服务器
 
-![](../../../pics/netty/netty_7.png)
+### (1) 服务端流程
+
+<img src="../../../pics/netty/netty_221.png" align=left>
+
+- 步骤一：创建 ServerBootstrap 实例
+
+    > - ServerBootstrap 是 Netty 服务端的启动辅助类，提供了一系列的方法用于设置服务端启动相关的参数
+    > - 底层通过门面模式对各种能力进行抽象和封装，尽量不需要用户与过多的底层 API 交互，降低用户的开发难度
+
+- 步骤二：设置并绑定 Reactor 线程池
+
+    > Netty 的 Reactor 线程池是 EventLoopGroup，即 EventLoop 的数组
+    >
+    > - **EventLoop 的职责**：处理所有注册到本线程多路复用器 Selector 上的 Channel
+    >
+    >     > Selector 的轮询操作由绑定的 EventLoop 线程 run 方法驱动，在一个循环体内循环执行
+
+- 步骤三：设置并绑定服务端 Channel
+
+    > 用户不需要关心服务端 Channel 的底层实现细节和工作原理，只需要指定具体使用哪种 Channel 即可
+
+- 步骤四：链路建立时创建并初始化 ChannelPipeline
+
+    > ChannelPipeline 本质：是一个负责处理网络时间的责任链，负责管理和执行 ChannelHandler，典型的网络事件如下：
+    >
+    > 1. 链路注册
+    > 2. 链路激活
+    > 3. 链路断开
+    > 4. 接收到请求消息
+    > 5. 请求消息接收并处理完毕
+    > 6. 发送应答消息
+    > 7. 链路发生异常
+    > 8. 发生用户自定义事件
+
+- 步骤五：初始化 ChannelPipeline 后，添加并设置 ChannelHandler
+
+    > 用户可以通过 ChannelHandler 进行功能定制，常用 ChannelHandler 如下：
+    >
+    > - 系统编解码框架：ByteToMessageCodec
+    > - 通用基于长度的半包编码器：LengthFieldBasedFrameDecoder
+    > - 码流日志打印 Handler：LoggingHandler
+    > - SSL 安全认证 Handler：SslHanler
+    > - 链路空闲检测 Handler：IdleStateHandler
+    > - 流量整形 Handler：ChannelTrafficShapingHandler
+    > - Base64 编解码：Base64Decoder 和 Base64 Encoder
+
+- 步骤六：绑定并启动监听端口，并将 ServerSocketChannel 注册到 Selector 上监听客户端连接
+
+- 步骤七：Selector 轮询
+
+    > 由 Reactor 线程 NioEventLoop 负责调度和执行 Selector 轮询操作，选择准备就绪的 Channel 集合
+
+- 步骤八：当轮询到准备就绪的 Channel 后，由 Reactor 线程 NioEventLoop 执行 ChannelPipeline 的相应方法，最终调度并执行 ChannelHandler
+
+- 步骤九：执行 Netty 系统的 ChannelHandler 和用户添加定制的 ChannelHandler
+
+### (2) 客户端流程
+
+<img src="../../../pics/netty/netty_222.png" align=left>
+
+- 步骤一：用户线程创建 Bootstrap 实例，通过 API 设置创建客户端相关的参数，异步发起客户端连接
+
+- 步骤二：创建处理客户端连接、I/O 读写的 Reactor 线程组 NioEventLoopGroup
+
+    > 可以通过构造函数指定 I/O 线程的个数，默认为 CPU 内核数的 2 倍
+
+- 步骤三：通过 Bootstrap 的 ChannelFactory 和用户指定的 Channel 类型创建用于客户端连接的 NioSocketChannel
+
+    > 功能类似 NIO 的 SocketChannel
+
+- 步骤四：创建默认的 ChannelHandlerPipeline，用于调度和执行网络事件
+
+- 步骤五：异步发起 TCP 连接，判断连接是否成功
+
+    - 若成功，则直接将 NioSocketChannel 注册到多路复用器上，监听读操作位，用于数据报读取和消息发送
+    - 若没有立即连接成功，则注册连接监听位到多路复用器，等待连接结果
+
+- 步骤六：注册对应的网络监听状态位到多路复用器
+- 步骤七：由多路复用器在 I/O 现场中轮询各 Channel，处理连接结果
+- 步骤八：若连接成功，设置 Future 结果，发送连接成功事件，触发 ChannelPipeline 执行
+- 步骤九：由 ChannelPipeline 调度执行系统和用户的 ChannelHandler，执行业务逻辑
 
 ## 2、服务端
 
