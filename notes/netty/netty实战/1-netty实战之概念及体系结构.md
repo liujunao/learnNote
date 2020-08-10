@@ -1,5 +1,7 @@
 # # 第一部分：Netty 的概念及体系结构
 
+- 推荐阅读：**[Netty 源码分析总结](https://www.javadoop.com/post/netty-part-1)** 
+
 # 一、Netty：异步和事件驱动
 
 ## 1、Java 网络编程
@@ -297,6 +299,34 @@ Netty 服务端必须的两部分：
 - 当连接被建立时，一个 EchoClientHandler 实例会被安装到该Channel 的 ChannelPipeline 中
 - 在一切都设置完成后，调用 Bootstrap.connect() 方法连接到远程节点
 
+## 4、案例讲解
+
+- 推荐阅读：**[Netty 初试](https://www.javadoop.com/post/netty-part-1)**
+
+<img src="../../../pics/netty/netty_223.png">
+
+先来看一下上述代码中涉及到的一些内容：
+
+- ServerBootstrap 类用于创建服务端实例，Bootstrap 用于创建客户端实例
+
+- 两个 EventLoopGroup：bossGroup 和 workerGroup，涉及 Netty 线程模型，服务端有两个 group，而客户端只有一个
+
+- Netty 中的 Channel 包装了 NioServerSocketChannel 和 NioSocketChannel
+
+- 左边 handler(…) 方法指定了一个 handler（LoggingHandler），这个 handler 是给服务端收到新的请求的时候处理用的
+
+    右边 handler(...) 方法指定了客户端处理请求过程中需要使用的 handlers
+
+    > 如果你想在 EchoServer 中也指定多个 handler，也可以像右边的 EchoClient 一样使用 ChannelInitializer
+
+- 左边 childHandler(…) 指定了 childHandler，用于处理新创建的连接
+
+    > 服务端 ServerSocketChannel 在 accept 连接后，要创建 SocketChannel 实例，childHandler(…) 中设置的 handler 就是用于处理新创建的 SocketChannel，而不是用来处理 ServerSocketChannel 实例
+
+- pipeline：handler 可以指定多个，并组成了一个 pipeline
+
+- ChannelFuture：涉及 Netty 异步编程，和  JDK 中的 Future 接口类似
+
 # 三、Netty 的组件和设计
 
 ## 1、Channel、EventLoop、ChannelFuture
@@ -308,6 +338,10 @@ Netty 服务端必须的两部分：
 - ChannelFuture --> 异步通知
 
 ### (1) Channel 接口
+
+推荐阅读：**[Netty 之 Channel](https://www.javadoop.com/post/netty-part-2)** 
+
+<img src="../../../pics/netty/netty_224.png">
 
 - **JDK Socket**：基本的 I/O 操作 bind()、connect()、read()、write() 依赖于底层网络传输所提供的原语，即 Socket
 
@@ -321,9 +355,67 @@ Netty 服务端必须的两部分：
     > - NioSctpChannel
     > - NioSocketChannel
 
+---
+
+读写相关的 API 列表：
+
+- `read`：从当前的 Channel 中读取数据到第一个 inbound 缓冲区
+
+    - 若读取成功，则触发 `ChannelHandler.channelRead` 事件；当读取完成，触发 `ChannelHandler.channelReadComplete` 事件
+    - 若已有读操作请求被挂起，则后续的读操作会被忽略
+
+- `write`：请求将当前的 msg 通过 ChannelPipeline 写入到目标 Channel 中
+
+    > 注意：write 只是存入到消息发送环形数组中，并没有真正发送，只有调用 flush 操作才会被写入到 Channel 中，发送给对方
+    >
+    > - `ChannelPromise` 参数：负责设置写入操作的结果
+
+- `flush`：将之前写入到发送环形数组中的消息全部写入到目标 Channel 中，并发送给对方
+
+- `writeAndFlush`：将消息写入 Channel 并发送，等同 `write` 与 `flush` 
+
+- `close`：主动关闭当前连接，通过 `ChannelPromise` 设置操作结果并进行结果通知
+
+    > 该操作会级联触发 `ChannelPipeline` 中所有 `ChannelHandler` 的 `ChannelHandler.close` 事件
+
+- `disconnect`：请求断开与远程通信对端的连接并使用 ChannelPromise 来获取操作结果的通知消息
+
+    > 该方法会级联触发 `ChannelHandler.disconnect` 事件
+
+- `connect`：客户端使用指定的服务端地址 remoteAddress 发起连接请求
+
+    - 若连接因为应答超时而失败，ChannelFuture 中的操作结果就是 ConnectTimeoutException 异常
+    - 若连接被拒绝，操作结果为 ConnectException
+
+    > 该操作会级联触发 `ChannelHandler.connect` 操作
+    >
+    > - `remoteAddress` 参数：服务端地址
+    > - `localAddress` 参数：若有该参数，会先绑定指定的本地地址，然后再连接服务端
+    > - `ChannelPromise` 参数：用于写入操作结果
+
+- `bind`：绑定指定的本地 Socket 地址 localAddress
+
+    > 该方法会级联触发 `ChannelHandler.bind` 事件
+
+- `config`：获取当前 Channel 的配置信息
+
+- `isOpen`：判断当前 Channel 是否已经打开
+
+- `isRegistered`：判断当前 Channel 是否已经注册到 EventLoop 上
+
+- `isActive`：判断当前 Channel 是否已经处于激活状态
+
+- `metadata`：获取当前 Channel 的元数据描述信息
+
+- `localAddress`：获取当前 Channel 的本地绑定地址
+
+- `remoteAddress`：获取当前 Channel 通信的远程 Socket 地址
+
 ### (2) EventLoop 接口
 
 EventLoop 定义了 Netty 的核心抽象，用于处理连接的生命周期中所发生的事件
+
+- 本质是处理网络读写事件的 Reactor 线程
 
 ![](../../../pics/netty/netty_15.png)
 
@@ -333,13 +425,30 @@ EventLoop 定义了 Netty 的核心抽象，用于处理连接的生命周期中
 - 一个 Channel 在它的生命周期内只注册于一个 EventLoop
 - 一个 EventLoop 可能会被分配给一个或多个 Channel
 
-### (3) ChannelFuture 接口
+### (3) ChannelFuture 接口与 Promise
+
+推荐阅读：**[Netty 之 Future 和 Promise](https://www.javadoop.com/post/netty-part-3)** 
+
+<img src="../../../pics/netty/netty_225.png">
 
 - Netty 提供了 ChannelFuture 接口，其 addListener() 方法注册了一个 ChannelFutureListener，以便在某个操作完成时得到通知
 
     > 可以将 ChannelFuture 看作是将来要执行的操作的结果的占位符
 
+---
+
+API 接口：
+
+- `addListener/addListeners`：添加对 future 的监听
+- `removeListener/removeListeners`：移除对 future 的监听
+- `sync`：阻塞等待任务结束，若他任务失败，将抛出异常
+- `syncUninterruptibly`：阻塞等待任务结束，但不会响应中断
+- `await`：同 sync，但任务失败，不会抛出异常
+- `awaitUninteeruptibly`：同 await，但不会响应中断
+
 ## 2、ChannelHandler、ChannelPipeline
+
+推荐阅读：**[Netty 之 ChannelPipeline](https://www.javadoop.com/post/netty-part-4)** 
 
 ### (1) ChannelHandler 接口
 
@@ -413,6 +522,8 @@ Netty 为编码器和解码器提供了不同类型的抽象类：
 - 出站消息的模式反向：编码器将消息转换为字节，并将它们转发给下一个 ChannelOutboundHandler
 
 ## 3、引导
+
+- 推荐阅读：**[Netty 之 connect 和 bind](https://www.javadoop.com/post/netty-part-9)** 
 
 Netty 的引导类为应用程序的网络层配置提供了容器，涉及：
 

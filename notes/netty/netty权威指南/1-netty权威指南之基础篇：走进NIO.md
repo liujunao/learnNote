@@ -1,5 +1,7 @@
 # #基础篇：走进 Java NIO
 
+- 推荐阅读：**[Netty 博客总结](http://www.tianshouzhi.com/api/tutorials/netty/220)** 
+
 # 一、Java I/O
 
 ## 1、基础知识
