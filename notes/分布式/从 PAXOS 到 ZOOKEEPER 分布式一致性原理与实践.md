@@ -1533,7 +1533,7 @@ ZooKeeper 的实现：
     
     - 集群中的所有机器都向数据库中插入一条相同主键 ID 的记录
 - 数据库会自动进行主键冲突检查(即只有一台机器能成功)，则就认为向数据库中成功插入数据的客户端机器成为 Master
-    
+  
   - **利用 ZooKeeper 的强一致性实现**： ZooKeeper 会保证客户端无法重复创建一个已存在的数据节点
   
       > 即若同时有多个客户端请求创建同一个节点，则最终一定只有一个客户端请求能够创建成功
@@ -1826,10 +1826,25 @@ process 方法是 Watcher 接口的一个回调方法：`abstract public void pr
   >
   > - ZooKeeper 客户端也可通过 getData、getChildren、exist 接口向 ZooKeeper 服务器注册 Watcher
   >
-  >     >  ==P254==
+  >     >  getData 接口用于获取指定节点的数据内容，因此以 getData 接口为例：
   >     >
-  >     > <img src="../../pics/zookeeper/zookeeper_37.png" align=left>
+  >     >  - 向 getData 注册 Watcher 后，客户端首先会对当前客户端请求 request 进行标记，将其设置为“使用 Watcher 监听”
+  >     >
+  >     >  - 同时封装一个 Watcher 的注册信息 WatchRegistration 对象，用于暂时保存数据节点的路径和 Watcher 的对应关系
+  >     >
+  >     >  - 在 ClientCnxn 中 WatchRegistration 又会被封装到 Packet 中，然后放入发送队列中等待客户端发送
+  >     >
+  >     >      > Packet 被看作一个最小的通信协议单元，用于客户端与服务端之间的网络传输，任何需要传输的对象都需要包装成一个 Packet 对象
+  >     >
+  >     >  - 随后，ZooKeeper 客户端会向服务端发送这个请求，同时等待请求的返回
+  >     >
+  >     >      > 完成请求发送后，会由客户端 SendThread 线程的 readResponse 方法负责接收来自服务端的响应
+  >     >
+  >     >  - register 方法中，客户端会将之前暂时保存的 Watcher 对象转交给 ZKWatchManager，并最终保存到 dataWatches 
+  >     >
+  >     >      > `ZKWatchManager.dataWatches` 是一个 `Map<String, Set<Watcher>>` 类型的数据结构，用于将数据节点的路径和 Watcher 对象进行一一映射后管理
   >
+  > <img src="../../pics/zookeeper/zookeeper_37.png" align=left>
 
 - **服务端处理 Watcher**： 
 
@@ -1842,38 +1857,50 @@ process 方法是 Watcher 接口的一个回调方法：`abstract public void pr
   >   >
   >   > WatchManager 是 ZooKeeper 服务端 Watcher 的管理者，负责 Watcher 事件的触发，并移除已被触发的 Watcher
   >   >
-  >   > ![](../../pics/zookeeper/zookeeper_38.png)
+  >   > - 注意：WatchManager 是一个统称，服务端的 DataTree 会托管两个 WatchManager，分别为 
+  >   >     - dataWatches：对应数据变更 Watcher
+  >   >     - childWatches：对应子节点变更 Watcher
+  >   >
+  >   > <img src="../../pics/zookeeper/zookeeper_38.png" align=left>
   >
-  > - **Watcher 触发**： 
+  > - **Watcher 触发**： 基本步骤： 
   >
-  >   > 触发的基本步骤： 
-  >   >
-  >   > 1. **封装 WatchedEvent**： 首先将通知状态(KeeperState)、事件类型(EventType)、节点路径(Path)封装成一个 WatchedEvent 对象
-  >   >
-  >   > 2. **查询 Watcher**： 根据数据节点的节点路径从 watchTable 中取出对应的 Watcher
-  >   >
-  >   >    - 若未找到 Watcher，说明客户端未在该数据节点上注册 Watcher，直接退出
-  >   >
-  >   >    - 若找到，会将其提取出来，同时会直接从 watchTable 和 watch2Paths 中将其删除
-  >   >
-  >   >      > Watcher 在服务端是一次性的，即触发一次就失效
-  >   >
-  >   > 3. **调用 process 方法来触发 Watcher**： 对于注册 Watcher 请求，ZooKeeper 会把当前请求对应的 ServerCnxn 作为一个 Watcher 进行存储
+  >   1. **封装 WatchedEvent**： 首先将通知状态(KeeperState)、事件类型(EventType)、节点路径(Path)封装成一个 WatchedEvent 对象
+  >
+  >   2. **查询 Watcher**： 根据数据节点的节点路径从 watchTable 中取出对应的 Watcher
+  >
+  >       - 若未找到 Watcher，说明客户端未在该数据节点上注册 Watcher，直接退出
+  >
+  >       - 若找到，会将其提取出来，同时会直接从 watchTable 和 watch2Paths 中将其删除
+  >
+  >           > 注意：Watcher 在服务端是一次性的，即触发一次就失效
+  >
+  >   3. **调用 process 方法来触发 Watcher**： 逐个调用从步骤 2 中找出的所有 Watcher 的 process 方法，即 ServerCnxn 的对应 process 方法
+  >
+  >       > ServerCnxn 的对应 process 方法步骤：
+  >       >
+  >       > - 在请求头中标记 “-1”，表明当前是一个通知
+  >       > - 将 WatchedEvent 包装成 WatcherEvent，以便进行网络传输序列化
+  >       > - 向客户端发送该通知
+  >       >
+  >       > 本质不是处理客户端 Watcher 真正的业务逻辑，而是借助当前客户端连接的 ServerCnxn 对象来实现对客户端的 WatchedEvent 传递，真正的客户端 Watcher 回调与业务逻辑执行都在客户端
+  >       >
+  >       > 注意：对于需要注册 Watcher 的请求，ZooKeeper 会把当前请求对应的 ServerCnxn 作为一个 Watcher 进行存储
 
 - **客户端回调 Watcher**： 服务端最终通过 ServerCnxn 对应的 TCP 连接向客户端发送一个 WatcherEvent 事件
 
   > 客户端处理该事件：
   >
-  > -  **SendThread 接收事件通知**： 客户端先由 SendThread、readResponse 方法来统一进行处理
+  > -  **SendThread 接收事件通知**： 客户端都是由 `SendThread.readResponse(ByteBuffer incomingBuffer)` 方法统一处理
   >
   >   若响应头 replyHdr 的 XID 为 -1，表明这是一个通知类型的响应，大体处理步骤： 
   >
-  >   1. **反序列化**： ZooKeeper 客户端接收请求后，首先将字节流转换成 Watcher Event 对象
+  >   1. **反序列化**： ZooKeeper 客户端接收请求后，首先将字节流转换成 WatcherEvent 对象
   >   2. **处理 chrootPath**： 若客户端设置了 chrootPath 属性，则需对服务端的节点路径进行 chrootPath 处理，生成客户端的一个相对节点路径
   >   3. **还原 WatchedEvent**： 需将 WatcherEvent 对象转换成 WatchedEvent
   >   4. **回调 Watcher**： 最后将 WatchedEvent 对象交给 EventThread 线程，在下一个轮询周期中进行 Watcher 回调
   >
-  > - **EventThread 处理事件通知**： EventThread 线程每次会从 waitingEvents 队列中取出一个 Watcher，并进行串行同步处理
+  > - **EventThread 处理事件通知**： EventThread 线程是 ZooKeeper 客户端中专门用来处理服务端通知事件的线程，每次会从 waitingEvents 队列中取出一个 Watcher，并进行串行同步处理
 
 ---
 
@@ -1901,7 +1928,7 @@ process 方法是 Watcher 接口的一个回调方法：`abstract public void pr
     >
     > - `IP`： IP 模式通过 IP 地址粒度来进行权限控制
     >
-    > - `Digest`： 类似 `username:password` 的权限标识来进行权限控制，便于区分不同应用来进行权限控制
+    > - `Digest`： 类似 `username:password` 的权限标识来进行权限配置，便于区分不同应用来进行权限控制
     >
     > - `World`： 开放的权限控制模式，数据节点的访问权限对所有用户开放
     >
@@ -1909,13 +1936,13 @@ process 方法是 Watcher 接口的一个回调方法：`abstract public void pr
     >
     > - `Super`： 超级用户可对任意 ZooKeeper 上的数据节点进行任何操作
 
-  - **授权对象(ID)**： 指权限赋予的用户或指定实体
+  - **授权对象(ID)**： 指权限赋予的用户或一个指定实体
 
-    > ![](../../pics/zookeeper/zookeeper_39.png)
+    > <img src="../../pics/zookeeper/zookeeper_39.png" align=left>
 
   - **权限(permision)**： 指通过权限检查后可以被允许执行的操作
 
-    > 数据操作权限的分类： 
+    > ZooKeeper 中，数据操作权限的分类： 
     >
     > - `CREATE(C)`： 数据节点的创建权限，允许授权对象在该数据节点下创建子节点
     > - `DELETE(D)`： 子节点的删除权限，允许授权对象删除该数据节点的子节点
@@ -1923,20 +1950,30 @@ process 方法是 Watcher 接口的一个回调方法：`abstract public void pr
     > - `WRITE(W)`： 数据节点的更新权限，允许授权对象对该数据节点进行更新操作
     > - `ADMIN(A)`： 数据节点的管理权限，允许授权对象对该数据节点进行 ACL 相关的设置操作
 
-- **权限扩展体系**： 允许通过指定方法对 ZooKeeper 的权限进行扩展
+- **权限扩展体系**： 提供的特殊的权限控制插件体系，允许开发人员通过指定方法对 ZooKeeper 的权限进行扩展
 
-  - **实现自定义权限控制器**： 
+  - **实现自定义权限控制器**： 用户可以基于标准权限控制器接口 `org.apache.zookeeper.server.auth.AuthenticationProvider` 来自定义权限控制器的实现
 
-    > 标准权限控制器接口 `org.apache.zookeeper.server.auth.AuthenticationProvider`
-
-  - **注册自定义权限控制器**： 
+  - **注册自定义权限控制器**： 将权限控制器注册到 ZooKeeper 服务器中
 
     > ZooKeeper 支持通过系统属性和配置文件方式来注册自定义的权限控制器：
     >
-    > - **系统属性**： ZooKeeper 启动参数的配置 `Dzookeeper.authProvider.X`
-    > - **配置文件方式**： `zoo.cfg` 配置文件 `authProvider.X` 
+    > - **系统属性**  `Dzookeeper.authProvider.X`
     >
-    > 权限控制器的注册，ZooKeeper 采用延迟加载策略，即只有在第一次处理包含权限控制的客户端请求时，才会进行权限控制器的初始化
+    >     > ZooKeeper 启动参数配置：`-Dzookeeper.authProvider.1=com.zkbook.CustomAuthenticationProvider`
+    >
+    > - **配置文件方式**： `zoo.cfg` 配置文件 `authProvider.1=com.zkbook.CustomAuthenticationProvider` 
+    >
+    > ---
+    >
+    > - 对于权限控制器的注册，ZooKeeper 采用延迟加载策略，即只有在第一次处理包含权限控制的客户端请求时，才会进行权限控制器的初始化
+    >
+    > - 同时，ZooKeeper 还将所有的权限控制器都注册到 ProviderRegistry 中
+    >
+    > 具体实现：
+    >
+    > - ZooKeeper 首先将 DigestAuthenticationProvider 和 IPAuthenticationProvider 这两个默认的控制器初始化
+    > - 然后通过扫描 zookeeper.authProvider 这一系统属性获取到所有用户配置的自定义权限控制器，并完成其初始化
 
 - **ACL 管理**： 
 
@@ -1954,33 +1991,62 @@ process 方法是 Watcher 接口的一个回调方法：`abstract public void pr
 
   - **Super 模式的用法**： 
 
-    > ZooKeeper 服务器启动时，添加如下系统属性 `-Dzookeeper.DigestAuthenticationProvider.superDigest=foo:XXXX`
+    > **ACL 权限控制原理**：一旦对一个数据节点设置了 ACL 权限控制，则其他没有被授权的 ZooKeeper 客户端将无法访问该数据节点
+    >
+    > - 优点：很好地保证了 ZooKeeper 的数据安全
+    > - 缺点：给运维人员带来困扰，若一个持久数据节点包含了 ACL 权限控制，而其创建者客户端已退出或不再使用，则这些数据节点如何清理
+    > - 解决：在 ACL 的 Super 模式下，使用超级管理员权限来进行处理
+    >
+    > 开启 Super 模式：在 ZooKeeper 服务器启动时，添加如下系统属性 
+    >
+    > `-Dzookeeper.DigestAuthenticationProvider.superDigest=foo:XXXX`
     >
     > - `foo`： 代表一个超级管理员的用户名
     > - `XXXX`： 可变，由 ZooKeeper 管理员自主配置
 
 ## 2、序列化与协议
 
+> ZooKeeper 使用 Jute 来进行数据的序列化和反序列化操作
+
 ### (1) Jute 
 
-- 使用 Jute 进行**序列化和反序列化步骤**： 
-  1. 实体类实现 Record 接口的 serialize 和 deserialize 方法
-  2. 构建一个序列化器 BinaryOutputArchive
-  3. 序列化，即调用实体类的 serialize 方法，将对象序列化指定 tag 中
-  4. 反序列化，即调用实体类的 deserialize，从指定的 tag 中反序列化出数据内容
+使用 Jute 进行**序列化和反序列化步骤**： 
+1. 实体类实现 Record 接口的 serialize 和 deserialize 方法
+2. 构建一个序列化器 BinaryOutputArchive
+3. 序列化：调用实体类的 serialize 方法，将对象序列化指定 tag 中
+4. 反序列化：调用实体类的 deserialize，从指定的 tag 中反序列化出数据内容
+
+---
+
+通过 Record 序列化接口、序列化器、Jute 配置文件等三方面深入了解 Jute：
 
 - **Record 接口**：  Jute 序列化核心，其中定义的 serialize 和 deserialize 反别用于序列化和反序列化
 
   > `serialize/deserialize(OutputArchive/InputArchive archive,String tag)`： 
   >
-  > - `archive`： 是底层真正的序列化器和反序列化器
+  > - `archive`： 是底层真正的序列化器和反序列化器，每个 archive 可以包含对多个对象的序列化和反序列化
   > - `tag`： 用于向序列化和反序列化器标识对象自己的标记
+  >
+  > ZooKeeper 中所有需要进行网络传输或是本地磁盘存储的类型定义，都实现了该接口
+  
+- **序列化器**：OutputArchive 和 InputArchive 分别是 Jute 底层的序列化器和反序列化器接口定义
+
+    > - BinaryOutputArchive：对数据对象的序列化和反序列化，主要用于进行网络传输和本地磁盘的存储，最主要的序列化方式
+    > - CsvOutputArchive：对数据的序列化，方便数据对象的可视化展现，可被使用在 toString 方法中
+    > - XmlOutputArchive：为了将数据对象以 XML 格式保存和还原
+
+- **Jute 配置文件**：`zookeeper.jute` 定义了所有实体类的所属包名、类名、该类的所有成员变量及其类型
 
 ### (2) 通信协议
 
-![](../../pics/zookeeper/zookeeper_40.png)
+ZooKeeper 通信协议基于 TCP/IP 协议实现：
 
-**协议解析： 请求部分**
+- 对于请求，主要包含请求头和请求体
+- 对于响应，主要包含响应头和响应体
+
+<img src="../../pics/zookeeper/zookeeper_40.png" align=left>
+
+#### 1. 协议解析： 请求部分
 
 - **请求头： RequestHeader**
 
@@ -2008,11 +2074,9 @@ process 方法是 Watcher 接口的一个回调方法：`abstract public void pr
   >
   >   > 该请求包含： 数据节点的节点路径 path、数据内容 data、节点数据的期望版本号 version
 
-![](../../pics/zookeeper/zookeeper_41.png)
+<img src="../../pics/zookeeper/zookeeper_41.png" align=left>
 
----
-
-**协议解析： 响应部分**
+#### 2. 协议解析： 响应部分
 
 - **响应头： ReplyHeader** 
 
@@ -2038,7 +2102,7 @@ process 方法是 Watcher 接口的一个回调方法：`abstract public void pr
   >
   >   > 该响应包含： 最新的节点状态 `stat` 
 
-![](../../pics/zookeeper/zookeeper_42.png)
+<img src="../../pics/zookeeper/zookeeper_42.png" align=left>
 
 ## 3、客户端
 
@@ -2050,12 +2114,9 @@ ZooKeeper **客户端的核心组件**：
 
 - **HostProvider**： 客户端地址列表管理器
 
-- **ClientCnxn**： 客户端核心线程
-
-  > 其内部又包含两个线程： 
-  >
-  > - SendThread： **I/O 线程**，主要负责 ZooKeeper 客户端和服务端间的网络 I/O 通信
-  > - EventThread： **事件线程**，主要负责对服务端事件进行处理
+- **ClientCnxn**： 客户端核心线程，其内部又包含两个线程： 
+  - SendThread： **I/O 线程**，主要负责 ZooKeeper 客户端和服务端间的网络 I/O 通信
+  - EventThread： **事件线程**，主要负责对服务端事件进行处理
 
 ZooKeeper **客户端的初始化和启动过程**： 
 
@@ -2077,12 +2138,14 @@ ZooKeeper **客户端的初始化和启动过程**：
 
 3. 构造 ZooKeeper 服务器地址列表管理器： **HostProvider**
 
-   > 客户端会将构造方法中传入的服务器地址存放在服务器地址列表管理器 HostProvider 中
+   > 对于构造方法中传入的服务器地址，客户端会将其存放在服务器地址列表管理器 HostProvider 中
 
 4. 创建并初始化客户端网络连接器： **ClientCnxn**
 
-   > - 客户端会先创建一个网络连接器 ClientCnxn，用来管理客户端与服务器的网络交互
+   > - ZooKeeper 客户端会先创建一个网络连接器 ClientCnxn，用来管理客户端与服务器的网络交互
    > - 同时，还会初始化客户端两个核心队列 `outgoingQueue` 和 `pendingQueue`，分别作为客户端的请求发送队列和服务端响应的等待队列
+   >
+   > 注意：ClientCnxn 连接器的底层 I/O 处理器是 ClientCnxnSocket，因此，客户端还会同时创建 ClientCnxnSocket 处理器
 
 5. 初始化 SendThread 和 EventThread
 
@@ -2101,7 +2164,7 @@ ZooKeeper **客户端的初始化和启动过程**：
 
    > 创建 TCP 连接前： 
    >
-   > - SendThread 首选获取一个 ZooKeeper 服务器的地址列表
+   > - SendThread 首选需要获取一个 ZooKeeper 服务器的目的地址
    >
    >   > 通常从 HostProvider 中随机获取出一个地址
    >
@@ -2111,11 +2174,11 @@ ZooKeeper **客户端的初始化和启动过程**：
 
    > - 获取到服务器地址后，ClientCnxnSocket 负责和服务器创建一个 TCP 长连接
    >
-   > 注： 只是从网络 TCP 层面完成客户端和服务端间的 Socket 连接，未完成 ZooKeeper 客户端的会话创建
+   > 注： 只是存粹的从网络 TCP 层面完成客户端和服务端间的 Socket 连接，未完成 ZooKeeper 客户端的会话创建
 
 9. 构造 ConnectRequest 请求
 
-   > - SendThread 负责跟进当前客户端的实际设置，构造出一个 ConnectRequest 请求
+   > - SendThread 负责根据当前客户端的实际设置，构造出一个 ConnectRequest 请求
    >
    >   > 该请求代表了客户端试图与服务端创建一个会话
    >
@@ -2133,22 +2196,24 @@ ZooKeeper **客户端的初始化和启动过程**：
 
     > ClientCnxnSocket 接收到服务端的响应后，会首先判断当前的客户端状态是否“已初始化”
     >
-    > - 若未完成初始化，则认为该响应是会话创建请求的响应，交由 readConnectResult 来处理该响应
+    > - 若未完成初始化，则认为该响应是会话创建请求的响应，直接交由 readConnectResult 来处理该响应
 
 12. 处理 Response
 
-    > ClientCnxnSocket 会对接收到的服务端响应进行反序列化，得到 ConnectResponse 对象，并从中获取到 ZooKeeper 服务端分配的会话 sessionId
+    > ClientCnxnSocket 会对收到的服务端响应进行反序列化，得到 ConnectResponse 对象，并从中获取到 ZooKeeper 服务端分配的会话 sessionId
 
 13. 连接成功
 
     > 连接成功后： 
     >
-    > - 一方面，通知 SendThread 线程，进一步对客户端进行会话参数的设置，并更新客户端状态
+    > - 一方面，通知 SendThread 线程，进一步对客户端进行会话参数的设置，包括 readTimeout 和 connectTimeout，并更新客户端状态
     > - 另一方面，通知地址管理器 HostProvider 当前成功连接的服务器地址
 
 14. 生成事件： SyncConnected-None
 
-    > SendThread 会生成一个事件 SyncConnected-None，代表客户端与服务器会话创建成功，并将该事件传递给 EventThread 线程
+    > SendThread 生成一个事件 SyncConnected-None，代表客户端与服务器会话创建成功，并将该事件传递给 EventThread 线程
+    >
+    > - 目的：为了能够让上层应用感知到会话的成功创建
 
 15. 查询 Watcher
 
@@ -2160,9 +2225,11 @@ ZooKeeper **客户端的初始化和启动过程**：
     > - EventThread 不断从 waitingEvents 队列中取出待处理的 Watcher 对象
     > - 然后直接调用该对象的 process 接口方法，以达到触发 Watcher 目的
 
-![](../../pics/zookeeper/zookeeper_43.png)
+<img src="../../pics/zookeeper/zookeeper_43.png" align=left>
 
 ### (2) 服务器地址列表
+
+#### 1. ConnectStringParser 解析器
 
 > ZooKeeper 客户端内部在接收到服务器地址列表后，会将其放入一个 ConnectStringParser 对象中封装
 
@@ -2172,24 +2239,24 @@ ConnectStringParser 解析器对传入的 ConnectString 做两个处理： **解
 
   > - Chroot 特性： 允许每个客户端为自己设置一个命名空间
   >
-  >   > 若ZooKeeper 客户端设置 Chroot，则该客户端对服务器的操作，都将被限制在命名空间下
+  >   > 若 ZooKeeper 客户端设置 Chroot，则该客户端对服务器的任何操作，都将被限制在该命名空间下
 
 - **HostProvider： 地址列表管理器** 
 
   > - ConnectStringParser 解析器会对服务器地址做简单处理，并将服务器地址和相应的端口封装成一个 InetSocketAddress 对象，以 ArrayList 形式保存在 ConnectStringPasrser.serverAddress 属性中
   > - 然后，经过处理的地址列表会被封装到 StaticHostProvider 类中
   >
-  > HostProvider 三要素： 
-  >
-  > - next() 方法必须要有合法的返回值
-  > - next() 方法必须返回已解析的 InetSocketAddress 对象
-  > - size() 方法不能返回 0
-  >
   > ![](../../pics/zookeeper/zookeeper_44.png)
+  >
+  > 任何对于 HostProvider 接口的实现，必须要满足三个要素： 
+  >
+  > - next() 方法必须要有合法的返回值，即必须返回一个合法的 InetSocketAddress 对象
+  > - next() 方法必须返回已解析的 InetSocketAddress 对象
+  > - size() 方法不能返回 0，即 HostProvider 必须至少有一个服务器地址
 
----
+#### 2. StaticHostProvider
 
-**StaticHostProvider**： 对 HostProvider 的默认实现
+> StaticHostProvider 是对 HostProvider 的默认实现
 
 - **解析服务器地址**： 
 
@@ -2204,24 +2271,23 @@ ConnectStringParser 解析器对传入的 ConnectString 做两个处理： **解
   >
   > - 先将随机打散后的服务器地址列表拼装成一个环形循环队列
   >
-  >   > HostProvider 会为该循环创建两个游标：初始化时，值都为 1
+  >   > HostProvider 会为该循环创建两个游标 `currentIndex` 和 `lastIndex`，初始化时，值都为 `-1` 
   >   >
   >   > - `currentIndex`： 表示循环队列中当前遍历到的元素位置
   >   > - `lastIndex`： 表示当前正在使用的服务器地址位置
   >
-  > - 每次尝试获取一个服务器地址时，会先将 currentIndex 游标向前移动
+  > - 每次尝试获取一个服务器地址时，会先将 currentIndex 游标向前移动 `1` 位
   >
-  >   > - 若游标移动超过了地址列表的长度，则重置为 0，则实现了循环队列
+  >   > - 若游标移动超过了地址列表的长度，则重置为 0，回到开始位置，即实现了循环队列
   >   >
-  >   > 对于服务器地址列表较少的场景： 
+  >   > 对于服务器地址列表较少的场景： 若 currentIndex 和 lastIndex 游标值相同，则进行 spinDelay 毫秒时间的等待
   >   >
-  >   > - 若 currentIndex 和 lastIndex 游标值相同，则进行 spinDelay 毫秒时间的等待
   >
-  > ![](../../pics/zookeeper/zookeeper_45.png)
+  > <img src="../../pics/zookeeper/zookeeper_45.png" align=left width="600">
 
----
+#### 3. HostProvider 的几个设想
 
-**HostProvider 的几个设想**： 满足"HostProvider 三要素"前提下，实现自己的服务器地址列表管理
+满足"HostProvider 三要素"前提下，实现自己的服务器地址列表管理
 
 - **配置文件方式**： 
 
@@ -2244,20 +2310,20 @@ ConnectStringParser 解析器对传入的 ConnectString 做两个处理： **解
 
 **ClientCnxn 内部的工作原理**： 
 
-- **Packet**： 是 ClientCnxn 内部定义的一个对协议层的封装
+- **Packet**： 是 ClientCnxn 内部定义的一个对协议层的封装，作为 ZooKeeper 中请求与响应的载体
 
   > Packet 包含了最基本的请求头`requestHeader`、响应头 `replyHeader`、请求体 `request`、响应体 `response`、节点路径 `clientPath/serverPath`、注册的 Watcher `watchRegistration` 等信息
   >
   > - Packet 的 createBB() 对 Packet 对象进行序列化，最终生成可用于底层网络传输的 ByteBuffer 对象
   >
-  >   > - 只会序列化 requestHeader、request、readOnly 三个属性
-  >   >
-  >   > - 其余属性都保存在客户端的上下文中，不会进行与服务端间的网络传输
+  >   > 在这个过程中，只会序列化 requestHeader、request、readOnly 三个属性，其余属性都保存在客户端的上下文中，不会进行与服务端间的网络传输
+  >
+  > 注意：Packet 的属性不会在客户端和服务端之间进行网络传输
 
-- **outgoingQueue 和 PendingQueue**：
+- **outgoingQueue 和 PendingQueue**：ClientCnxn 的两个比较核心的队列
 
-  > - `outgoingQueue`： 请求发送队列，专门用于存储需要发送到服务端的 Packet 集合
-  > - `PendingQueue`： 服务端响应队列，存储已经从客户端发送到服务端，但需等待服务端响应的 Packet 集合
+  > - `outgoingQueue`： 代表客户端的请求发送队列，专门用于存储需要发送到服务端的 Packet 集合
+  > - `PendingQueue`： 代表客户端的服务端响应队列，存储已经从客户端发送到服务端，但需等待服务端响应的 Packet 集合
 
 - **ClientCnxnSocket： 底层 Socket 通信层**
 
@@ -2269,72 +2335,93 @@ ConnectStringParser 解析器对传入的 ConnectString 做两个处理： **解
   >
   >   > - 若检测到当前客户端未初始化，则说明客户端和服务端间正在进行会话创建，则直接将接收到的 ByteBuffer 序列化成 ConnectResponse 对象
   >   >
-  >   > - 若当前客户端已处于正常会话周期，并且接收到的服务端响应是一个事件，则 ZooKeeper 客户端会将接收到的 ByteBuffer 序列化成 WatcherEvent 对象，并将该事件放入待处理队列中
+  >   > - 若当前客户端已处于正常会话周期，并且接收到的服务端响应是一个事件，则 ZooKeeper 客户端会将接收到的 ByteBuffer(incomingBuffer) 序列化成 WatcherEvent 对象，并将该事件放入待处理队列中
   >   >
-  >   > - 若是一个常规的请求响应，则从 pendingQueue 队列中取出一个 Packet 来进行相应的处理
+  >   > - 若是一个常规的请求响应(指 Create、GetData、Exist 等操作请求)，则从 pendingQueue 队列中取出一个 Packet 来进行相应的处理
   >   >
   >   >   > - ZooKeeper 客户端首先通过检验服务端响应中包含的 XID 值来确保请求处理的顺序性
-  >   >   > - 然后，再将接收到的 ByteBuffer 序列化成相应的 Response 对象
+  >   >   > - 然后，再将接收到的 ByteBuffer(incomingBuffer) 序列化成相应的 Response 对象
   >   >
   >   > 最后，在 finishPacket 方法中处理 Watcher 注册等逻辑
   >
-  > ![](../../pics/zookeeper/zookeeper_46.png)
+  > <img src="../../pics/zookeeper/zookeeper_46.png" align=left width="600">
 
-- **SendThread**： 
+- **SendThread**： 是 ClientCnxn 的核心 I/O 调度线程，用于管理客户端和服务端间的所有网络 I/O 操作
 
-  > - 作用： 是 ClientCnxn 的核心 I/O 调度线程，用于管理客户端和服务端间的所有网络 I/O 操作
+  > 在 ZooKeeper 客户端的实际运行中： 
   >
-  > - 实际运行中的作用： 
+  > - 一方面，SendThread 维护了客户端和服务端间的会话生命周期，同时在会话周期内，若客户端与服务端间出现 TCP 连接断开的情况，则自动且透明化地完成重连操作
   >
-  >   - 一方面，SendThread 维护了客户端和服务端间的会话生命周期，同时在会话周期内，若客户端与服务端间出现 TCP 连接断开的情况，则自动且透明化地完成重连操作
+  >   > 维护会话生命周期： 通过定时向服务端发送 PING 包来实现心跳检测
   >
-  >     > 维护会话生命周期： 通过定时向服务端发送 PING 包来实现心跳检测
+  > - 另一方面，SendThread 管理了客户端所有的请求发送和响应接收操作
   >
-  >   - 另一方面，SendThread 管理了客户端所有的请求发送和响应接收操作
-  >
-  >     > - 将上层客户端 API 操作转换成相应的请求协议并发送到服务端，并完成对同步调用的返回和异步调用的回调
-  >     > - 同时，SendThread 还负责将来自服务端的事件传递给 EventThread 处理
+  >   > - 将上层客户端 API 操作转换成相应的请求协议并发送到服务端，并完成对同步调用的返回和异步调用的回调
+  >   > - 同时，SendThread 还负责将来自服务端的事件传递给 EventThread 处理
 
-- **EventThread**： 
+- **EventThread**： 是 ClientCnxn 内部的另一个核心线程，负责客户端的事件处理，并触发客户端注册的 Watcher 监听
 
-  > - 作用： 负责客户端的事件处理，并触发客户端注册的 Watcher 监听
-  > - 详解： 
-  >   - EventThread 的 waitingEvents 队列用于临时存放需要被触发的 Object
-  >   - EventThread 会不算从 waitingEvents 队列中取出 Object，识别出其具体类型，并分别调用 process 和 processResult 接口方法来实现对事件的触发和回调
+  > - EventThread 的 waitingEvents 队列用于临时存放需要被触发的 Object
+  >
+  >     > 包括那些客户端注册的 Watcher 和异步接口中注册的回调器 AsyncCallback
+  >
+  > - 同时，EventThread 会不断从 waitingEvents 队列中取出 Object，识别出其具体类型(Watcher 或 AsyncCallback)，并分别调用 process 和 processResult 接口方法来实现对事件的触发和回调
 
 ## 4、会话
 
 > ZooKeeper 的连接与会话就是客户端通过实例化 ZooKeeper 对象来实现客户端与服务器创建并保持 TCP 连接的过程
 
-### (1) 会话创建
+### (1) 会话状态
 
-- **Session 的四个基本属性**： 
+**会话状态**：`CONNECTING、CONNECTED、RECONNECTING、RECONNECTED、CLOSE`
 
-  - `sessionID`： 会话 ID，用来标识唯一会话
+- 一旦客户端开始创建 ZooKeeper 对象，则客户端状态就会变成 CONNECTING
 
-    > 每次客户端创建新会话时，ZooKeeper 都会分配一个全局唯一的 sessionID
+- 同时客户端开始从服务器地址列表中逐个选取 IP 地址来进行网络连接 ，直到成功连上服务器，然后将客户端状态变为 CONNECTED
 
-  - `TimeOut`： 会话超时时间
+- 当客户端与服务器间的连接断开，则 ZooKeeper 客户端会自动进行重连操作，同时客户端的状态再次变为 CONNECTING
 
-  - `TickTime`： 下次会话超时时间点
+- 直到重新连接上 ZooKeeper 服务器后，客户端状态又会再次转变成 CONNECTED
 
-  - `isClosing`： 标识会话是否已被关闭
+    因此，ZooKeeper 运行期间，客户端的状态总是介于 CONNECTING 与 CONNECTED 两者之一
+
+- 若出现会话超时、权限检查失败、客户端主动退出程序等，则客户端的状态会直接变为 CLOSE
+
+### (2) 会话创建	
+
+- **Session 的四个基本属性**： Session 是 ZooKeeper 中的会话实体，代表了一个客户端会话
+
+  - `sessionID`： 会话 ID，用来标识唯一会话，每次客户端创建新会话时，ZooKeeper 都会分配一个全局唯一的 sessionID
+
+  - `TimeOut`： 会话超时时间，客户端在构造 ZooKeeper 实例时，会配置一个 sessionTimeout 参数用于指定会话超时时间
+
+      > ZooKeeper 客户端向服务器发送这个超时时间后，服务器会根据自己的超时时间限制最终确定会话的超时时间
+
+  - `TickTime`： 下次会话超时时间点，ZooKeeper 为了对会话实行“分桶策略”管理和高效低耗的实现会话的超时检查与清理
+
+      > TickTime 是一个 13 位的 long 型数据，其值接近于当前时间加上 Timeout，但不完全相等
+
+  - `isClosing`： 标识会话是否已被关闭，当服务端监测到一个会话已经超时失效时，会将该会话的 isClosing 属性标记为“已关闭”
 
 - **sessionID 初始化**：
 
+  > 在 SessionTracker 初始化时，会调用 initializeNextSession 方法来生成一个初始化的 sessionID，之后会在该 sessionID 基础上为每个会话进行分配，其初始化算法如下：
+  >
   > ``` java
   > public static long initializeNextSession(long id){
+  >     //1. 获取当前时间的毫秒表示
   > 	long nextSid = 0;
-  > 	//1. 获取当前时间的毫秒表示
-  >     //2. 左移 24 位：防止出现负数
-  >     //3. 无符号右移 8 位：避免高位数值对 SID 的干扰
+  >  	//2. 左移 24 位：防止出现负数
+  >  	//3. 无符号右移 8 位：避免高位数值对 SID 的干扰
   > 	nextSid = (System.currentTimeMillis() << 24) >>> 8;
-  >     //4. 添加机器标识：SID
-  >     //5. 将步骤 3 和 4 得到的数值进行 “|” 操作
+  >  	//4. 添加机器标识：SID
+  >  	//5. 将步骤 3 和 4 得到的数值进行 “|” 操作
   > 	nextSid = nextSid | (id << 56);
   > 	return nextSid;
   > }
   > ```
+  >
+  > - 上述算法概括为：高 8 位确定了所在机器，后 56 位使用当前时间的毫秒表示进行随机
 
 - **SessionTracker**： 是 ZooKeeper 服务端的会话管理器，负责会话的创建、管理和清理等工作
 
@@ -2352,92 +2439,126 @@ ConnectStringParser 解析器对传入的 ConnectString 做两个处理： **解
 
 - **创建连接**： 
 
-  > - 首先会由 NIOServerCnxn 来负责接收来自客户端的”会话创建请求“，并反序列化出 ConnectRequest 请求，然后根据 ZooKeeper 服务端的配置完成会话超时时间的协商
-  > - 随后，SessionTracker 为该会话分配一个 sessionID，并将其注册到 sessionsById 和 sessionWithTimeout 中，同时进行会话的激活
+  > 服务端对客户端的“会话创建”请求的处理，分为四大步骤：处理 ConnectRequest 请求、会话创建、处理器链路处理、会话响应
+  >
+  > ---
+  >
+  > 在 ZooKeeper 服务端：
+  >
+  > - 首先由 NIOServerCnxn 负责接收来自客户端的”会话创建请求“，并反序列化出 ConnectRequest 请求
+  > - 然后根据 ZooKeeper 服务端的配置完成会话超时时间的协商
+  > - 随后，SessionTracker 为该会话分配一个 sessionID，并将其注册到 sessionsById 和 sessionWithTimeout 中，同时进行会话激活
   > - 之后，该”会话请求“在 ZooKeeper 服务端的各个请求处理器间进行顺序流转，最终完成会话的创建
 
-### (2) 会话管理
+### (3) 会话管理
 
-- **分桶策略**： 将类似的会话放在同一区块中进行管理，以便 ZooKeeper 对会话进行不同区块的隔离处理以及同一区块的统一处理
+ZooKeeper 的会话管理由 SessionTracker 负责，其采用了一种特殊的会话管理方式，称为“分桶策略”
 
-  > - 分配原则： 每个会话的”下次超时时间点`ExpirationTime`“
+- **分桶策略**： 指将类似的会话放在同一区块中进行管理，以便 ZooKeeper 对会话进行不同区块的隔离处理以及同一区块的统一处理
+
+  > 分配原则： 每个会话的”下次超时时间点“`ExpirationTime`
   >
-  >   > `ExpirationTime`： 指该会话最近一次可能超时的时间点，对于一个新创建的会话而言
-  >   >
-  >   > - `ExpirationTime = CurrentTime + SessionTimeout`，单位： 毫秒
+  > - `ExpirationTime`： 指该会话最近一次可能超时的时间点，对于一个新创建的会话而言，其会话创建完毕后，会进行计算 
+  >
+  >     > `ExpirationTime = CurrentTime + SessionTimeout`，单位： 毫秒
+  >
+  > - **ZooKeeper 实际处理**：ZooKeeper 的 Leader 服务器在运行期间会定时地进行会话超时检查，其时间间隔为 ExpirationInterval(ms)，默认值为 tickTime，即默认情况下，每隔 2000ms 进行一次会话超时检查
+  >
+  >     > 为了方便多个会话同时进行超时检查，完整的 ExpirationTime 计算方式：
+  >     >
+  >     > ```java
+  >     > ExpirationTime_ = CurrentTime + SessionTimeout
+  >     > ExpirationTime = (ExpirationTime_ / ExpirationInterval + 1) * ExpirationInterval
+  >     > ```
 
 - **会话激活**： 
 
-  > - **心跳检测**： 客户端会在会话超时时间范围内，向服务端发送 PING 请求来保持会话的有效性
+  > - **心跳检测**： 为保持客户端会话的有效性，客户端会在会话超时时间范围内，向服务端发送 PING 请求来保持会话的有效性
   > - **TouchSession**： 服务端不断接收来自客户端的心跳检测，且重新激活对应的客户端会话
   >
-  > 会话激活的过程，不仅能使服务端检测到对应客户端的存活性，也能让客户端保持连接状态
+  > 会话激活的过程，不仅能使服务端检测到对应客户端的存活性，也能让客户端保持连接状态，主要流程如下图：
   >
-  > ![](../../pics/zookeeper/zookeeper_47.png)
+  > <img src="../../pics/zookeeper/zookeeper_47.png" align=left width="600">
   >
   > **会话激活过程**： 
   >
-  > 1. **检验该会话是否已经被关闭**
+  > 1. **检验该会话是否已经被关闭**：Leader 会检查该会话是否已经被关闭，若已关闭，则不再继续激活该会话
   >
-  >    > Leader 会检查该会话是否已经被关闭，若已关闭，则不再继续激活该会话
+  > 2. **计算该会话新的超时时间 `Expiration_New`**：若该会话未关闭，则开始激活会话
   >
-  > 2. **计算该会话新的超时时间 `Expiration_New`** 
+  >    > 注意：首先要计算出该会话下一次超时时间点(使用上面的计算公式)
   >
-  >    > 若该会话未关闭，则开始激活会话
+  > 3. **定位该会话当前的区块**：获取该会话老的超时时间 `ExpirationTime_Old`，并根据该超时时间来定位到其所在的区块
   >
-  > 3. **定位该会话当前的区块** 
+  > 4. **迁移会话**：将该会话从老的区块中取出，放入 `ExpirationTime_New` 对应的新区块中
   >
-  >    > 获取该会话老的超时时间 `ExpirationTime_Old`，并根据该超时时间来定位到其所在的区块
+  > 由上知：只要客户端发来心跳检测，则服务端就会进行一次会话激活
   >
-  > 4. **迁移会话** 
+  > ---
   >
-  >    > 将该会话从老的区块中取出，放入 `ExpirationTime_New` 对应的新区块中
+  > ZooKeeper 的服务端设计中，只要客户端有请求发送到服务端，则会触发一次会话激活，因此会话激活的两种情况： 
   >
-  > 会话激活的两种情况： 
-  >
-  > - 客户端向服务端发送请求，包括读写请求
-  > - 若客户端发现在 sessionTimeout / 3 时间内，尚未和服务器进行通信，即未向服务端发送请求，则会主动发起一个 PING 请求，服务端收到该请求后，就会触发上述请求的会话激活
-
+  > - 只要客户端向服务端发送请求，包括读写请求，则会触发一次会话激活
+  >- 若客户端发现在 sessionTimeout / 3 时间内，尚未和服务器进行通信，即未向服务端发送请求，则会主动发起一个 PING 请求，服务端收到该请求后，就会触发上述情况的会话激活
+  
 - **会话超时检查**：由 SessionTracker 负责
 
-  > - 超时检查线程： 逐个依次对会话桶中剩下的会话进行清理
+  > 超时检查线程： SessionTracker 中专门进行会话超时检查的单独线程，会逐个依次对会话桶中剩下的会话进行清理
   >
-  >   > 任务： 定时检查出会话桶中所有剩下的未被迁移的会话
+  > - 任务： 定时检查出会话桶中所有剩下的未被迁移的会话
+  >
+  > - 如何做到定时检查：在会话分桶策略中，将 ExpirationInterval 的倍数作为时间点来分布会话，因此，超时检查线程只要在这些指定的时间点上进行检查即可
+  >
+  >     > ZooKeeper 通过分桶策略来管理客户端会话的原因：既提高了会话检查的效率，而且由于是批量清理，因此性能很好
 
-### (3) 会话清理
+### (4) 会话清理
 
-会话清理的 7 个步骤： 
+当 SessionTracker 的会话超时检查线程整理出一些已过期的会话后，就要开始会话清理，大致分为 7 个步骤： 
 
-1. **标记会话状态为”已关闭“**
+1. **标记会话状态为”已关闭“**：SessionTracker 会首先将该会话的 `isClosing` 属性标记为 tru
 
-   > SessionTracker 会首先将该会话的 `isClosing` 属性标记为 true
-   >
-   > - 作用： 保证在会话清理期间，即使受到客户端的新请求，也无法继续处理
+   > 作用： 保证在会话清理期间，即使受到客户端的新请求，也无法继续处理
 
-2. **发起”会话关闭“请求** 
-
-   > 目的： 使该会话的关闭操作在整个服务端集群中都生效，并立即交付给 PrepRequestProcessor 处理器
+2. **发起”会话关闭“请求**：使该会话的关闭操作在整个服务端集群中都生效，并立即交付给 PrepRequestProcessor 处理器进行处理
 
 3. **收集需要清理的临时节点** 
 
-   > - 注意： 在清理临时节点前，需将服务器上所有和该会话相关的临时节点都整理出来
+   > - 首先： 在清理临时节点前，需将服务器上所有和该会话相关的临时节点都整理出来
+   >
    > - 临时节点存储： ZooKeeper 内存数据库中，为每个会话保存了一份由该会话维护的临时节点集合
+   >
    > - 临时节点清理： 只需根据当前即将关闭的 sessionID 从内存数据库获取到这份临时节点列表即可
-   > - ZooKeeper 处理会话关闭请求前，下述两类请求到达服务端并正在处理： 
+   >
+   > - 实际应用场景中：在 ZooKeeper 处理会话关闭请求前，下述两类请求到达服务端并正在处理： 
+   >   
+   >   > 这两类请求都是事务处理尚未完成，因此还未应用到内存数据库中，因此获取临时节点列表会存在不一致的情况
+   >   
    >   - 节点删除请求： 删除的目标节点正好是上述临时节点中的一个
    >   - 临时节点创建请求： 创建的目标节点正好是上述临时节点中的一个
+   >   
+   >   > 假定当前获取的临时节点列表是 ephemerals：
+   >   >
+   >   > - 针对第一类请求：需要将所有这些请求对应的数据节点路径从 ephemerals 中移除，以避免重复删除
+   >   > - 针对第二类请求：需要将所有这些请求对应的数据节点路径添加到 ephemerals 中，以删除这些即将会被创建但尚未保存到内存数据库中去的临时节点
 
-4. **添加”节点删除“事务变更** 
-
-   > 完成该会话相关的临时节点收集后，ZooKeeper 会逐个将这些临时节点转换成”节点删除“请求，并放入变更队列 outstandingChanges 中
+4. **添加”节点删除“事务变更**：完成该会话相关的临时节点收集后，ZooKeeper 会逐个将这些临时节点转换成”节点删除“请求，并放入变更队列 outstandingChanges 中
 
 5. **删除临时节点**： FinalRequestProcessor 处理器会触发内存数据库，删除该会话对应的所有临时节点
 
-6. **移除会话**： 完成节点删除后，将会话从 SessionTracker 中移除，即移除 sessionById、sessionWithTimeout、sessionSets
+6. **移除会话**： 节点删除后，将会话从 SessionTracker 中移除，即从 sessionById、sessionWithTimeout、sessionSets 中移除该会话
 
 7. **关闭 NIOServerCnxn**： 从 NIOServerCnxnFactory 找到该会话对应的 NIOServerCnxn，将其关闭
 
-### (4) 重连
+### (5) 重连
+
+当客户端和服务端之间的网络连接断开时，ZooKeeper 客户端会自动进行反复的重连，直到最终成功连接上 ZooKeeper 集群的机器
+
+这种情况下，再次连接上服务端的客户端会处于以下两种状态之一：
+
+- CONNECTED：若在会话超时时间内重新连接上了 ZooKeeper 集群中任意一台机器，则被视为重连成功
+- EXPIRED：若在会话超时时间以外重新连接上，则服务端已对该会话进行了会话清理操作，因此再次连接上的会话将被视为非法会话
+
+---
 
 - **连接断开： CONNECTION_LOSS** 
 
@@ -2445,11 +2566,13 @@ ConnectStringParser 解析器对传入的 ConnectString 做两个处理： **解
 
 - **会话失效： SESSION_EXPIRED**，重连耗时超过会话超时时间，则服务器认为该会话结束，开始进行会话清理
 
+    > 通常发生在 CONNECTION_LOSS 期间
+
 - **会话转移： SESSION_MOVED**，指客户端会话从一台服务器转移到另一台服务器上
 
 ## 5、服务器启动
 
-![](../../pics/zookeeper/zookeeper_48.png)
+<img src="../../pics/zookeeper/zookeeper_48.png" align=left width="700">
 
 ### (1) 单机版服务器启动
 
@@ -2461,17 +2584,17 @@ ZooKeeper 服务器启动的五个步骤：
 - **数据恢复** 
 - **对外服务**
 
-![](../../pics/zookeeper/zookeeper_49.png)
+<img src="../../pics/zookeeper/zookeeper_49.png" align=left>
 
 ---
 
-**预启动**： 
+#### 1. 预启动
 
 步骤如下： 
 
 1. **统一由 QuorumPeerMain 作为启动类**
 
-   > `zkServer.cmd/zkServer.sh` 配置了 `org.apache.zookeeper.server.quorum.QuorumPeerMain` 作为启动入口类
+   > `zkServer.cmd/zkServer.sh` 配置使用 `org.apache.zookeeper.server.quorum.QuorumPeerMain` 作为启动入口类
 
 2. **解析配置文件 zoo.cfg**
 
@@ -2491,14 +2614,12 @@ ZooKeeper 服务器启动的五个步骤：
 
 6. **创建服务器实例 ZooKeeperServer**
 
-   > `ZooKeeperServer` 是单机版 ZooKeeper 服务端的核心实体类：
+   > `org.apache.zookeeper.server.ZooKeeperServer` 是单机版 ZooKeeper 服务端的核心实体类：
    >
    > - ZooKeeper 服务器首先会进行服务器实例的创建
    > - 接着，对该服务器实例进行初始化，包括：连接器、内存数据库、请求处理器等组件的初始化
 
----
-
-**初始化**： 
+#### 2. 初始化
 
 步骤如下： 
 
@@ -2506,25 +2627,26 @@ ZooKeeper 服务器启动的五个步骤：
 
    > ServerStats 是 ZooKeeper 服务器运行时的统计器，包含最基本的运行时信息
    >
-   > ![](../../pics/zookeeper/zookeeper_50.png)
+   > <img src="../../pics/zookeeper/zookeeper_50.png" align=left>
 
 2. **创建 ZooKeeper 数据管理器 FileTxnSnapLog**
 
    > - FileTxnSnapLog 是 ZooKeeper 上层服务器和底层数据存储间的对接层，提供一系列操作数据文件的接口，包括： 事务日志和快照数据文件
-   > - 根据 zoo.cfg 中解析出的快照数据目录 dataDir 和事务日志目录 dataLogDir 来创建 FileTxnSnapLog
+   > - ZooKeeper 根据 zoo.cfg 中解析出的快照数据目录 dataDir 和事务日志目录 dataLogDir 来创建 FileTxnSnapLog
 
 3. **设置服务器 tickTime 和会话超时时间限制**
 
 4. **创建 ServerCnxnFactory**
 
-   > 通过配置系统属性 zookeeper.ServerCnxnFactory 来指定使用 ZooKeeper 的 NIO，还是使用 Netty 作为 ZooKeeper 服务端网络连接工厂
+   > 通过配置系统属性 `zookeeper.ServerCnxnFactory` 来指定使用 ZooKeeper 的 NIO，还是使用 Netty 作为 ZooKeeper 服务端网络连接工厂
 
 5. **初始化 ServerCnxnFactory**
 
-   > - 先初始化一个 Thread 作为整个 ServerCnxnFactory 的主线程
-   > - 然后，再初始化 NIO 服务器
+   > ZooKeeper 先初始化一个 Thread 作为整个 ServerCnxnFactory 的主线程，然后再初始化 NIO 服务器
 
-6. **启动 ServerCnxnFactory 主线程**
+6. **启动 ServerCnxnFactory 主线程** 
+
+    > 注意：虽然此处 ZooKeeper 的 NIO 服务器已对外开放端口，但无法正常处理客户端请求
 
 7. **恢复本地数据**
 
@@ -2533,16 +2655,15 @@ ZooKeeper 服务器启动的五个步骤：
 8. **创建并启动会话管理器`sessionTracker`** 
 
    > - `sessionTracker` 负责 ZooKeeper 服务端的会话管理
-   > - 创建 sessionTracker 时，会初始化 expirationInterval、nextExpirationTime、sessionsWithTimeout，同时还会计算出一个初始化的 sessionID
+   > - 创建 sessionTracker 时，会初始化 expirationInterval、nextExpirationTime、sessionsWithTimeout(用于保存用于每个会话的超时时间)，同时还会计算出一个初始化的 sessionID
    >
    > sessionTracker 初始化完毕后，ZooKeeper 会立即开始会话管理器的会话超时检查
 
-9. **初始化 ZooKeeper 的请求处理链**
+9. **初始化 ZooKeeper 的请求处理链**(ZooKeeper 的请求方式是典型的责任链模式)
 
-   > - ZooKeeper 的请求方式是典型的责任链模式
    > - 单机版服务器的请求处理器包括：`PreRequestProcessor`、`SyncRequestProcessor`、`FinalRequestProcessor`
    >
-   > ![](../../pics/zookeeper/zookeeper_51.png)
+   > <img src="../../pics/zookeeper/zookeeper_51.png" align=left>
 
 10. **注册 JMX 服务**
 
@@ -2550,22 +2671,24 @@ ZooKeeper 服务器启动的五个步骤：
 
 11. **注册 ZooKeeper 服务器实例**
 
+    > 完成 ZooKeeper 服务器实例初始化后，再注册给 ServerCnxnFactory，之后，ZooKeeper 就可以对外提供正常服务
+
+至此，单机版的 ZooKeeper 服务器启动完毕
+
 ### (2) 集群版服务器启动
 
-![](../../pics/zookeeper/zookeeper_52.png)
+<img src="../../pics/zookeeper/zookeeper_52.png" align=left>
 
----
+> 注：下面只对集群版和单机版有差异的地方进行讲解
 
-**预启动**： 
+#### 1. 预启动
 
 1. **统一由 QuorumPeerMain 作为启动类**
 2. **解析配置文件 zoo.cfg**
-3. **创建并启动雷士文件清理器 DatadirCleanupManager**
+3. **创建并启动历史文件清理器 DatadirCleanupManager**
 4. **判断当前是集群模式还是单机模式的启动**
 
----
-
-**初始化**： 
+#### 2. 初始化
 
 1. **创建 ServerCnxnFactory**
 
@@ -2577,30 +2700,35 @@ ZooKeeper 服务器启动的五个步骤：
 
    > Quorum 是集群模式下特有的对象，是 ZooKeeper 服务器实例(ZooKeeperServer)的托管者： 
    >
-   > - 集群层面，QuorumPeer 代表了 ZooKeeper 集群中的一台机器
-   > - 运行期间，QuorumPeer 会不断检测当前服务器实例的运行状态，同时根据情况发起 Leader 选举
+   > - 集群层面：QuorumPeer 代表了 ZooKeeper 集群中的一台机器
+   > - 运行期间：QuorumPeer 会不断检测当前服务器实例的运行状态，同时根据情况发起 Leader 选举
 
 5. **创建内存数据库 ZKDatabase**
 
    > ZKDatabase 是 ZooKeeper 的内存数据库，负责管理 ZooKeeper 的所有会话记录以及 DataTree 和事务日志的存储
 
-6. **初始化 QuorumPeer**
+6. **初始化 QuorumPeer** 
+
+    > - 将 FileTxnSnapLog、ServerCnxnFactory、ZKDatabase 等核心组件注册到 QuorumPeer 中
+    > - 同时，ZooKeeper 还会对 QuorumPeer 配置一些参数，包括服务器地址列表、Leader 选举算法、会话超时时间限制等
 
 7. **恢复本地数据**
 
 8. **启动 ServerCnxnFactory 主线程**
 
----
+#### 3. Leader 选举
 
-**Leader 选举**： 
+1. **初始化 Leader 选举**(ZooKeeper 中的集群模式和单机模式的最大不同点)
 
-1. **初始化 Leader 选举**
-
-   > - 首先根据自己的 SID(服务器 ID)、lastLoggedZxid(最新的 ZXID)、当前服务器 epoch(currentEpoch) 来生成一个初始化的投票
+   > - 先根据自身的 SID(服务器 ID)、lastLoggedZxid(最新的 ZXID)、当前服务器 epoch(currentEpoch) 来生成一个初始化的投票
    >
-   > - 然后，ZooKeeper 根据 zoo.cfg 的配置，创建相应的 Leader 选举算法的实现
+   >     > 即：初始化过程中，每个服务器都会给自己投票
    >
-   >   > 三种选举算法： `LeaderElection`、`AuthFastLeaderElection`、`FastLeaderElection`(仅存)
+   > - 然后，ZooKeeper 根据 zoo.cfg 的配置，创建相应的 Leader 选举算法实现
+   >
+   >   > ZooKeeper 默认提供的三种选举算法： `LeaderElection`、`AuthFastLeaderElection`、`FastLeaderElection`(仅存)
+   >   >
+   >   > - 可以通过在 `zoo.cfg` 中使用 `electionAlg` 属性来指定，分别使用数字 `0~3` 来表示
    >
    > - 在初始化节点，创建 Leader 选举所需的网络 I/O 层 QuorumCnxnManager，同时启动对 Leader 选举端口的监听，等待集群中其他服务器创建连接
 
@@ -2609,52 +2737,59 @@ ZooKeeper 服务器启动的五个步骤：
 3. **检测当前服务器状态**
 
    > ZooKeeper 服务器状态： `LOOKING`、`LEADING`、`FOLLOWING/OBSERVING`	
+   >
+   > - QuorumPeer 的核心工作：不断检测当前服务器的状态，并做出相应的处理
+   > - 在启动阶段，QuorumPeer 的初始状态是 LOOKING，因此开始进行 Leader 选举
 
-4. **Leader 选举**
+4. **Leader 选举**：集群中所有机器相互投票，选举产生 Leader，同时其余机器成为 Follower 或 Observer
 
-   > - 集群中机器处理的数据越新(ZXID 最大)，越可能成为 Leader
-   > - 若集群中机器的 ZXID 一致，则 DIS 最大的服务器成为 Leader
+   > Leader 选举算法：
+   >
+   > - 集群中机器处理的数据越新(根据每个服务器处理过的最大 ZXID 来比较确定其数据是否最新)，越可能成为 Leader
+   > - 若集群中所有机器处理的 ZXID 一致，则 SID 最大的服务器成为 Leader
 
----
-
-**Leader 和 Follower 启动期交互过程**： 
+#### 4. Leader 和 Follower 启动期交互过程
 
 1. **创建 Leader 服务器和 Follower 服务器**
 
-   > 完成 Leader 选举后，每个服务器会根据自己的服务器角色创建相应的服务器实例，并开始进入各自流程
+   > 完成 Leader 选举后，每个服务器会根据自己的服务器角色创建相应的服务器实例，并开始进入各自角色的流程
 
 2. **Leader 服务器启动 Follower 接收器 LearnerCnxAcceptor**
 
    > ZooKeeper 集群运行期间：
    >
-   > - Leader 服务器需要和所有其余的服务器保持连接，以确定集群的机器存活情况
+   > - Leader 服务器需要和所有其余的服务器(后面用 learner 指代)保持连接，以确定集群的机器存活情况
    > - LearnerCnxAcceptor 接收器用于负责接收所有非 Leader 服务器的连接请求
 
 3. **Learner 服务器开始和 Leader 建立连接**
 
-   > 所有 Leader 服务器启动后，会从 Leader 选举的投票结果中找到当前集群中的 Leader 服务器，然后与其建立连接
+   > 所有 Learner 服务器启动后，会从 Leader 选举的投票结果中找到当前集群中的 Leader 服务器，然后与其建立连接
 
 4. **Leader 服务器创建 LearnerHandler**
 
-   > LearnerHandler 实例对应一个 Leader 与 Learner 服务器间的连接，负责 Leader 和 Learner 服务器间的所有消息通信和数据同步
+   > - Leader 收到来自其他机器的连接创建请求后，会创建一个 LearnerHandler 实例
+   >
+   > - 每个 LearnerHandler 实例对应一个 Leader 与 Learner 服务器间的连接，负责 Leader 和 Learner 服务器间的所有消息通信和数据同步
 
 5. **向 Leader 注册**
 
-   > 即将 Learner 服务器自己的基本信息发送给 Leader 服务器，称为 LearnerInfo，包括答盎前服务器的 SID和服务器处理的最新的 ZXID
+   > - 当和 Leader 建立连接后，Learner 会开始向 Leader 进行注册
+   >
+   > 注册：将 Learner 服务器的基本信息(LearnerInfo)发送给 Leader 服务器，包括当前服务器的 SID和服务器处理的最新的 ZXID
 
 6. **Leader 解析 Learner 信息，计算新的 epoch**
 
-   > - Leader 收到 Learner 信息后，会解析出 Learner 的 SID 和 ZXID
+   > Leader 收到 Learner 的基本信息后，会解析出 Learner 的 SID 和 ZXID
    >
-   >   - 然后根据该 Learner 的 ZXID 解析出对应的 `epoch_of_learner`，与 Leader 的 `epoch_of_leader` 比较
+   > - 然后根据该 Learner 的 ZXID 解析出对应的 `epoch_of_learner`，与当前 Leader 的 `epoch_of_leader` 比较
    >
-   >     > 若 Learner 的更大，则更新： `epoch_of_leader = epoch_of_learner + 1`
+   >   > 若 Learner 的更大，则更新： `epoch_of_leader = epoch_of_learner + 1`
    >
-   >   - 然后，LearnerHandler 会等待，直到过半的 Learner 向 Leader 进行注册，同时更新 `epoch_of_leader` 后，Leader 就可确定当前集群的 epoch
+   > - 然后，LearnerHandler 会等待，直到过半的 Learner 向 Leader 进行注册，同时更新 `epoch_of_leader` 后，Leader 就可确定当前集群的 epoch
 
 7. **发送 Leader 状态**
 
-   > 计算出新 epoch 后，Leader 会将信息以一个 `LEADERINFO` 消息的形式发送给 Learner，同时等待响应
+   > 计算出新 epoch 后，Leader 会将信息以一个 `LEADERINFO` 消息的形式发送给 Learner，同时等待 Learner 响应
 
 8. **Learner 发送 ACK 信息**
 
@@ -2662,31 +2797,39 @@ ZooKeeper 服务器启动的五个步骤：
 
 9. **数据同步**
 
-   > Leader 收到 Learner 的 ACK 消息后，可以开始与其进行数据同步
+   > Leader 收到 Learner 的 ACK 消息后，就可以开始与其进行数据同步
 
 10. **启动 Leader 和 Learner 服务器**
 
     > 当过半的 Learner 完成数据同步，则 Leader 和 Learner 服务器实例可以开始启动
 
-![](../../pics/zookeeper/zookeeper_53.png)
+<img src="../../pics/zookeeper/zookeeper_53.png" align=left>
 
 ---
 
-**Leader 和 Follower 启动**： 
+#### 5. Leader 和 Follower 启动
 
 1. **创建并启动会话管理器**
-2. **初始化 ZooKeeper 的请求处理链**
-3. **注册 JMX 服务**
+
+2. **初始化 ZooKeeper 的请求处理链** 
+
+    > 不同于单机模式，集群模式下，每个服务器会在启动阶段串联请求处理链，只是根据服务器角色不同，会有不同的请求处理链路
+
+3. **注册 JMX 服务** 
+
+> 至此，集群版的 ZooKeeper 服务器启动完毕
 
 ## 6、Leader 选举
 
 ### (1) Leader 选举概述
 
-**服务器启动时期的 Leader 选举**： 
+#### 1. 服务器启动时期的 Leader 选举
 
 1. **每个 Server 会发出一个投票**
 
-   > 投票的基本元素： 所推举的服务器的 myid 和 ZXID，即： `(myid, ZXID)`
+   > 每次投票包含的基本元素： 所推举的服务器的 myid 和 ZXID，即： `(myid, ZXID)` 
+   >
+   > - 初始情况下，都会将自己作为 Leader 服务器来进行投票
 
 2. **接收来自各个服务器的投票**
 
@@ -2698,14 +2841,14 @@ ZooKeeper 服务器启动的五个步骤：
 
 3. **处理投票**
 
-   > 收到投票后，服务器需要将别人的投票与自己的投票进行 PK，PK 规则如下： 
+   > 收到其他服务器的投票后，服务器需要将别人的投票与自己的投票进行 PK，PK 规则如下： 
    >
    > - 优先检查 ZXID，ZXID 较大的服务器优先作为 Leader
    > - 若 ZXID 相同，则比较 myid，myid 较大的服务器作为 Leader 服务器
 
 4. **统计投票**
 
-   > 每次投票后，会统计投票，判断是否有过半的机器接收到相同的投票信息
+   > 每次投票后，服务器都会统计投票，判断是否有过半的机器收到相同的投票信息
 
 5. **改变服务器状态**
 
@@ -2714,15 +2857,15 @@ ZooKeeper 服务器启动的五个步骤：
    > - 若是 Follower，则变更为 FOLLOWING
    > - 若是 Leader，则变更为 LEADING
 
----
+#### 2. 服务器运行期间的 Leader 选举
 
-**服务器运行期间的 Leader 选举**： 
+当 Leader 宕机，则会开始新 Leader 的选举，步骤如下：
 
-1. **变更状态**
+1. **变更状态**：Leader 宕机后，余下的非 Observer 服务器的状态变更为 LOOKING，然后开始进入 Leader 选举流程
 
-   > Leader 宕机后，余下的非 Observer 状态变更为 LOOKING，然后开始进入 Leader 选举流程
+2. **每个 Server 会发出一个投票** 
 
-2. **每个 Server 会发出一个投票**
+    > 第一轮投票，都会投给自己，然后各自将这个投票发给集群中的所有机器
 
 3. **接收来自各个服务器的投票**
 
@@ -2734,36 +2877,30 @@ ZooKeeper 服务器启动的五个步骤：
 
 ### (2) Leader 选举的算法分析
 
+#### 1. 三种 Leader 选举算法
+
 三种 Leader 选举算法： 在配置文件 zoo.cfg 使用 `electionAlg` 属性来指定
 
 > 3.4.0 版本后，只保留 TCP 版本的 FastLeaderElection 算法
 
-- `0`： 纯 UDP 实现的 LeaderElection
+- `0`： UDP 版本的 LeaderElection
 - `1`： UDP 版本的 FastLeaderElection，**非授权模式**
 - `2`： UDP 版本的 FastLeaderElection，**授权模式**
-- `3`： TCP 版本的 FastLeaderElection
+- `3`： TCP 版本的 FastLeaderElection(3.4.0 版本后，仅保留该算法)
 
----
+#### 2. 术语解释
 
-术语解释： 
+- **SID： 服务器 ID**，是 一个数字，用来标识一个 ZooKeeper 集群中的机器，每台机器不能重复，和 myid 值一致
 
-- **SID： 服务器 ID** 
+- **ZXID： 事务 ID**，用来唯一标识一次服务器状态的变更
 
-  > SID： 一个数字，用来标识一个 ZooKeeper 集群中的机器，每台机器不能重复，和 myid 值一致
+  > 注意：某一时刻，集群中每台机器的 ZXID 值不一定全都一致
 
-- **ZXID： 事务 ID** 
-
-  > ZXID： 用来唯一标识一次服务器状态的变更
-
-- **Vote： 投票** 
-
-  > 当集群中的机器发现自己无法检测到 Leader 时，就会开始尝试投票
+- **Vote： 投票**，当集群中的机器发现自己无法检测到 Leader 时，就会开始尝试投票
 
 - **Quorum： 过半机器数** 
 
----
-
-**算法分析**： 
+#### 3. 算法分析
 
 - **进入 Leader 选举** 
 
@@ -2783,28 +2920,30 @@ ZooKeeper 服务器启动的五个步骤：
   >   - 情况一： 在整个服务器刚刚初始化启动时，未产生 Leader 服务器
   >   - 情况二： 在运行期间，当前 Leader 宕机
   >
-  > - 当一台服务器处于 `LOOKING` 状态时，会像集群中所有其他机器发送消息，称为“投票”
+  > - 当一台服务器处于 `LOOKING` 状态时，就会向集群中所有其他机器发送消息，称为“投票”
   >
-  > - 投票信息： 所推举的服务器的 SID 和 ZXID，分别表示被推举服务器的唯一标识和事务 ID
+  >     > 投票消息包含两个基本信息：所推举的服务器的 SID 和 ZXID
 
-- **变更投票** 
+- **变更投票**：集群中的每台服务器发出自己的投票后，也会收到其他机器的投票，每台机器都会根据一定的规则，来处理收到的其他机器的投票，并以此来决定是否需要变更自己的投票
 
   > - 术语： 
   >   - `vote_sid`： 收到的投票中所推举 Leader 服务器的 SID
   >   - `vote_zxid`： 收到的投票中所推举 Leader 服务器的 ZXID
   >   - `self_sid`： 当前服务器自己的 SID
   >   - `self_zxid`： 当前服务器自己的 ZXID
-  > - 每次收到的投票处理，是一个对 `(vote_sid,vote_zxid)` 和 `(self_sid,self_zxid)` 对比过程： 
+  > - 每次对收到投票的处理，都是一个对 `(vote_sid,vote_zxid)` 和 `(self_sid,self_zxid)` 对比过程： 
   >   - 规则一： 若 `vote_zxid > self_zxid`，则认可当前收到的投票，并再次将该投票发送出去
   >   - 规则二： 若 `vote_zxid < self_zxid`，则坚持自己的投票，不做任何变更
-  >   - 规则三： 若 `vote_zxid = self_zxid`，且 `vote_sid > self_sid`，则认可当前收到的投票，并再次将该投票发送出去
-  >   - 规则四： 若 `vote_zxid = self_zxid`，且 `vote_sid < self_sid`，则坚持自己的投票，不做任何变更
+  >   - 规则三： 若 `vote_zxid = self_zxid` 且 `vote_sid > self_sid`，则认可当前收到的投票，并再次将该投票发送出去
+  >   - 规则四： 若 `vote_zxid = self_zxid` 且 `vote_sid < self_sid`，则坚持自己的投票，不做任何变更
   >
-  > ![](../../pics/zookeeper/zookeeper_54.png)
+  > <img src="../../pics/zookeeper/zookeeper_54.png" align=left>
   >
-  > - 对于 `Server3`，收到 `(4,8)` 和 `(5,8)` 两个投票，对比后，由于自己 ZXID 较大，则不做任何变更
-  > - 对于 `Server4`，收到 `(3,9)` 和 `(5,8)` 两个投票，对比后，由于 `(3,9)` 的 ZXID 较大，则变更自己为 `(3,9)`，并将该投票发送给另外两台机器
-  > - 对于 `Server5`，收到 `(3,9)` 和 `(4,8)` 两个投票，对比后，由于 `(3,9)` 的 ZXID 较大，则变更自己为 `(3,9)`，并将该投票发送给另外两台机器
+  > 每台机器都把投票发出后，同时也会收到来自另外两台机器的投票：
+  >
+  > - 对于 `Server3`，收到 `(4,8)` 和 `(5,8)` 两个投票，对比后，由于自己 ZXID 较大，因此不做任何变更
+  > - 对于 `Server4`，收到 `(3,9)` 和 `(5,8)` 两个投票，对比后，由于 `(3,9)` 的 ZXID 较大，因此变更自己为 `(3,9)`，并将该投票发送给另外两台机器
+  > - 对于 `Server5`，收到 `(3,9)` 和 `(4,8)` 两个投票，对比后，由于 `(3,9)` 的 ZXID 较大，因此变更自己为 `(3,9)`，并将该投票发送给另外两台机器
 
 - **确定 Leader** 
 
@@ -2822,43 +2961,51 @@ ZooKeeper 服务器启动的五个步骤：
 
 - **投票数据结构**： 
 
-  > ![](../../pics/zookeeper/zookeeper_55.png)
+  > <img src="../../pics/zookeeper/zookeeper_55.png" align=left>
 
 - **QuorumCnxManager： 网络 I/O** 
 
   > QuorumCnxManager： 负责各台服务器间的底层 Leader 选举过程中的网络通信
 
-- **消息队列**： 按 SID 分组形成队列集合
+- **消息队列**： 
 
+  > QuorumCnxManager 内部维护了一系列的队列，用于保存收到的、待发送的消息、以及消息的发送器
+  >
+  > > 除接收队列外，此处的所有队列都有一个共同点：按 SID 分组形成队列集合
+  >
   > - `recvQueue`： 消息接收队列，用于存放从其他服务器收到的消息
   >
   > - `queueSendMap`： 消息发送队列，用于保存待发送的消息
   >
   >   > queueSendMap 是一个 Map，按照 SID 进行分组，分别为集群中的每台机器分配一个单独队列，从而保证各台机器间的消息发送互不影响
   >
-  > - `senderWorkerMap`： 发送器集合，每个 SenderWorker 消息发送器都对应一台远程 ZooKeeper 服务器，负责消息的发送
-  >
-  >   > 按照 SID 进行分组
+  > - `senderWorkerMap`： 发送器集合，每个 SenderWorker 消息发送器都对应一台远程 ZooKeeper 服务器，负责消息的发送,，同样也按照 SID 进行分组
   >
   > - `lastMessageSent`： 最近发送过的消息，为每个 SID 保留最近发送过的一个消息
 
-- **建立连接**： 
+- **建立连接**： 为了能相互投票，ZooKeeper 集群中的所有机器都需要两两建立起网络连接
 
-  > - QuorumCnxManager 启动时，会创建一个 ServerSocket 来监听 Leader 选举的通信端口
+  > - QuorumCnxManager 启动时，会创建一个 ServerSocket 来监听 Leader 选举的通信端口(默认 3888)
   > - 开启端口监听后，ZooKeeper 能不断接收来自其他服务器的“创建连接”请求
-  > - 接收到其他服务器的 TCP 连接请求时，会交由 receiveConnection 函数来处理
+  > - 在收到其他服务器的 TCP 连接请求时，会交由 receiveConnection 函数来处理
   >
-  > ---
+  > 为避免两台机器间重复创建 TCP 连接，ZooKeeper 的 TCP 连接规则： 只允许 SID 大的服务器主动和其他服务器建立连接，否则断开连接
   >
-  > ZooKeeper 的 TCP 连接规则： 
+  > - ReceiveConnection 函数中，服务器通过对比自己和远程服务器的 SID 值，来判断是否接受连接请求
   >
-  > - 目的： 避免两台机器间重复地创建 TCP 连接
-  > - 实现： 只允许 SID 大的服务器主动和其他服务器建立连接，否则断开连接
+  >     > 若当前服务器的 SID 值更大，则会断开当前连接，然后自己主动去和远程服务器建立连接
+  >
+  > - 一旦连接建立，就会根据远程服务器的 SID 来创建相应的消息发送器 SendWorker 和消息接收器 RecvWorker，并启动它们
 
 - **消息接收与发送**： 
 
   > - **消息接收**： 由消息接收器 RecvWorker 负责，不断从 TCP 连接中读取消息，并将其保存到 recvQueue 队列中
+  >
   > - **消息发送**： 由消息发送器 SendWorker 负责，不断从对应的消息发送队列中获取一个消息来发送，同时将该消息放入 lastMessageSent 中作为最近发送过的消息
+  >
+  >     > lastMessageSent 目的：为解决接收方在消息接收前，或在接收到消息后服务器宕机，导致消息尚未被正确处理
+  >     >
+  >     > - 担忧：ZooKeeper 能保证接收方在处理消息时，会对重复消息进行正确的处理
 
 - **FastLeaderElection： 选举算法的核心部分**
 
@@ -2881,10 +3028,12 @@ ZooKeeper 服务器启动的五个步骤：
   >   >
   >   > - 若发现该外部投票的选举轮次小于当前服务器，则直接忽略该外部选票，同时发出自己的内部选票
   >   > - 若当前服务器不是 LOOKING 状态，则已选举出 Leader，也忽略该外部投票，同时将 Leader 信息以投票形式发送
+  >   >
+  >   > 注意：对于选票接收器，若收到的消息来自 Observer 服务器，则忽略该消息，并将自己当前的投票发送出去
   >
   > - `WorkerSender`： 选票发送器，不断从 sendqueue 队列中获取待发送选票，并将其传递到底层 QuorumCnxManager 中
   >
-  > ![](../../pics/zookeeper/zookeeper_56.png)
+  > <img src="../../pics/zookeeper/zookeeper_56.png" align=left>
 
 - **算法核心**： 
 
@@ -2895,9 +3044,11 @@ ZooKeeper 服务器启动的五个步骤：
   >    > - `logicalclock` 属性用于标识当前 Leader 的选举轮次
   >    > - ZooKeeper 规定： 所有有效选票都必须在同一轮次中
   >
-  > 2. **初始化选票**： 对 Vote 属性初始化，每台服务器都会将自己推举为 Leader
+  > 2. **初始化选票**： 在开始新一轮的投票前，每个服务器都会首先初始化自己的选票，即对 Vote 属性初始化
   >
-  >    > ![](../../pics/zookeeper/zookeeper_58.png)
+  >    > 初始化阶段，每台服务器都会将自己推举为 Leader
+  >    >
+  >    > <img src="../../pics/zookeeper/zookeeper_58.png" align=left>
   >
   > 3. **发送初始化选票**： 将初始化好的选票放入 sendqueue 队列中，由发送器 WorkerSender 负责发送
   >
@@ -2908,21 +3059,19 @@ ZooKeeper 服务器启动的五个步骤：
   >    > - 若没有建立连接，则会马上建立
   >    > - 若已经建立连接，则再次发送自己当前的内部选票
   >
-  > 5. **判断选票轮次**： 发送完外部选票后，开始处理外部投票
+  > 5. **判断选举轮次**： 发送完外部选票后，就开始处理外部投票
   >
   >    > 处理外部投票时，会根据选举轮次进行不同的处理： 
   >    >
-  >    > - 外部投票的选举轮次**大于**内部投票
+  >    > - 外部投票的选举轮次**大于**内部投票：立即更新自己的选举轮次，并清空所有已经收到的投票，然后使用初始化的投票来进行 PK 以确定是否变更内部投票，最终再将内部投票发送出去
   >    >
-  >    >   > - 立即更新自己的选举轮次
-  >    >   > - 清空所有已经收到的投票
-  >    >   > - 使用初始化的投票来进行 PK 以确定是否变更内部投票
-  >    >   >
-  >    >   > 最终再将内部投票发送出去
-  >    >
-  >    > - 外部投票的选举轮次**小于**内部投票： 直接忽略该外部投票，不做任何处理
+  >    > - 外部投票的选举轮次**小于**内部投票： 直接忽略该外部投票，不做任何处理，并返回步骤 4
   >    >
   >    > - 外部投票的选举轮次**等于**内部投票： 开始进行选票 PK
+  >    >
+  >    >     > 选票 PK 是 `FastLeaderElection.totalOrderPredicate` 方法的核心逻辑
+  >    >
+  >    > 注意：只有在同一个选举轮次的投票才是有效的投票
   >
   > 6. **选票 PK**： 确定当前服务器是否需要变更投票，主要从选举轮次、ZXID、SID 考虑
   >
@@ -2942,9 +3091,9 @@ ZooKeeper 服务器启动的五个步骤：
   >
   > 9. **统计投票**： 统计集群中是否已有过半的服务器认可当前的内部投票
   >
-  >    > 若已有过半服务器认可该内部投票，则终止投票
+  >    > 若已有过半服务器认可该内部投票，则终止投票，否则返回步骤 4
   >
-  > 10. **更新服务器状态**： 
+  > 10. **更新服务器状态**： 统计投票后，若已确定可以终止投票，就开始更新服务器状态
   >
   >     > 服务器会首先判断当前被过半服务器认可的投票所对应的 Leader 是否是自己： 
   >     >
@@ -2954,9 +3103,9 @@ ZooKeeper 服务器启动的五个步骤：
   > 注： 
   >
   > - 步骤 4~9 会经过几轮循环，直到 Leader 选举产生
-  > - 在完成步骤 9 后，ZooKeeper 会等待一段时间(默认 200 ms)来确定是否有新的更优的投票
+  > - 完成步骤 9 后，若有过半服务器认可当前选票，ZooKeeper 不会立即进入步骤 10 来更新服务器状态，而是会等待一段时间(默认 200 ms)来确定是否有新的更优的投票
   >
-  > ![](../../pics/zookeeper/zookeeper_57.png)
+  > <img src="../../pics/zookeeper/zookeeper_57.png" align=left>
 
 ## 7、各服务器角色介绍
 
@@ -2967,13 +3116,15 @@ Leader 是整个 ZooKeeper 集群工作机制的核心，主要工作有两个�
 - 事务请求的唯一调度和处理者，保证集群事务处理的顺序性
 - 集群内部各服务器的调度者
 
----
+#### 1. 请求处理链
 
-**请求处理链**： 
+在每个服务器启动时，都会进行请求处理链的初始化
 
-![](../../pics/zookeeper/zookeeper_59.png)
+<img src="../../pics/zookeeper/zookeeper_59.png" align=left>
 
 - `PrepRequestProcessor`： Leader 服务器的请求预处理器，能识别出当前客户端请求是否是事务请求，对于事务请求，会进行一系列预处理，如： 创建请求事务头、事务体、会话检查、ACL 检查、版本检查等
+
+    > 事务请求：会改变服务器状态的请求，通常指：创建节点、更新数据、删除节点、创建会话等请求
 
 - `ProposalRequestProcessor`： Leader 的事务投票处理器，也是 Leader 事务处理流程的发起者
 
@@ -2985,7 +3136,7 @@ Leader 是整个 ZooKeeper 集群工作机制的核心，主要工作有两个�
 
 - `SyncRequestProcessor`： 事务日志记录处理器，用于将事务请求记录到事务日志文件中，同时还会触发 ZooKeeper 进行数据快照
 
-- `AckRequestProcessor`： Leader 特有处理器，负责在 `SyncRequestProcessor` 完成事务日志记录后，向 Proposal 的投票收集器发送 ACK 反馈，以通知投票收集器当前服务器已完成对该 Proposal 的事务日志记录
+- `AckRequestProcessor`： Leader 特有处理器，负责在 `SyncRequestProcessor` 完成事务日志记录后，向 Proposal 的投票收集器发送 ACK 反馈，以通知投票收集器当前服务器已完成了对该 Proposal 的事务日志记录
 
 - `CommitProcessor`： 事务提交处理器
 
@@ -2995,22 +3146,19 @@ Leader 是整个 ZooKeeper 集群工作机制的核心，主要工作有两个�
 
     > 利用 `CommitProcessor` 处理器，每个服务器都可很好地控制对事务请求的顺序处理
 
-- `ToBeCommitProcessor`： 较特别的处理器，有一个 toBeApplied 队列，专门用来存储已被 `CommitProcessor` 处理过的可被提交的 Proposal
+- `ToBeCommitProcessor`： 会将请求逐个交付给 FinalRequestProcessor 处理，待其处理完后，再将其从 toBeApplied 队列中移除
 
-  > 会将请求逐个交付给 FinalRequestProcessor 处理，待其处理完后，再将其从 toBeApplied 队列中移除
+  > toBeApplied 队列：专门用来存储已被 `CommitProcessor` 处理过的可被提交的 Proposal
 
 - `FinalRequestProcessor`： 用来进行客户端请求返回前的收尾工作，包括创建客户端请求的响应
 
   > 针对事务请求，还会负责将事务应用到内存数据库中
 
----
+#### 2. LearnerHandler
 
-**LearnerHandler**： 负责 Follower/Observer 和 Leader 间的一系列网络通信，包括： 数据同步、请求转发、Proposal 提议的投票等
+- 前言：为确保集群内的实时通信和控制所有的 Follower/Observer 服务器，Leader 服务器会与每个 Follower/Observer 服务器都建立一个 TCP 长连接，同时也会为每个 Follower/Observer 服务器都创建一个名为 LearnerHandler 的实体
 
-- 目的： 为了保持集群内的实时通信，也为了确保可以控制所有的 Follower/Observer 
-- 实现： 
-  - Leader 会与每个 Follower/Observer 建立一个 TCP 连接
-  - 也会为每个 Follower/Observer  创建一个名为 LearnerHandler 的实体
+- **LearnerHandler 作用**：负责 Follower/Observer 和 Leader 间的网络通信，包括： 数据同步、请求转发、Proposal 提议的投票等
 
 ### (2) Follower
 
@@ -3022,18 +3170,21 @@ Follower 的主要工作：
 
 ---
 
-Follower 也采用责任链模式： 
+Follower 也采用责任链模式，与 Leader 请求处理链的不同点：
 
-![](../../pics/zookeeper/zookeeper_60.png)
+- Follower 服务器的第一个处理器换成了 `FollowerRequestProcessor` 处理器
+- 由于不需要处理事务请求的投票，因此也没有 `ProposalRequestProcessor` 处理器
+
+<img src="../../pics/zookeeper/zookeeper_60.png" align=left>
 
 - `FollowerRequestProcessor`： 识别当前请求是否是事务请求，若是事务请求，则 Follower 会将该事务请求转发给 Leader，同时 Leader 收到该请求后，会将其提交到请求处理链，按照正常事务请求进行处理
 
-- `SendAckRequestProcessor`： 承担事务日志记录反馈任务，完成后，会向 Leader 发送 ACK 消息以表明自身完成了事务日志的记录工作
+- `SendAckRequestProcessor`： 承担事务日志记录反馈任务，在完成事务日志记录后，会向 Leader 发送 ACK 消息以表明自身完成了事务日志的记录工作
 
   > 与 `AckRequestProcessor` 区别： 
   >
   > - `AckRequestProcessor` 处理器和 Leader 在同一个服务器上，因此其 ACK 反馈仅是一个本地操作
-  > - `SendAckRequestProcessor` 在 Follower 上，因此通过以 ACK 消息的形式来向 Leader 服务器反馈
+  > - `SendAckRequestProcessor` 处理器在 Follower 上，因此需要通过 ACK 消息的形式来向 Leader 服务器反馈
 
 ### (3) Observer
 
@@ -3044,77 +3195,440 @@ Follower 也采用责任链模式：
 
 - Observer 与 Follower 区别： Observer 不参与任何形式的投票，包括事务请求 Proposal 投票和 Leader 选举投票
 
-  > 即 Observer 只提供非事务请求，用于在不影响集群事务处理能力的前提下，提升集群的非事务处理能力
+  > 即 Observer 只提供非事务请求，通常用于在不影响集群事务处理能力的前提下，提升集群的非事务处理能力
 
-![](../../pics/zookeeper/zookeeper_61.png)
+<img src="../../pics/zookeeper/zookeeper_61.png" align=left>
+
+注意：Observer 服务器在初始化阶段会将 SyncRequestProcessor 处理器也组装上去，但实际运行过程中，Leader 服务器不会将事务请求的投票发送给 Observer 服务器
 
 ### (4) 集群间消息通信
 
-ZooKeeper 消息类型： 
+> 在整个 ZooKeeper 集群中工作过程中，都是由 Leader 服务器来负责进行各服务器之间的协调，同时各服务器之间的网络通信，都是通过不同类型的消息传递来实现的
 
-- **数据同步型**： 指在 Learner 和 Leader 进行数据同步时，网络通信所用到的消息
+**ZooKeeper 消息类型**： 
 
-  > 有： DIFF、TRUNC、SNAP、UPTODATE 四种
-  >
-  > ![](../../pics/zookeeper/zookeeper_62.png)
+- **数据同步型**： 指在 Learner 和 Leader 进行数据同步时，网络通信所用到的消息，有 DIFF、TRUNC、SNAP、UPTODATE 四种
 
+  > <img src="../../pics/zookeeper/zookeeper_62.png" align=left>
+  
 - **服务器初始化型**： 指在整个集群或某些新机器初始化时，Leader 和 Learner 间相互通信所使用的消息类型
 
   > 有 OBSERVERINFO、FOLLOWERINFO、LEADERINFO、ACKEPOCH、NEWLEADER 五种
   >
-  > ![](../../pics/zookeeper/zookeeper_63.png)
+  > <img src="../../pics/zookeeper/zookeeper_63.png" align=left>
   >
-  > ![](../../pics/zookeeper/zookeeper_64.png)
+  > <img src="../../pics/zookeeper/zookeeper_64.png" align=left>
 
-- **请求处理型**： 指进行请求处理的过程，Leader 和 Learner 间互相通信
+- **请求处理型**： 指进行请求处理的过程，Leader 和 Learner 服务器间互相通信所使用的消息
 
   > 有 REQUEST、PROPOSAL、ACK、COMMIT、INFORM、SYNC 六种
   >
-  > ![](../../pics/zookeeper/zookeeper_65.png)
+  > <img src="../../pics/zookeeper/zookeeper_65.png" align=left>
   >
-  > ![](../../pics/zookeeper/zookeeper_66.png)
+  > <img src="../../pics/zookeeper/zookeeper_66.png" align=left>
 
 - **会话管理型**： 指 ZooKeeper 在进行会话管理过程中，和 Learner 间互相通信所使用的消息
 
   > 有 PING、REVALIDATE 两种
   >
-  > ![](../../pics/zookeeper/zookeeper_67.png)
+  > <img src="../../pics/zookeeper/zookeeper_67.png" align=left>
 
-## 8、请求处理 342
+## 8、请求处理
+
+<img src="../../pics/zookeeper/zookeeper_69.png" align=left>
 
 ### (1) 会话创建请求
 
+ZooKeeper 服务端对于会话创建的处理，大体分为请求接收、会话创建、预处理、事务处理、事务应用、会话响应等六大环节
 
+<img src="../../pics/zookeeper/zookeeper_68.png" align=left>
 
+#### 1. 请求接收
 
+1. **I/O 层接收来自客户端的请求**：NIOServerCnxn 实例维护每一个客户端连接，客户端与服务端的所有通信都由 NIOServerCnxn 负责
+
+    > 即：负责统一接收来自客户端的所有请求，并将请求内容从底层网络 I/O 中完整地读取出来
+
+2. **判断是否是客户端“会话创建”请求**：若 NIOServerCnxn 未被初始化，则可以确定该客户端请求一定是“会话创建”请求
+
+    > 对于每个请求，ZooKeeper 都会检查当前 NIOServerCnxn 实体是否已经被初始化
+
+3. **反序列化 ConnectRequest 请求**：一旦确定当前客户端请求是“会话创建”请求，则服务端就可以对其进行反序列化，并生成一个 ConnectRequest 请求实体
+
+4. **判断是否是 ReadOnly 客户端**：针对  ConnectRequest，服务端会首先检查其是否是 ReadOnly 客户端，并以此来决定是否接受该“会话创建”请求
+
+    > ZooKeeper 设计中，若当前 ZooKeeper 服务器以 ReadOnly 模式启动，则所有来自非 ReadOnly 型客户端的请求将无法被处理
+
+5. **检查客户端 ZXID**：若发现客户端的 ZXID 值大于服务端的 ZXID 值，则服务端将不接受该客户端的“会话创建”请求
+
+    > 正常情况下，同一个 ZooKeeper 集群中，服务端的 ZXID 必定大于客户端的 ZXID
+
+6. **协商 sessionTimeout**：客户端向服务端发送 sessionTimeout 超时时间后，服务端会根据自己的超时时间限制，最终确定该会话的超时时间，这个过程就是 sessionTimeout 协商
+
+    > 客户端在构造 ZooKeeper 实例时，会有一个 sessionTimeout 参数用于指定会话的超时时间
+
+7. **判断是否需要重新创建会话**：若客户端请求中包含了 sessionID，则认为该客户端正在进行会话重连
+
+    > 这种情况下，服务端只需重新打开这个会话，否则需要重新创建
+
+#### 2. 会话创建
+
+8. **为客户端生成 sessionID**：在为客户端创建会话之前，服务端首先会为每个客户端都分配一个 sessionID
+
+    > **分配方式**：ZooKeeper 服务器启动时，都会初始化一个会话管理器 sessionTracker，同时初始化 sessionID(基准 sessionID)
+    >
+    > - 针对每个客户端，只需要在这个“基准 sessionID”的基础上进行逐个递增就可以
+    >
+    > ZooKeeper 通过保证“基准 sessionID”的全局唯一来确保每次分配的 sessionID 在集群内部各不相同
+
+9. **注册会话**：创建会话最重要的工作就是向 SessionTracker 中注册会话
+
+    > SessionTracker 维护了两个比较重要的数据结构：
+    >
+    > - `sessionWithTimeout`：根据 sessionID 保存了所有会话的超时时间
+    > - `sessionsById`：根据 sessionID 保存了所有会话实体
+    >
+    > 会话创建初期，应该将该客户端会话的相关信息保存到这两个数据结构中，方便后续会话管理器进行管理
+
+10. **激活会话**：核心是为会话安排一个区块，以便会话清理程序能够快速高效地进行会话清理
+
+    > 激活会话过程涉及 ZooKeeper 会话管理的分桶策略
+
+11. **生成会话密码**：服务端在创建一个客户端会话时，会同时为客户端生成一个会话密码，连同 sessionID 一起发送给客户端，作为会话在集群中不同机器间转移的凭证
+
+    > 会话密码的生成算法：
+    >
+    > ```java
+    > private static final long superSecret = 0XB3415C00L;
+    > Random random = new Random(sessionId ^ superSecret);
+    > random.nextBytes(passwd);
+    > ```
+
+#### 3. 预处理
+
+12. **将请求交给 ZooKeeper 的 PrepRequestProcessor 处理器进行处理**：ZooKeeper 对于每个客户端请求都采用责任链模式处理
+
+    > 在提交给第一个请求处理器前，ZooKeeper 会根据该请求所属的会话，进行一次激活会话操作，以确保当前会话处于激活状态
+
+13. **创建请求事务头**：对于事务请求，ZooKeeper 首先会为其创建请求事务头
+
+    > 服务端的后续请求处理器都基于该请求头来识别当前请求是否是事务请求
+    >
+    > - 请求头包括 sessionID、ZXID、CXID、请求类型等
+    >
+    > <img src="../../pics/zookeeper/zookeeper_70.png" align=left>
+
+14. **创建请求事务体**：对于事务请求，ZooKeeper 会为其创建请求的事务体
+
+    > 此处，由于是“会话创建”请求，因此会创建事务体 CreateSessionTxn
+
+15. **注册与激活会话**：同上面步骤 9 注册会话和步骤 10 激活会话
+
+#### 4. 事务处理
+
+16. **将请求交给 ProposalRequestProcessor 处理器**：完成对请求的预处理后，PrepRequestProcessor 处理器会将请求交付给下一级处理器——ProposalRequestProcessor
+
+    > ProposalRequestProcessor 是一个与提案相关的处理器
+    >
+    > - 提案：是 ZooKeeper 中针对事务请求所展开的一个投票流程中对事务操作的包装
+    >
+    > ---
+
+从 ProposalRequestProcessor 处理器开始，请求的处理将会进入三个子处理流程：
+
+- **Sync 流程**：核心是使用 SyncRequestProcessor 处理器记录事务日志的过程
+
+    > ProposalRequestProcessor 处理器在收到一个上级处理器流转过来的请求后：
+    >
+    > 1. 首先会判断该请求是否是事务请求，针对每个事务请求，都会通过事务日志形式将其记录下来
+    >
+    >     > Leader 和 Follower 服务器的请求处理链都有该处理器，两者在事务日志的记录功能上完全一致
+    >
+    > 2. 完成事务日志记录后，每个 Follower 服务器都会向 Leader 服务器发送 ACK 消息，表明自身完成了事务日志的记录，以便 Leader 服务器统计每个事务请求的投票情况
+
+- **Proposal 流程**：每个事务请求都需要集群中过半机器投票认可才能被真正应用到 ZooKeeper 的内存数据库中，这个投票与统计过程被称为“Proposal 流程”
+
+    > 1. **发起投票**：若当前请求是事务请求，则 Leader 服务器会发起一轮事务投票
+    >
+    >     > 在发起事务投票前，会检查当前服务端的 ZXID 是否可用：
+    >     >
+    >     > - 若 ZXID 不可用，则会抛出 XidRolloverException 异常
+    >     > - 若当前服务端的 ZXID 可用，则可以开始事务投票
+    >
+    > 2. **生成提议 Proposal**：ZooKeeper 会将之前创建的请求头和事务体，以及 ZXID 和请求本身序列化到 Proposal 对象中 
+    >
+    >     > 注意：此处生成的 Proposal 对象就是一个提议，即针对 ZooKeeper 服务器状态的一次变更申请
+    >
+    > 3. **广播提议**：生成提议后，Leader 服务器会以 ZXID 作为标识，将该提议放入投票箱 outstandingProposals 中，同时会将该提议广播给所有的 Follower 服务器
+    >
+    > 4. **收集投票**：Follower 服务器在接收到 Leader 发来的提议后，会进入 Sync 流程来进行事务日志的记录，一旦日志记录完成后，就会发送 ACK 消息给 Leader 服务器，Leader 根据这些 ACK 消息来统计每个提议的投票情况
+    >
+    >     > 当一个提议获得了集群中过半机器的投票，则就认为该提议通过
+    >
+    > 5. **将请求放入 toBeApplied 队列**：在提议被提交前，ZooKeeper 会先将其放入 toBeApplied 队列中
+    >
+    > 6. **广播 COMMIT 消息**：一旦 ZooKeeper 确认一个提议可以提交，则 Leader 会向 Follower 和 Observer 发送 COMMIT 消息，以便所有服务器都能够提交该提议
+    >
+    >     > - 对于 Observer：由于 Observer 并未参加之前的提议投票，因此 Observer 尚未保存任何关于该提议的信息，所以在广播 COMMIT 消息时，Leader 会向其发送 “INFORM” 消息，该消息包含了当前提议的内容
+    >     > - 对于 Follower：由于已经保存了所有关于该提议的信息，因此 Leader 服务器只需向其发送 ZXID 即可
+
+- **Commit 流程**：
+
+    > 1. **将请求交付给 CommitProcessor 处理器**
+    >
+    >     > CommitProcessor 处理器在收到请求后，并不会立即处理，而是会将其放入 queuedRequests 队列中
+    >
+    > 2. **处理 queuedRequests 队列请求**：当检测到 queuedRequests 队列中有新请求，就会逐个从队列中取出请求进行处理 
+    >
+    >     > CommitProcessor 处理器会有一个单独的线程来处理从上一级处理器流转下来的请求
+    >
+    > 3. **标记 nextPending**：若从 queuedRequests 队列中取出的请求是一个事务请求，则需要进行集群中各服务器间的投票处理，同时需要将 nextPending 标记为当前请求
+    >
+    >     > 标记 nextPending 的作用：
+    >     >
+    >     > - 一方面，为了确保事务请求的顺序性
+    >     > - 另一方面，便于 CommitProcessor 处理器检测当前集群中是否正在进行事务请求的投票
+    >
+    > 4. **等待 Proposal 投票**：在 Commit 流程处理的同时，Leader 已经根据当前事务请求生成了一个提议 Proposal，并广播给所有 Follower 服务器，因此 Commit 流程需要等待，直到投票结束
+    >
+    > 5. **投票通过**：若一个提议已获得过半机器的投票认可，则进入请求提交阶段
+    >
+    >     > ZooKeeper 会将该请求放入 committedRequests 队列，同时唤醒 Commit 流程
+    >
+    > 6. **提交请求**：一旦发现 committedRequests 队列中已有可以提交的请求，则 Commit 流程就会开始提交请求
+    >
+    >     > 提交前，为保证事务请求的顺序执行，Commit 流程还会对比之前标记的 nextPending 和 committedRequests 队列中第一个请求是否一致：
+    >     >
+    >     > - 若检查通过，则 Commit 流程就将该请求放入 toProcess 队列中，然后交付给下个处理器FinalRequestProcessor
+
+#### 5. 事务应用
+
+17. **交付给 FinalRequestProcessor 处理器**：FinalRequestProcessor 会先检查 outstandingChanges 队列中请求的有效性，若发现这些请求已经落后于当前正在处理的请求，则直接从 outstandingChanges 队列中移除
+
+18. **事务应用**：将事务变更应用到内存数据库中
+
+    > 注意：之前的请求处理逻辑中，仅仅是将该事务请求记录到事务日志中，而内存数据库中的状态尚未变更
+    >
+    > - 在 ZooKeeper 内存中，会话的管理都是由 SessionTracker 负责，而在会话创建的步骤 9 中，ZooKeeper 已经将会话信息注册到了 SessionTracker 中
+    > - 因此此处无须对内存数据库做任何处理，只需再次向 SessionTracker 进行会话注册即可
+
+19. **将事务请求放入队列：commitProposal**
+
+    > - 一旦完成事务请求的内存数据库应用，就可以将该请求放入 commitProposal 队列中
+    > - commitProposal 队列用来保存最近被提交的事务请求，以便集群间机器进行数据的快速同步
+
+#### 6. 会话响应
+
+20. **统计处理**：ZooKeeper 会计算请求在服务端处理所花费的时间，同时还会统计客户端连接的一些基本信息，包括 lastZxid(最新的 ZXID)、lastOp(最后一次和服务端的操作)、lastLatency(最后一次请求处理所花费的时间)等
+21. **创建响应 ConnectResponse**：ConnectResponse 就是一个会话创建成功后的响应，包含当前客户端与服务端之间的通信协议版本号 protocolVersion、会话超时时间、sessionID、会话密码
+22. **序列化 ConnectResponse**
+23. **I/O 层发送响应给客户端** 
 
 ### (2) SetData 请求
 
+<img src="../../pics/zookeeper/zookeeper_71.png" align=left>
 
+#### 1. 预处理
 
+1. **I/O 层接收来自客户端的请求** 
 
+2. **判断是否是客户端“会话创建”请求**
+
+    - 若是“会话创建”请求，则按照上一节的“会话创建”请求处理
+    - 若是“SetData”请求，则表示此时已经完成了会话创建，因此按照正常请求进行处理
+
+3. **将请求交给 ZooKeeper 的 PrepRequestProcessor 处理器进行处理**
+
+4. **创建请求事务头**
+
+5. **会话检查**：检查会话是否有效，即是否已经超时
+
+    > 若该会话已经超时，则服务端向客户端抛出 SessionExpiredException 异常
+
+6. **反序列化请求，并创建 ChangeRecord 记录** 
+
+    > 面对客户端请求：
+    >
+    > - ZooKeeper 首先会将其进行反序列化并生成特定的 SetDataRequest 请求
+    >
+    >     > SetDataRequest 请求中通常包含了数据节点路径 path、更新的数据内容 data、期望的数据节点版本 version
+    >
+    > - 同时，根据请求中对应的 path，ZooKeeper 会生成一个 ChangeRecord 记录，并放入 outstandingChanges 队列中
+    >
+    >     > outstandingChanges 队列中存放了当前 ZooKeeper 服务器正在进行处理的事务请求，以便 ZooKeeper 在处理后续请求的过程中需要针对之前的客户端请求的相关处理
+
+7. **ACL 检查**：由于当前请求是数据更新请求，则 ZooKeeper 需要检查该客户端是否具有数据更新的权限
+
+    > 若没有，则抛出 NoAuthException 异常
+
+8. **数据版本检查**：若 ZooKeeper 服务端发现当前数据内容的版本号与客户端预期的版本号不匹配，则会抛出异常
+
+    > ZooKeeper 依靠 version 属性来实现乐观锁机制中的“写入校验”
+
+9. **创建请求事务体 SetDataTxn**
+
+10. **保存事务操作到 outstandingChanges 队列中**
+
+#### 2. 事务处理
+
+对于事务请求，ZooKeeper 服务端都会发起事务处理流程，无论对于会话创建请求、SetData 请求等，事务处理流程都是一致的：
+
+- 都由 ProposalRequestProcessor 处理器发起，通过 Sync、Proposal、Commit 三个子流程相互协作完成
+
+#### 3. 事务应用
+
+11. **交付给 FinalRequestProcessor 处理器**
+
+12. **事务应用**：ZooKeeper 就将请求事务头和事务体直接交给内存数据库 ZKDatabase 进行事务应用，同时返回 ProcessTxnResult 对象
+
+    > 包含了数据节点内容更新后的 stat
+
+13. **将事务请求放入队列：commitProposal** 
+
+#### 4. 请求响应
+
+14. **统计处理**
+15. **创建响应体 SetDataResponse**：SetDataResponse 是一个数据更新成功后的响应，主要包含了当前数据节点的最新状态 stat
+16. **创建响应头**：响应头方便客户端对响应进行快速解析，包括当前响应对应的事务 ZXID 和请求处理是否成功的标识 err
+17. **序列化响应**
+18. **I/O 层发送响应给客户端** 
 
 ### (3) 事务请求转发
 
+> 为保证事务请求被顺序执行，从而确保 ZooKeeper 集群的数据一致性，所有的事务请求必须由 Leader 服务器来处理
 
+**ZooKeeper 事务请求转发机制**：保证所有的事务请求都由 Leader 处理，即所有非 Leader 服务器若收到来自客户端的事务请求，则必须将其转发给 Leader 服务器来处理
 
-
+- Follower 或 Observer 中，第一个处理器分别是 FollowerRequestProcessor 和 ObserverRequestProcessor
+- 无论哪个处理器，都会检查当前请求是否是事务请求
+- 若是事务请求，则会将该客户端请求以 REQUEST 消息的形式转发给 Leader 服务器
+- Leader 服务器收到这个消息后，会解析出客户端的原始请求，然后提交到自己的请求处理链中开始进行事务请求的处理
 
 ### (4) GetData 请求
 
+> GetData 请求是非事务请求
 
+<img src="../../pics/zookeeper/zookeeper_72.png" align=left>
 
+#### 1. 预处理
 
+1. **I/O 层接收来自客户端的请求**
+2. **判断是否是客户端“会话创建”请求**
+3. **将请求交给 ZooKeeper 的 PrepRequestProcessor 处理器进行处理**
+4. **会话检查** 
+
+#### 2. 非事务处理
+
+5. **反序列化 GetDataRequest 请求**
+6. **获取数据节点**：根据步骤 5 中反序列化出的完整 GetDataRequest 对象(包含数据节点的 path 和 Watcher 注册情况)，ZooKeeper 会从内存数据库中获取到该节点及其 ACL 信息
+7. **ACL 检查**
+8. **获取数据内容和 stat，注册 Watcher** 
+
+#### 3. 请求响应
+
+9. **创建响应体 GetDataResponse**：GetDataResponse 是一个数据获取成功后的响应，主要包含了当前数据节点的内容和状态 stat
+10. **创建响应头**
+11. **统计处理**
+12. **序列化响应**
+13. **I/O 层发送响应给客户端** 
 
 ## 9、数据与存储
 
+> ZooKeeper 数据存储分为：内存数据存储和磁盘数据存储
+
 ### (1) 内存数据
 
+- ZooKeeper 类似内存数据库，存储了整棵树的内容，包括所有的节点路径、节点数据、ACL 信息等
 
+    > ZooKeeper 的数据模型是树
 
+- ZooKeeper 会定时将这个数据存储到磁盘上
 
+#### 1. DataTree
+
+- DataTree 是 ZooKeeper 内存数据存储的核心，是一个“树”的数据结构，代表了内存中的一份完整的数据
+
+    > DataTree 用于存储所有 ZooKeeper 节点的路径、数据内容、ACL 信息等
+
+- DataTree 不包含任何与网络、客户端连接、请求处理等相关的业务逻辑，是一个非常独立的 ZooKeeper 组件
+
+#### 2. DataNode
+
+- DataNode 是数据存储的最小单元
+
+- DataNode 内部保存了节点的数据内容`data[]`、ACL 列表`acl`、节点状态`stat`、父节点`parent`的引用、子节点列表`children`
+
+- DataNode 还提供了对子节点列表操作的各个接口
+
+    ```java
+    public synchronized boolean addChild(String child){
+        if(children == null)
+            children = new HanhSet<String>(8);
+        return children.add(child);
+    }
+    
+    public synchronized boolean removeChild(String child){
+        if(children == null)
+            return false;
+        return children.remove(child);
+    }
+    
+    public synchronized void setChildren(HashSet<String> children){
+        this.children = children;
+    }
+    
+    public synchronized Set<String> getChildren(){
+        return children;
+    }
+    ```
+
+#### 3. nodes
+
+DataTree 底层数据结构是一个典型的 ConcurrentHanshMap 健值对结构：
+
+```java
+private final ConcurrentHanshMap<String,DataNode> nodes = new ConcurrentHanshMap<>();
+```
+
+- nodes 的这个 Map 中，存放了 ZooKeeper 服务器上所有的数据节点
+
+    > 可以认为：对于 ZooKeeper 数据的所有操作，底层都是对这个 Map 结构的操作
+
+- nodes 以数据节点的路径(path)为 key，value 则是节点的数据内容：DataNode
+
+> 对于临时节点，为了便于实时访问和及时清理，DataTree 还单独将临时节点保存
+>
+> ```java
+> private final Map<Long,HashSet<String>> ephemerals = new ConcurrentHanshMap<>();
+> ```
+
+#### 4. ZKDatabase
+
+- ZKDatabse 是 ZooKeeper 的内存数据库，负责管理 ZooKeeper 的所有会话、DataTree 存储和事务日志
+
+- ZKDatabse 会定时向磁盘 dump 快照数据，同时在 ZooKeeper 服务器启动时，通过磁盘上的事务日志和快照数据文件恢复成一个完整的内存数据库
 
 ### (2) 事务日志
+
+#### 1. 文件存储
+
+==359==
+
+
+
+#### 2. 日志格式
+
+
+
+
+
+#### 3. 日志写入
+
+
+
+
+
+#### 4. 日志截断
 
 
 
@@ -3122,17 +3636,81 @@ ZooKeeper 消息类型：
 
 ### (3) snapshot——数据快照
 
+#### 1. 文件存储
+
+
+
+
+
+#### 2. 存储格式
+
+
+
+
+
+#### 3. 数据快照
+
+
+
 
 
 
 
 ### (4) 初始化
 
+#### 1. 初始化流程
+
+
+
+
+
+
+
+#### 2. PlayBackListener
+
+
+
+
+
 
 
 
 
 ### (5) 数据同步
+
+#### 1. 获取 Learner 状态
+
+
+
+
+
+#### 2. 数据同步初始化
+
+
+
+
+
+#### 3. 直接差异化同步(DIFF同步)
+
+
+
+
+
+#### 4. 先回滚再差异化同步(TRUNC+DIFF同步)
+
+
+
+
+
+#### 5. 仅回滚同步(TRUNC同步)
+
+
+
+
+
+#### 6. 全量同步(SNAP同步)
+
+
 
 
 
