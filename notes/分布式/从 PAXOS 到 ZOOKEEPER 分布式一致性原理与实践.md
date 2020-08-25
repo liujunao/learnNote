@@ -3612,85 +3612,218 @@ private final ConcurrentHanshMap<String,DataNode> nodes = new ConcurrentHanshMap
 
 #### 1. 文件存储
 
-==359==
-
-
+- 部署 ZooKeeper 集群时，需要配置一个目录 `dataDir`：是 ZooKeeper 默认用于存储事务日志文件的
+- 也可以在 ZooKeeper 中为事务日志单独分配一个文件存储目录：`dataLogDir` 
 
 #### 2. 日志格式
 
+配置相关的事务日志存储目录，并启动后的操作：
 
-
-
+1. 创建 `/test_log` 节点，初始值为 `v1`
+2. 更新 `/test_log` 节点的数据为 `v2`
+3. 创建 `/test_log/c` 节点，初始值为 `v1`
+4. 删除 `/test_log/c` 节点
 
 #### 3. 日志写入
 
+> `FileTxnLog` 负责维护事务日志对外的接口，包括事务日志的写入和读取
 
+`append(TxnHeader hdr, Record txn)` 负责将事务操作写入事务日志，写入过程大致分为 6 步：
 
+1. **确定是否有事务日志可写**：进入事务日志写入前，ZooKeeper 会先判断 FileTxnLog 组件是否已关联上一个可写的事务日志文件
 
+    - 若没有关联上事务日志文件，则会使用与该事务操作关联的 ZXID 作为后缀创建一个事务日志文件，同时构建事务日志文件头信息(包括魔数 magic、事务日志格式版本 version 和 dbid)，并立即写入这个事务日志文件中
+    - 同时，将该文件的文件流放入一个集合：streamsToFlush，用于记录当前需要强制进行数据落盘(将数据强制刷入磁盘)的文件流
+
+    > 注：当 ZooKeeper 服务器启动完成需要进行第一次事务日志的写入，或是上一个事务日志写满时，都会处于与事务日志文件断开的状态，即 ZooKeeper 服务器没有和任意一个日志文件相关联
+
+2. **确定事务日志文件是否需要扩容(预分配)**：当检测到当前事务日志文件剩余空间不足 4096 字节(4 KB)时，会开始进行文件空间扩容
+
+    > 扩容操作：在现有文件大小的基础上，将文件大小增加 65536 KB(64 MB)，然后使用 `0(\0)` 填充这些被扩容的文件空间
+
+3. **事务序列化**：包括对事务头 `TxnHeader` 和事务体 `Record` 的序列化
+
+    > 其中，事务体又可分为会话创建事务 `CreateSessionTxn`、节点创建事务 `CreateTxn`、节点删除事务 `DeleteTxn`、节点数据更新事务 `SetDataTxn`
+
+4. **生成 Checksum**：为保证事务日志文件的完整性和数据的准确性，ZooKeeper 在将事务日志写入文件前，会根据事务序列化产生的字节数组来计算 Checksum
+
+    > ZooKeeper 默认使用 Adler32 算法来计算 Checksum 值
+
+5. **写入事务日志文件流**：将序列化后的事务头、事务体、Checksum 值写入到文件流中
+
+    > 注：由于 ZooKeeper 使用 BufferedOutputStream，因此写入的数据并非真正被写入到磁盘文件上
+
+6. **事务日志刷入磁盘**：从 `streamsToFlush` 中提取出文件流，并调用 `FileChannel.force(boolean metaData)` 接口来强制将数据刷入磁盘文件中
+
+    > `force` 接口对应底层的 `fsync` 接口，是一个比较耗费磁盘 I/O 资源的接口，因此允许用户控制是否调用，可通过系统属性 `zookeeper.forceSync` 来设置
 
 #### 4. 日志截断
 
-
-
-
+- 场景：非 Leader 机器上记录的事务 ID `peerLastZxid` 比 Leader 服务器大
+- 操作：Leader 会发送 `TRUNC` 命令给这个机器，要求其进行日志截断，Learner 服务器在接收到该命令后，就会删除所有包含或大于 `peerLastZxid` 的事务日志文件
 
 ### (3) snapshot——数据快照
 
+> 数据快照：用来记录 ZooKeeper 服务器上某一时刻的全量内存数据内容，并将其写入到指定的磁盘文件中
+
 #### 1. 文件存储
 
-
-
-
+- 类似事务日志，ZooKeeper 的快照数据也使用特定的磁盘目录进行存储，也可以通过 `dataDir` 属性进行配置
 
 #### 2. 存储格式
 
-
-
-
+`org.apache.zookeeper.server.SnapshotFormatter` 用于将默认的快照数据文件转换成可视化的数据内容
 
 #### 3. 数据快照
 
+`FileSnap` 负责维护快照数据对外的接口，包括快照数据的写入和读取，其中写入过程是将内存数据库序列化写入快照文件中
 
+- 针对客户端的每一次事务操作，ZooKeeper 都会将它们记录到事务日志中，同时也会将数据变更应用到内存数据库中
 
+- 另外，ZooKeeper 会在进行若干次事务日志记录后，将内存数据库的全量数据 Dump 到本地文件中，这就是数据快照
 
+    > 可使用 `snapCount` 参数配置每次数据快照间的事务操作次数，即在 `snapCount` 次事务日志记录后进行一个数据快照
 
+---
 
+**数据快照过程**：
+
+1. **确定是否需要进行数据快照**：每进行一次事务日志记录后，ZooKeeper 都会检测当前是否需要进行数据快照
+
+    > 理论上，进行 snapCount 次事务操作后，就会开始数据快照，但为避免 ZooKeeper 集群的所有机器同时执行数据快照，因此采取“过半随机”策略，即符合如下条件就进行数据快照：`logCount > (snapCount / 2 + randRoll)` 
+    >
+    > - `logCount` 代表当前已经记录的事务日志数量
+    > - `randRoll` 为 `1 ~ snapCount / 2` 之间的随机数
+
+2. **切换事务日志文件**：指当前的事务日志已“写满(已经写入了 snapCount 个事务日志)”，需要重新创建一个新的事务日志
+
+3. **创建数据快照异步线程**：为保证数据快照过程不影响 ZooKeeper 的主流程，需要创建一个单独的异步线程来进行数据快照
+
+4. **获取全量数据和会话信息**：数据快照本质是将内存中的所有数据节点信息 `DataTree` 和会话信息保存到本地磁盘中，因此会先从 ZKDatabase 中获取到 DataTree 和会话信息
+
+5. **生成快照数据文件名**：ZooKeeper 会根据当前已提交的最大 ZXID 来生成数据快照文件名
+
+6. **数据序列化**：
+
+    - 首先会序列化文件头信息(同事务日志，包含魔数、版本号、dbid 信息)
+    - 然后再对会话信息和 DataTree 分别进行序列化，同时生成一个 Checksum，一并写入快照数据文件中
 
 ### (4) 初始化
 
+> 在 ZooKeeper 服务器启动前，会进行数据初始化工作，用于将存储在磁盘上的数据文件加载到 ZooKeeper 服务器内存中
+
 #### 1. 初始化流程
 
+<img src="../../pics/zookeeper/zookeeper_73.png" align=left>
 
+数据的初始化工作就是从磁盘中加载数据的过程，主要包括从快照文件中加载快照数据和根据事务日志进行数据订正两个过程：
 
+1. **初始化 `FileTxnSnapLog`**：`FileTxnSnapLog` 是 ZooKeeper 事务日志和快照数据访问层，用于衔接上层业务与底层数据存储
 
+    > 底层数据包含了事务日志和快照数据两部分，因此 `FileTxnSnapLog` 又分为 `FileTxnLog` 和 `FileSnap` 的初始化，分别代表事务日志管理器和快照数据管理器的初始化
 
+2. **初始化 `ZKDatabase`**：
 
+    - 先构建一个初始化 DataTree，同时将 `FileTxnSnapLog` 交给 ZKDatabase，以便内存数据库能对事物日志和快照数据进行访问
+
+        > DataTree 是 ZooKeeper 内存数据的核心模型，保存了 ZooKeeper 的所有节点信息，在每个 ZooKeeper 内部都是单例
+        >
+        > - 在 ZkDatabase 初始化时，DataTree 也会进行相应的初始化工作——创建一些 ZooKeeper 的默认节点，包括：`/、/zookeeper、/zookeeper/quota` 三个节点的创建
+
+    - 同时，还会创建一个用于保存所有客户端会话超时时间的记录器 `sessionWithTimeouts`
+
+3. **创建 `PlayBackListener` 监听器**：用来接收事务应用过程中的回调
+
+    > 在 ZooKeeper 数据恢复后期，会有一个事务订正过程，会回调 `PlayBackListener` 监听器来进行对应的数据订正
+
+4. **处理快照文件**：每一个快照文件都保存了 Zookeeper 服务器近似全量的数据，因此先从这些快照文件开始加载
+
+5. **获取最新的 100 个快照文件**：在 ZooKeeper 服务器运行一段时间后，磁盘上都会保留多个快照文件
+
+    > 由于每次数据快照过程中，Zookeeper 会将全量数据 Dump 到磁盘快照文件中，因此更新时间最晚的快照文件包含了全量数据
+
+6. **解析快照文件**：获取到至多 100 文件后，ZooKeeper 会开始“逐个”进行解析
+
+    - 每个快照文件都是内存数据序列化到磁盘的二进制文件，因此需要反序列化，生成 DataTree 对象和 sessionWithTimeouts 集合
+    - 同时，还会进行文件的 Checksum 校验，以确定快照文件的正确性
+
+    > 注意：通常只解析最新的快照文件，只有当最新的快照文件不可用时，才会逐个进行解析，直到这 100 个文件全部解析完
+    >
+    > - 若所有快照文件都解析完后，还无法恢复一个完整的 DataTree 和 sessionWithTimeouts，则认为无法从磁盘中加载数据，服务器启动失败
+
+7. **获取最新的 ZXID**：完成快照文件解析后，就可以获取最新的 ZXID：`zxid_for_snap`，代表了 ZooKeeper 开始进行数据快照的时刻
+
+8. **处理事物日志**：此时 Zookeeper 内存中已有一份近似全量的数据，因此可以开始通过事务日志来更新增量数据
+
+9. **获取所有 `zxid_for_snap` 之后提交的事务**：只需要从事务日志中获取所有 ZXID 比步骤 7 中得到的 `zxid_for_snap` 大的事务操作
+
+    > ZooKeeper 中数据的快照机制决定了快照文件中并非包含了所有的事务操作，但未被包含在快照文件中的那部分事务操作上可以通过数据订正来实现
+
+10. **事务应用**：获取 ZXID 大于 `zxid_for_snap` 事务后，逐个应用到之前基于快照数据文件恢复的 DataTree 和 sessionWithTimeouts 
+
+11. **获取最新 ZXID**：待所有事务都被完整应用到内存数据库后，基本就完成了数据的初始化过程，此时再获取一个 ZXID，用来标识上次服务器正常运行时提交的最大事务 ID
+
+12. **校验 epoch**：
+
+    - epoch 标识了当前 Leader 周期，每次选举产生一个新的 Leader 服务器后，就会生成一个新的 epoch
+
+        > 在运行期间的集群中机器相互通信的过程中，都会带上这个 epoch 以确保彼此在同一个 Leader 周期内
+
+    - 完成数据加载后，ZooKeeper 会从步骤 11 中确定的 ZXID 中解析出事务处理的 Leader 周期 `epochOfZxid`
+
+    - 同时，也会从磁盘的 currentEpoch 和 acceptedEpoch 文件中读取出上次记录的最新 epoch 值，进行校验
 
 #### 2. PlayBackListener
 
+PlayBackListener 是一个事务应用监听器，用于在事务应用过程中的回调：每当成功将一条事务日志应用到内存数据库后，就会调用
 
-
-
-
-
-
-
+- 接口唯一方法：`onTxnLoaded(TxnHeader hdr, Record rec)`，用于对单条事务进行处理
+- 在完成步骤 2 的 ZKDatabase 初始化后，ZooKeeper 会立即创建一个 PlayBackListener 监听器，并将其置于 FileTxnSnapLog 中；在之后的步骤 10 事务应用过程中，会逐条回调该接口进行事务的二次处理
+- PlayBackListener 会将这些刚被应用到内存数据库中的事务转存到 `ZKDatabase.committedLog` 中，以便集群中服务器间进行快速的数据同步
 
 ### (5) 数据同步
 
+ZooKeeper 集群启动过程中：
+
+- 整个集群完成 Leader 选举后，Learner 会向 Leader 服务器进行注册
+- 当 Learner 服务器向 Leader 完成注册后，就进入数据同步环节
+
+即：数据同步过程就是 Leader 服务器将那些没有在 Learner 服务器上提交过的事务请求同步给 Learner 服务器
+
+<img src="../../pics/zookeeper/zookeeper_74.png" align=left>
+
 #### 1. 获取 Learner 状态
 
-
-
-
+- 在注册 Learner 的最后阶段，Learner 服务器会发送给 Leader 服务器一个 ACKEPOCH 数据包，Leader 会从这个数据包中解析出该 Learner 的 currentEpoch 和 lastZxid
 
 #### 2. 数据同步初始化
 
+在开始数据同步之前，Leader 服务器会进行数据同步初始化：
 
+- 首先会从 ZooKeeper 的内存数据库中提取出事务请求对应的提议缓存队列 `proposals`，同时完成以下三个 ZXID 值的初始化：
+    - `peerLastZxid`：该 Learner 服务器最后处理的 ZXID
+    - `minCommittedLog`：Leader 服务器提议缓存队列 committedLog 中的最小 ZXID
+    - `maxCommittedLog`：Leader 服务器提议缓存队列 committedLog 中的最大 ZXID
 
+---
 
+ZooKeeper 集群数据同步分为：直接差异化同步、先回滚再差异化同步、仅回滚同步、全量同步
+
+- 在初始化阶段，Leader 服务器会优先初始化以全量同步方式来同步数据
+- 后续，会根据 Leader 和 Learner 服务器之间的数据差异情况来决定最终的数据同步方式
 
 #### 3. 直接差异化同步(DIFF同步)
+
+- **场景**：`peerLastZxid` 介于 `minCommittedLog` 和 `maxCommittedLog` 之间
+
+---
+
+过程：
+
+- Leader 服务器会首先向这个 Learner 发送一个 DIFF 指令，用于通知 Learner “进入差异化数据同步阶段，Leader 服务器将把一些 Proposal 同步给自己”
+- 针对每个 Proposal，Leader 服务器都会通过发送两个数据包来完成，分别是 PROPOSAL 内容数据包和 COMMIT 指令数据包
+
+
 
 
 
