@@ -140,7 +140,7 @@ db.test2.ensureIndex({x:1,y:1})
 db.test2.find({x:1,y:1})
 ```
 
-##5. 过期索引
+## 5. 过期索引
 
 - **过期索引**： 在一段时间后会过期，过期后相应数据会被自动删除；适合存储一段时间后会失效的数据
 - **方式**： `db.collection.ensureIndex({time:1},{expireAfterSeconds:10})`
@@ -177,7 +177,7 @@ db.test2.find()
 db.collection.dropIndex("index_name")
 ```
 
-##7. 索引属性
+## 7. 索引属性
 
 比较重要的属性：
 
@@ -337,7 +337,7 @@ db.runCommand({geoNear:"location",near:[1,2],maxDistance:10,num:1})
 - 日志
 - `explain` 分析
 
-##2. `mongostat` 工具
+## 2. `mongostat` 工具
 
 - `mongostat`： 查看 mongodb 运行状态的程序
 - 使用说明： `mongostat -h IP:port`
@@ -354,11 +354,11 @@ db.getProfilingStatus()
 # 可使用 tab 键来自动补全来查看更多的设置
 ```
 
-##4. 日志
+## 4. 日志
 
 
 
-##5. `explain` 分析
+## 5. `explain` 分析
 
 ```shell
 db.test2.find().explain()

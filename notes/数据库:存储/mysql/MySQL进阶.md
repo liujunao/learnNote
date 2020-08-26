@@ -6,7 +6,7 @@
 
 ## 1. mysql 体系结构
 
-![](../../pics/mysql/global/mysqlG1_1.png)
+![](../../../pics/mysql/global/mysqlG1_1.png)
 
 - `Connectors`： 指的是**不同语言与SQL的交互**
 
@@ -101,7 +101,7 @@
 
 ## 1. InnoDB 体系架构
 
-![](../../pics/mysql/global/mysqlG2_1.png)
+![](../../../pics/mysql/global/mysqlG2_1.png)
 
 ### 1. 后台线程
 
@@ -117,7 +117,7 @@
 
 - `Page cleaner thread`： **刷新脏页到磁盘**
 
-![](../../pics/mysql/global/mysqlG2_3.png)
+![](../../../pics/mysql/global/mysqlG2_3.png)
 
 ### 2. 内存
 
@@ -144,7 +144,7 @@
 
 > 查看命令： `SHOW VARIABLES LIKE 'innodb_buffer_pool_size'\G`
 
-![](../../pics/mysql/global/mysqlG2_2.png)
+![](../../../pics/mysql/global/mysqlG2_2.png)
 
 #### 2. 重做日志缓冲
 
@@ -461,7 +461,7 @@ doublewrite **工作流程**：
 
 各模块协作情况如下图：
 
-![](../../pics/mysql/global/mysqlG2_4.png)
+![](../../../pics/mysql/global/mysqlG2_4.png)
 
 > 查看命令： `show global/ status like 'innodb_dblwr%'\G`
 
@@ -751,7 +751,7 @@ expire_log_days = {0..99} #设定二进制日志的过期天数，超出此天�
 
   > 单独表空间仅存放表的数据、索引、插入缓冲 BITMAP 等信息，其余信息还存放在默认的表空间
 
-![](../../pics/mysql/global/mysqlG3_1.png)
+![](../../../pics/mysql/global/mysqlG3_1.png)
 
 ### 2. 重做日志文件
 
@@ -763,7 +763,7 @@ expire_log_days = {0..99} #设定二进制日志的过期天数，超出此天�
 
 - 日志组中的重做日志文件大小一致，并以循环写入方式运行
 
-  ![](../../pics/mysql/global/mysqlG3_2.png)
+  ![](../../../pics/mysql/global/mysqlG3_2.png)
 
 - 日志文件的参数属性：
 
@@ -779,7 +779,7 @@ expire_log_days = {0..99} #设定二进制日志的过期天数，超出此天�
   - `page_no`： 表示页的偏移量，也采用压缩方式
   - `redo_log_body`： 表示每个重做日志的数据部分，恢复时需要调用相应函数进行解析
 
-  ![](../../pics/mysql/global/mysqlG3_3.png)
+  ![](../../../pics/mysql/global/mysqlG3_3.png)
 
 - 参数 `innodb_flush_log_at_trx_commit`： 触发写磁盘的过程，表示在提交操作时，处理重做日志（另一个写磁盘是 master thread 每秒会将重做日志写入磁盘的重做日志文件中）
 
@@ -815,7 +815,7 @@ expire_log_days = {0..99} #设定二进制日志的过期天数，超出此天�
 
 - **表空间**： 所有数据都被逻辑地存放在一个空间内，由段、区、页（块）组成
 
-![](../../pics/mysql/global/mysqlG4_1.png)
+![](../../../pics/mysql/global/mysqlG4_1.png)
 
 ### 1. 表空间
 
@@ -878,7 +878,7 @@ InnoDB存储引擎中，常见的页类型有：
 
 ### 1. 简介
 
-![](../../pics/mysql/global/mysqlG4_2.png)
+![](../../../pics/mysql/global/mysqlG4_2.png)
 
 - `Antelope`：先前未命名的，**原始的InnoDB文件格式：COMPACT 和 REDUNDANT**
 
@@ -929,7 +929,7 @@ InnoDB存储引擎中，常见的页类型有：
 
 行记录格式如下：
 
-![](../../pics/mysql/global/mysqlG4_3.png)
+![](../../../pics/mysql/global/mysqlG4_3.png)
 
 - **变长字段长度列表**：**按列的逆序放置**
 
@@ -944,7 +944,7 @@ InnoDB存储引擎中，常见的页类型有：
 
 - **记录头信息**：固定占用 5 字节（40位）
 
-  ![](../../pics/mysql/global/mysqlG4_4.png)
+  ![](../../../pics/mysql/global/mysqlG4_4.png)
 
 -  **列 N 数据**：实际存储每列的数据，**NULL 不占该部分存储空间**
 
@@ -952,7 +952,7 @@ InnoDB存储引擎中，常见的页类型有：
 
 
 
-![](../../pics/mysql/global/mysqlG4_5.png)
+![](../../../pics/mysql/global/mysqlG4_5.png)
 
 -  **字段偏移列表**：**按列的逆序放置**
 
@@ -960,7 +960,7 @@ InnoDB存储引擎中，常见的页类型有：
 
 - **记录头信息**：占用6字节（48位）
 
-  ![](../../pics/mysql/global/mysqlG4_6.png)
+  ![](../../../pics/mysql/global/mysqlG4_6.png)
 
 ### 3. 行溢出数据
 
@@ -972,7 +972,7 @@ InnoDB存储引擎中，常见的页类型有：
 
 
 
-![](../../pics/mysql/global/mysqlG4_7.png)
+![](../../../pics/mysql/global/mysqlG4_7.png)
 
 **VARCHAR(N)**： 其中的 N 指字符的长度，最大支持 65535 字节；其中 65535 是指所有 VARCHAR 列的长度总和
 
@@ -984,7 +984,7 @@ InnoDB存储引擎中，常见的页类型有：
 
 - 数据页中只存放 20 个字节的指针，实际的数据都存放在 Off Page 中
 
-  ![](../../pics/mysql/global/mysqlG4_8.png)
+  ![](../../../pics/mysql/global/mysqlG4_8.png)
 
 - **Dynamic 行格式**：**列存储是否放到 off-page 页取决于行大小**，把行中最长的列放到 off-page，直到数据页能存放下两行
 
@@ -1004,21 +1004,21 @@ InnoDB存储引擎中，常见的页类型有：
 >
 > - 类型为 B-tree Node 的页存放的是表中行的实际数据
 
-![](../../pics/mysql/global/mysqlG4_9.png)
+![](../../../pics/mysql/global/mysqlG4_9.png)
 
 InnoDB 数据页由 7 个部分组成：
 
 - **File Header(文件头，固定为38字节)**： 记录页的头信息
 
-  ![](../../pics/mysql/global/mysqlG4_10.png)
+  ![](../../../pics/mysql/global/mysqlG4_10.png)
 
-  ![](../../pics/mysql/global/mysqlG4_11.png)
+  ![](../../../pics/mysql/global/mysqlG4_11.png)
 
 - **Page Header（页头，固定为56字节）**： 记录数据页的状态信息
 
-  ![](../../pics/mysql/global/mysqlG4_12.png)
+  ![](../../../pics/mysql/global/mysqlG4_12.png)
 
-  ![](../../pics/mysql/global/mysqlG4_13.png)
+  ![](../../../pics/mysql/global/mysqlG4_13.png)
 
 - **Infimun 和 Supremum Records**： 每个数据页中有两个虚拟的行记录，**用来限定记录的边界**
 
@@ -1027,7 +1027,7 @@ InnoDB 数据页由 7 个部分组成：
   >
   > 这两个值**在页被创建时被建立，且不会被删除**
 
-  ![](../../pics/mysql/global/mysqlG4_14.png)
+  ![](../../../pics/mysql/global/mysqlG4_14.png)
 
 - **User Records(用户记录，即行记录)**： 实际存储行记录的内容
 
@@ -1292,9 +1292,9 @@ MYSQL数据库的分区总是**把NULL值视为小于任何一个非NULL值**，
 - 所有查询都要查找到叶子节点，查询性能稳定
 - 所有叶子节点形成有序链表，便于范围查询
 
-![](../../pics/mysql/global/mysql_1.png)
+![](../../../pics/mysql/global/mysql_1.png)
 
-![](../../pics/mysql/global/mysqlG5_2.png)
+![](../../../pics/mysql/global/mysqlG5_2.png)
 
 `B, B+ B*` 树对比： 
 
@@ -1357,7 +1357,7 @@ MYSQL数据库的分区总是**把NULL值视为小于任何一个非NULL值**，
 >
 > - 聚集索引对于主键的排序查找和范围的速度非常快
 
-![](../../pics/mysql/global/mysqlG5_4.png)
+![](../../../pics/mysql/global/mysqlG5_4.png)
 
 ### 2. 辅助索引(非聚集索引)
 
@@ -1371,7 +1371,7 @@ MYSQL数据库的分区总是**把NULL值视为小于任何一个非NULL值**，
 
 - 非聚集索引层次多，不会造成数据重排
 
-![](../../pics/mysql/global/mysqlG5_3.png)
+![](../../../pics/mysql/global/mysqlG5_3.png)
 
 ### 3. B+树索引的创建
 
@@ -1466,7 +1466,7 @@ InnoDB 对更新 Cardinality  信息的策略为：
 
 **对 Cardinality 统计进行设置的参数**：
 
-![](../../pics/mysql/global/mysqlG5_5.png)
+![](../../../pics/mysql/global/mysqlG5_5.png)
 
 ### 5. B+ 树索引的使用
 
@@ -1743,14 +1743,14 @@ search_modifier:
 > - **共享锁(S Lock)**： 允许事务读一行数据
 > - **排他锁(X Lock)**： 允许事务删除或更新一行数据
 >
-> ![](../../pics/mysql/global/mysqlG6_1.png)
+> ![](../../../pics/mysql/global/mysqlG6_1.png)
 >
 > **意向锁**：将锁定的对象分为多个层次，在更细粒度上进行加锁
 >
 > - **意向共享锁(IS Lock)**： 事务想要获得一张表中某几行的共享锁
 > - **意向排他锁(IX Lock)**： 事务想要获得一张表中某几行的排他锁
 >
-> ![](../../pics/mysql/global/mysqlG6_2.png)
+> ![](../../../pics/mysql/global/mysqlG6_2.png)
 
 ### 2. 一致性锁
 
@@ -1759,7 +1759,7 @@ search_modifier:
   > - 若读取的行正在执行 DELETE或 UPDATE 操作，InnoDB 存储引擎会去读取行的一个**快照数据**
   > - **快照数据**： 指该行的之前版本的数据，该实现是通过 undo 段来完成，而 undo 用来在事务中回滚数据，因此快照数据本身是没有额外的开销，且读取快照数据不需要上锁
   >
-  > ![](../../pics/mysql/global/mysqlG6_3.png)
+  > ![](../../../pics/mysql/global/mysqlG6_3.png)
   >
   > - **非锁定读**： 不需要等待访问的行上 X 锁的释放
   >
@@ -1787,11 +1787,11 @@ search_modifier:
 
 - 参数 `innodb_autoinc_lock_mode` 来控制新的轻量级的自增长的模式，默认值为 1
 
-  ![](../../pics/mysql/global/mysqlG6_4.png)
+  ![](../../../pics/mysql/global/mysqlG6_4.png)
 
 - **插入类型分类**：
 
-  ![](../../pics/mysql/global/mysqlG6_5.png)
+  ![](../../../pics/mysql/global/mysqlG6_5.png)
 
 ## 4. 锁算法
 
@@ -1970,7 +1970,7 @@ search_modifier:
 
   - **扁平事务**： 其由 BEGIN WORK 开始，由 COMMIT WORK 或 ROLLBACK WORK 结束，其间的操作是原子的，要么都执行，要么都回滚；因此扁平事务是应用程序成为原子操作的基本组成模块
 
-    ![](../../pics/mysql/global/mysqlG7_1.png)
+    ![](../../../pics/mysql/global/mysqlG7_1.png)
 
   - **带有保存点的扁平事务**：允许在事务执行过程中回滚到同一事务中较早的一个状态，保存点用来通知系统应该记住事务当前的状态，以便当之后发生错误时，事务能回到保存点当时的状态
 
@@ -1978,7 +1978,7 @@ search_modifier:
     >
     > - 当出现问题时，保存点能用作内部的重启动点，根据应用逻辑,决定是回到最近一个保存点还是其他更早的保存点
     >
-    > ![](../../pics/mysql/global/mysqlG7_2.png)
+    > ![](../../../pics/mysql/global/mysqlG7_2.png)
 
   - **链事务**： 在提交一个事务时，释放不需要的数据对象，将必要的处理上下文隐式地传给下一个要开始的事务
 
@@ -2090,7 +2090,7 @@ search_modifier:
 
 通用**头部格式**由以下3部分组成：
 
-![](../../pics/mysql/global/mysqlG7_4.png)
+![](../../../pics/mysql/global/mysqlG7_4.png)
 
 - `redo_log_type`： 重做日志的类型
 - `space`： 表空间的ID
@@ -2410,7 +2410,7 @@ SQL 标准定义的四个隔离级别为：
   - **事务管理器： 协调参与全局事务中的各个事务**，需要和参与全局事务的所有资源管理器进行通信
   - **应用程序**： 定义事务的边界，指定全局事务中的操作
 
-  ![](../../pics/mysql/global/mysqlG7_5.png)
+  ![](../../../pics/mysql/global/mysqlG7_5.png)
 
 - **分布式事务使用两段式提交的方式**： 
 
@@ -2609,7 +2609,7 @@ SQL 标准定义的四个隔离级别为：
   >
   > - 采用写时复制机制保证了读取快照时得到的数据与快照创建时一致
   >
-  > ![](../../pics/mysql/global/mysqlG8_1.png)
+  > ![](../../../pics/mysql/global/mysqlG8_1.png)
 
 ## 6. 二进制日志备份与恢复
 
@@ -2651,7 +2651,7 @@ SQL 标准定义的四个隔离级别为：
 
   - **高可用性和故障转移**： 通过复制建立的从服务器有助于故障转移，减少故障的停机时间和恢复时间
 
-![](../../pics/mysql/global/mysqlG8_2.png)
+![](../../../pics/mysql/global/mysqlG8_2.png)
 
 - 命令 `SHOW SLAVE STATUS`： 可以观察当前复制的运行状态
 
@@ -2707,7 +2707,7 @@ SQL 标准定义的四个隔离级别为：
 
   > 因为 InnoDB存储引擎既缓存数据，又缓存索引，并且将它们缓存于缓冲池中
 
-![](../../pics/mysql/global/mysqlG9_1.png)
+![](../../../pics/mysql/global/mysqlG9_1.png)
 
 - $缓冲池命中率 = \frac{Innodb\_buffer\_pool\_read\_requests}{Innodb\_buffer\_pool\_read_requests + Innodb\_buffer\_pool\_read\_ahead + Innodb\_buffer\_pool\_reads}$
 
@@ -2726,7 +2726,7 @@ SQL 标准定义的四个隔离级别为：
   > - 闪存中的数据是不可以更新的，只能通过扇区的覆盖重写，而在覆盖重写之前，需要执行耗时的擦除操作
   > - 擦除操作不能在所含数据的扇区上完成，而需要在删除整个被称为擦除块的基础上完成，擦除块的尺寸通常为 128KB 或者 256KB，且每个擦除块有擦写次数的限制
   >
-  > ![](../../pics/mysql/global/mysqlG9_2.png)
+  > ![](../../../pics/mysql/global/mysqlG9_2.png)
 
 ## 4. 合理地设置 RAID
 
@@ -2751,7 +2751,7 @@ SQL 标准定义的四个隔离级别为：
     > - RAID0 没有冗余功能，如果一个磁盘(物理)损坏，则所有的数据都会丢失
     > - 受限于总线 IO 瓶颈及其他因素的影响，RAID效能会随边际递减，小于理论值： **(单一磁盘效能)×(磁盘数)**
 
-    ![](../../pics/mysql/global/mysqlG9_3.png)
+    ![](../../../pics/mysql/global/mysqlG9_3.png)
 
   - **RAD1**： **两组以上的 N 个磁盘相互作为镜像**
 
@@ -2760,7 +2760,7 @@ SQL 标准定义的四个隔离级别为：
     > - 因为有镜像硬盘做数据备份，所以 **RAID1 的数据安全性在所有的 RAID 级别上来说是最好的**
     > - **RAID1 的磁盘利用率在所有 RAID 中是最低的**
 
-    ![](../../pics/mysql/global/mysqlG9_4.png)
+    ![](../../../pics/mysql/global/mysqlG9_4.png)
 
   - **RAID5**： 是一种存储性能、数据安全和存储成本兼顾的存储解决方案，**使用的是 Disk Striping(硬盘分区)技术**
 
@@ -2770,7 +2770,7 @@ SQL 标准定义的四个隔离级别为：
     >
     > - RAID5 数据读取速度快，数据写入速度慢
 
-    ![](../../pics/mysql/global/mysqlG9_5.png)
+    ![](../../../pics/mysql/global/mysqlG9_5.png)
 
   - **RAID10 和 RAD01**：
 
@@ -2781,14 +2781,14 @@ SQL 标准定义的四个隔离级别为：
     >
     > - **RAID10 的缺点**： 需要较多的硬盘，至少拥有四个以上的偶数硬盘才能使用
 
-    ![](../../pics/mysql/global/mysqlG9_6.png)
+    ![](../../../pics/mysql/global/mysqlG9_6.png)
 
   - **RAD50(镜像阵列条带)**： 由至少六块硬盘组成
 
     > - 像 RAID0 一样，数据被分区成条，在同一时间内向多块磁盘写人
     > - 像 RAID5 一样，也是以数据的校验位来保证数据的安全，且校验条带均匀分布在各个磁盘上，其目的在于提高RAID5的读写性能
 
-    ![](../../pics/mysql/global/mysqlG9_7.png)
+    ![](../../../pics/mysql/global/mysqlG9_7.png)
 
 - **RAID Write Back 功能**： 是指 RAID 控制器能够将写入的数据放入自身的缓存中，并把它们安排到后面再执
 
