@@ -4947,6 +4947,20 @@ Sentinel 采用 Raft 协议实现 Sentinel 间选举 Leader 的算法
 
 ## 11. redis 优化操作
 
+**最多容纳 $2^{32}$ 个key**： redis 的key 和 string 类型 value 限制均为 512MB
+
+- String 类型：一个 String 类型的value最大可以存储 512M
+
+- List 类型：list 的元素个数最多为 $2^{32}-1$ 个，也就是 4294967295 个
+
+- Set 类型：元素个数最多为 $2^{32}-1$ 个，也就是 4294967295 个
+
+- Hash 类型：键值对个数最多为 $2^{32}-1$ 个，也就是 4294967295 个
+
+- Sorted set 类型：跟Set类型相似
+
+---
+
 **[Redis优化经验](https://www.cnblogs.com/duanxz/p/5447402.html)**
 
 | 项目             | 说明                                                         |
