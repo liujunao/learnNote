@@ -298,25 +298,25 @@ maven：是一个**跨平台的项目管理工具**，主要服务于 Java 平�
   >
   > ```xml
   > <project>
-  >     ...
-  >     <properties>
-  >         <springframework.version>2.5.6</springframework.version>
-  >     </properties>
+  >    	...
+  >    	<properties>
+  >        	<springframework.version>2.5.6</springframework.version>
+  >     	</properties>
   >     
-  >     <dependencies>
-  >         <dependency>
-  >             <groupId>org.springframework</groupId>
-  >             <artifactId>spring-core</artifactId>
-  >             <version>${springframework.version}</version>
-  >         </dependency>
-  >         <dependency>
-  >             <groupId>org.springframework</groupId>
-  >             <artifactId>spring-beans</artifactId>
-  >             <version>${springframework.version}</version>
-  >         </dependency>
-  >         ...
-  >     </dependencies>
-  >     ...
+  >     	<dependencies>
+  >         	<dependency>
+  >             	<groupId>org.springframework</groupId>
+  >             	<artifactId>spring-core</artifactId>
+  >             	<version>${springframework.version}</version>
+  >         	</dependency>
+  >         	<dependency>
+  >             	<groupId>org.springframework</groupId>
+  >             	<artifactId>spring-beans</artifactId>
+  >             	<version>${springframework.version}</version>
+  >         	</dependency>
+  >         	...
+  >     	</dependencies>
+  >     	...
   > </project>
   > ```
 
@@ -324,11 +324,11 @@ maven：是一个**跨平台的项目管理工具**，主要服务于 Java 平�
 
   > ```xml
   > <parent> 
-  >     <groupId>org.codehaus.mojo</groupId> 
-  >     <artifactId>my-parent</artifactId> 
-  >     <version>2.0</version> 
-  >     <!-- 为可选项，maven 会首先搜索该地址，然后再搜索远程仓库 -->
-  >     <relativePath>../my-parent</relativePath> 
+  >     	<groupId>org.codehaus.mojo</groupId> 
+  >     	<artifactId>my-parent</artifactId> 
+  >     	<version>2.0</version> 
+  >     	<!-- 为可选项，maven 会首先搜索该地址，然后再搜索远程仓库 -->
+  >     	<relativePath>../my-parent</relativePath> 
   > </parent>
   > ```
 
@@ -396,15 +396,15 @@ maven：是一个**跨平台的项目管理工具**，主要服务于 Java 平�
   >
   > ```xml
   > <repositories>
-  >     <repository>
-  >         <id>central</id>
-  >         <name>Central Repository</name>
-  >         <url>https://repo.maven.apache.org/maven2</url>
-  >         <layout>default</layout>
-  >         <snapshots>
-  >             <enabled>false</enabled>
-  >         </snapshots>
-  >     </repository>
+  >     	<repository>
+  >         	<id>central</id>
+  >         	<name>Central Repository</name>
+  >        	 <url>https://repo.maven.apache.org/maven2</url>
+  >         	<layout>default</layout>
+  >         	<snapshots>
+  >             	<enabled>false</enabled>
+  >         	</snapshots>
+  >     	</repository>
   > </repositories>
   > ```
 
@@ -552,21 +552,21 @@ maven：是一个**跨平台的项目管理工具**，主要服务于 Java 平�
 ```xml
 <?xml version="1.0" encoding="UTF-8"?>
 <metadata>
-  <groupId>org.sonatype.nexus</groupId>
-  <artifactId>nexus</artifactId>
-  <versioning>
-    <latest>1.4.2-SNAPSHOT</latest>    <!-- 指向最新版本 -->
-    <release>1.4.0</release>    <!-- 指向最新发布版本 -->
-    <versions>    <!-- 版本历史记录 -->
-      <version>1.3.5</version>
-      <version>1.3.6</version>
-      <version>1.4.0-SNAPSHOT</version>
-      <version>1.4.0.1-SNAPSHOT</version>
-      <version>1.4.1-SNAPSHOT</version>
-      <version>1.4.2-SNAPSHOT</version>
-    </versions>
-    <lastUpdated>20091214221557</lastUpdated>    <!-- 记录最近更新时间 -->
-  </versioning>
+  	<groupId>org.sonatype.nexus</groupId>
+  	<artifactId>nexus</artifactId>
+  	<versioning>
+    	<latest>1.4.2-SNAPSHOT</latest>    <!-- 指向最新版本 -->
+    	<release>1.4.0</release>    <!-- 指向最新发布版本 -->
+    	<versions>    <!-- 版本历史记录 -->
+      		<version>1.3.5</version>
+      		<version>1.3.6</version>
+      		<version>1.4.0-SNAPSHOT</version>
+      		<version>1.4.0.1-SNAPSHOT</version>
+      		<version>1.4.1-SNAPSHOT</version>
+      		<version>1.4.2-SNAPSHOT</version>
+    	</versions>
+    	<lastUpdated>20091214221557</lastUpdated>    <!-- 记录最近更新时间 -->
+  	</versioning>
 </metadata>
 ```
 
@@ -1579,7 +1579,7 @@ Mave 提供很多命令行选择支持裁剪反应堆，输入 `mvn -h` 可以�
             </properties>
         </profile>
         <profile>
-            <id>dev</id>
+            <id>test</id>
             <properties>
                 <db.driver>com.mysql.jdbc.Driver</db.driver>
                 <db.url>jdbc:mysql://192.168.138.101:3306/test</db.url>

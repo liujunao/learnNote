@@ -1,3 +1,331 @@
+推荐教程：
+
+- **[w3c 之 Nginx教程](https://www.w3cschool.cn/nginx/ycn81k97.html)** 
+- **[agentzh 的 Nginx 教程](http://openresty.org/download/agentzh-nginx-tutorials-zhcn.html)** 
+
+# # nginx.conf 简单配置
+
+```shell
+user  nobody;
+worker_processes  1;
+error_log  logs/error.log  info;
+
+events {
+	worker_connections  1024;
+}
+
+http {  
+	server {  
+    	listen          80;  
+        server_name     www.linuxidc.com;  
+        access_log      logs/linuxidc.access.log main;  
+        location / {  
+        	index index.html;  
+            root  /var/www/linuxidc.com/htdocs;  
+        }  
+	}  
+
+    server {  
+    	listen          80;  
+        server_name     www.Androidj.com;  
+        access_log      logs/androidj.access.log main;  
+        location / {  
+            index index.html;  
+            root  /var/www/androidj.com/htdocs;  
+        }  
+    }  
+}
+
+mail {
+	auth_http  127.0.0.1:80/auth.php;
+    pop3_capabilities  "TOP"  "USER";
+    imap_capabilities  "IMAP4rev1"  "UIDPLUS";
+
+	server {
+    	listen     110;
+        protocol   pop3;
+        proxy      on;
+	}
+    server {
+        listen      25;
+        protocol    smtp;
+        proxy       on;
+        smtp_auth   login plain;
+        xclient     off;
+    }
+}
+```
+
+# # nginx.conf 详细配置
+
+```shell
+# 定义 Nginx 运行的用户和用户组
+user www www;
+
+# nginx 进程数，建议设置为 CPU 核数
+worker_processes 8;
+ 
+# 全局错误日志类型与存储位置，[ debug | info | notice | warn | error | crit ]
+error_log /usr/local/nginx/logs/error.log info;
+
+# 进程 pid 文件
+pid /usr/local/nginx/logs/nginx.pid;
+
+# nginx 进程可以打开的描述符最大数目
+worker_rlimit_nofile 65535; # linux2.6 内核开启文件数最大为65535，应填写最大值，防止实际进程数超过配置值而报错
+
+events {
+    # 参考事件模型: kqueue | rtsig | epoll | /dev/poll | select | poll; linux 建议 epoll，FreeBSD 建议 kqueue
+    use epoll;
+
+    # 单个进程最大连接数
+    worker_connections 65535; # 理论每台 nginx 服务器的最大连接数为 linux 内核开启文件最大数
+
+    # keepalive 超时时间
+    keepalive_timeout 60;
+
+    # 客户端请求头部的缓冲区大小，建议不超过 4k，但必须设为“系统分页大小”整倍数，分页大小可以用命令 getconf PAGESIZE 取得
+    client_header_buffer_size 4k;
+
+    # 为打开文件指定缓存，默认未启用。max 指定缓存数量，建议和打开文件数一致；inactive 指经过多长时间文件没被请求后删除缓存
+    open_file_cache max=65535 inactive=60s;
+
+    # 指多长时间检查一次 open_file_cach 中缓存的有效信息，默认值 60s
+    open_file_cache_valid 80s;
+
+    # open_file_cache 中 inactive 时间内文件的最少使用次数。若超过这个数字，文件描述符一直在缓存中打开，默认值 1
+    open_file_cache_min_uses 1;
+    
+    # 指定是否在搜索一个文件时记录 cache 错误，默认值 off
+    open_file_cache_errors on;
+}
+
+# 设定 http 服务器，利用反向代理功能提供负载均衡支持
+http {
+    # 文件扩展名与文件类型映射表
+    include mime.types;
+
+    # 默认文件类型
+    default_type application/octet-stream;
+
+    # 默认编码
+    charset utf-8;
+
+    # 保存服务器名字的 hash 表实际大小(server_names_hash_max_size 设置最大值)
+    server_names_hash_bucket_size 128;
+
+    # 客户端请求头部的缓冲区大小，可以根据系统分页大小设置，分页大小可以用命令 getconf PAGESIZE 取得
+    client_header_buffer_size 32k;
+
+    # 客户请求头缓冲大小
+    # 默认先用 client_header_buffer_size 读取 header；若 header 过大，则使用 large_client_header_buffers 读取
+    large_client_header_buffers 4 64k;
+
+    # 设定通过 nginx 上传文件的大小
+    client_max_body_size 8m;
+
+    # 指定 nginx 是否调用 sendfile 函数来输出文件，普通应用为 on
+    # 磁盘 IO 应用，设置为 off，以平衡磁盘与网络 I/O 处理速度，降低系统的负载 uptime。注意：若图片显示不正常，则设为 off
+    sendfile on;
+
+    # 开启目录列表访问，合适下载服务器，默认 off
+    autoindex on;
+
+    # 允许或禁用 socke 的 TCP_CORK 选项，仅在使用 sendfile 时使用
+    tcp_nopush on;
+     
+    tcp_nodelay on;
+
+    # 长连接超时时间，单位是秒
+    keepalive_timeout 120;
+
+    # FastCGI相关参数是为了改善网站的性能：减少资源占用，提高访问速度
+    fastcgi_connect_timeout 300;
+    fastcgi_send_timeout 300;
+    fastcgi_read_timeout 300;
+    fastcgi_buffer_size 64k;
+    fastcgi_buffers 4 64k;
+    fastcgi_busy_buffers_size 128k;
+    fastcgi_temp_file_write_size 128k;
+
+    # gzip模块设置
+    gzip on; 				# 开启 gzip 压缩输出
+    gzip_min_length 1k;     # 最小压缩文件大小
+    gzip_buffers 4 16k;     # 压缩缓冲区
+    gzip_http_version 1.0;  # 压缩版本(默认1.1，前端如果是 squid2.5 请使用 1.0)
+    gzip_comp_level 2;    	# 压缩等级
+    gzip_types text/plain application/x-javascript text/css application/xml; # 压缩类型，默认已包含text/html
+    gzip_vary on;
+
+    # 开启限制 IP 连接数时使用
+    limit_zone crawler $binary_remote_addr 10m;
+
+	# 负载均衡配置
+    upstream jh.w3cschool.cn {
+        # upstream 的负载均衡，weigth 表示权值，权值越高被分配到的几率越大
+        server 192.168.80.121:80 weight=3;
+        server 192.168.80.122:80 weight=2;
+        server 192.168.80.123:80 weight=3;
+        
+        client_body_in_file_only on # 将 client post 过来的数据记录到文件中用来做 debug
+        client_body_temp_path xxx/xxx/xx # 设置记录文件的目录 最多设置 3 层目录
+
+        # nginx 的 upstream 目前支持的分配方式：
+        	# 1、轮询(默认): 每个请求按时间顺序逐一分配到不同的后端服务器，若后端服务器 down，则自动剔除
+        	# 2、weight: 指定轮询几率，weight 和访问比率成正比，用于后端服务器性能不均的情况
+        		#upstream bakend {
+        		#    server 192.168.0.14 weight=10;
+        		#    server 192.168.0.15 weight=10;
+        		#}
+        	# 3、ip_hash: 每个请求按访问 ip 的 hash 结果分配，这样每个访客固定访问一个后端服务器，解决 session 问题
+        		#upstream bakend {
+        		#    ip_hash;
+        		#    server 192.168.0.14:88;
+        		#    server 192.168.0.15:80;
+        		#}
+        	# 4、fair(第三方): 按后端服务器的响应时间来分配请求，响应时间短的优先分配
+        		#upstream backend {
+        		#    server server1;
+        		#    server server2;
+        		#    fair;
+        		#}
+        	# 5、url_hash(第三方): 按访问 url 的 hash 结果分配请求，使每个 url 定向到同一个服务器，服务器为缓存时推荐
+        		#例：upstream 中加入hash语句，server 中不能写入weight等其他的参数，hash_method 指定 hash 算法
+        		#upstream backend {
+        		#    server squid1:3128;
+        		#    server squid2:3128;
+        		#    hash $request_uri;
+        		#    hash_method crc32;
+        		#}
+        #综合案例: 在需要使用负载均衡的server中增加 proxy_pass http://bakend/;
+        #upstream bakend{#定义负载均衡设备的Ip及设备状态}{
+        #    ip_hash;
+        #    server 127.0.0.1:9090 down; 	 # down 表示当前的 server 暂时不参与负载
+        #    server 127.0.0.1:8080 weight=2; # weight越大，负载的权重就越大
+        	 # 当超过最大次数时，返回 proxy_next_upstream 模块定义的错误
+        	 # fail_timeout: 表示 max_fails 次失败后，暂停的时间
+        #    server 127.0.0.1:6060 max_fails=1; # 允许请求失败的次数，默认为 1
+        #    server 127.0.0.1:7070 backup;   # 其它非 backup 机器 down 或忙时，请求 backup 机器
+        #}
+    }
+
+    # 虚拟主机的配置
+    server {
+        # 监听端口
+        listen 80;
+
+        # 域名可以有多个，用空格隔开
+        server_name www.w3cschool.cn w3cschool.cn;
+        index index.html index.htm index.php;
+        root /data/www/w3cschool;
+
+		# location 对 URL 进行匹配，可以进行重定向或者进行新的代理 负载均衡
+        location ~ .*.(php|php5)?$ {
+            fastcgi_pass 127.0.0.1:9000;
+            fastcgi_index index.php;
+            include fastcgi.conf;
+        }
+         
+        # 图片缓存时间设置
+        location ~ .*.(gif|jpg|jpeg|png|bmp|swf)$ {
+            expires 10d;
+        }
+         
+        # JS 和 CSS 缓存时间设置
+        location ~ .*.(js|css)?$ {
+            expires 1h;
+        }
+         
+        # 日志格式设定
+        	# 1、$remote_addr 与 $http_x_forwarded_for：用以记录客户端的 ip 地址
+        	# 2、$remote_user：用来记录客户端用户名称
+        	# 3、$time_local：用来记录访问时间与时区
+        	# 4、$request：用来记录请求的 url 与 http 协议
+        	# 5、$status：用来记录请求状态；成功是 200
+        	# 6、$body_bytes_sent：记录发送给客户端文件主体内容大小
+        	# 7、$http_referer：用来记录从哪个页面链接访问过来的
+        	# 8、$http_user_agent：记录客户浏览器的相关信息
+        log_format access '$remote_addr - $remote_user [$time_local] "$request" '
+        						'$status $body_bytes_sent "$http_referer" '
+        						'"$http_user_agent" $http_x_forwarded_for';
+         
+        # 定义本虚拟主机的访问日志
+        access_log  /usr/local/nginx/logs/host.access.log  main;
+        access_log  /usr/local/nginx/logs/host.access.404.log  log404;
+         
+        # 对 "/" 启用反向代理
+        location / {
+            proxy_pass http://127.0.0.1:88;
+            proxy_redirect off;
+            proxy_set_header X-Real-IP $remote_addr;
+             
+            # 后端的 Web 服务器可以通过 X-Forwarded-For 获取用户真实 IP
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+             
+            # 以下是一些反向代理的配置(可选)
+            proxy_set_header Host $host;
+
+            # 允许客户端请求的最大单文件字节数
+            client_max_body_size 10m;
+
+            # 缓冲区代理缓冲用户端请求的最大字节数，使用默认的 client_body_buffer_size(操作系统页面大小的两倍，8k或16k)
+            client_body_buffer_size 128k;
+
+            # 表示使 nginx 阻止 HTTP 应答代码为 400或更高的应答
+            proxy_intercept_errors on;
+
+            # nginx 跟后端服务器连接超时时间(代理连接超时): 发起握手等候响应超时时间
+            proxy_connect_timeout 90;
+
+            # 后端服务器数据回传时间(代理发送超时): 在规定时间之内后端服务器必须传完所有的数据
+            proxy_send_timeout 90;
+
+            # 连接成功后，后端服务器响应时间(代理接收超时): 即后端服务器处理请求的时间
+            proxy_read_timeout 90;
+
+            # 设置代理服务器（nginx）保存用户头信息的缓冲区大小，默认大小为指令 proxy_buffers 中指定的一个缓冲区的大小
+            proxy_buffer_size 4k;
+
+            # 设置用于读取应答(来自被代理服务器)的缓冲区数目和大小，默认情况为分页大小，根据操作系统的不同可能是 4k 或 8k
+            proxy_buffers 4 32k;
+
+            # 高负荷下缓冲大小(proxy_buffers*2)
+            proxy_busy_buffers_size 64k;
+
+            # 设置写入 proxy_temp_path 数据大小，预防一个工作进程在传递文件时阻塞太长，大于该值，从 upstream 服务器传
+            proxy_temp_file_write_size 64k;
+        }
+           
+        # 设定查看 Nginx 状态的地址
+        location /NginxStatus {
+            stub_status on;
+            access_log on;
+            auth_basic "NginxStatus";
+            auth_basic_user_file confpasswd;
+        }
+         
+        # 本地动静分离反向代理配置
+        # 所有 jsp 的页面均交由 tomcat 或 resin 处理
+        location ~ .(jsp|jspx|do)?$ {
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_pass http://127.0.0.1:8080;
+        }
+         
+        #所有静态文件由 nginx 直接读取不经过 tomcat 或 resin
+        location ~ .*.(htm|html|gif|jpg|jpeg|png|bmp|swf|ioc|rar|zip|txt|flv|mid|doc|ppt|pdf|xls|mp3|wma)$ 
+        {
+            expires 15d; 
+        }
+         
+        location ~ .*.(js|css)?$ {
+            expires 1h;
+        }
+    }
+}
+```
+
 # 一、初识 Nginx
 
 ## 1. Nginx 应用场景

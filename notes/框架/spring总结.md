@@ -243,22 +243,21 @@
 
     ```xml
     <!-- 在 class 中指定静态工厂方法的全类名,在 factory-method 中指定静态工厂方法的方法名 -->
-    <bean id="dateFormat" class="java.text.DateFormat" 
-          factory-method="getDateInstance">
+    <bean id="dateFormat" class="java.text.DateFormat" factory-method="getDateInstance">
         <!-- 可以通过 constructor-arg 子节点为静态工厂方法指定参数 -->
         <constructor-arg value="2"></constructor-arg>
     </bean>
     ```
-
-  - **实例工厂方法**： 将对象创建过程封装到另外一个对象实例的方法里，当客户端请求对象时，只需简单的调用该实例方法
-
-    > **通过实例工厂方法创建 Bean**： 
+    
+- **实例工厂方法**： 将对象创建过程封装到另外一个对象实例的方法里，当客户端请求对象时，只需简单的调用该实例方法
+  
+  > **通过实例工厂方法创建 Bean**： 
     >
     > - 在 bean 的 `factory-bean` 属性里指定拥有该工厂方法的 Bean
     > - 在 `factory-method` 属性里指定该工厂方法的名称
     > - 使用 `construtor-ar`g 元素为工厂方法传递方法参数
-
-    ```xml
+  
+  ```xml
     <!-- 实例工厂方法: 先需要创建工厂对象, 再调用工厂的非静态方法返回实例(了解) -->
     <!-- ①. 创建工厂对应的 bean -->
     <bean id="simpleDateFormat" class="java.text.SimpleDateFormat">
@@ -272,7 +271,7 @@
         <constructor-arg value="1990-12-12 12:12:12"></constructor-arg>
     </bean>
     ```
-
+  
 - **实现 FactoryBean 接口在 Spring IOC 容器中配置 Bean**： Spring 中 Bean 的类型： **普通 Bean 和工厂Bean(FactoryBean)** 
 
   > 工厂 Bean 返回的是该工厂 Bean 的 getObject 方法所返回的对象
@@ -504,8 +503,7 @@
 
     ```xml
     <!-- 注册 PropertyPlaceholderConfigurer -->
-    <bean class
-         ="org.springframework.beans.factory.config.PropertyPlaceholderConfigurer">
+    <bean class ="org.springframework.beans.factory.config.PropertyPlaceholderConfigurer">
     	<property name="location" value="classpath:jdbc.properties"></property>
     </bean>
     <!-- 等价于(<beans> 中添加 context Schema 定义) -->
