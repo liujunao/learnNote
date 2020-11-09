@@ -3029,13 +3029,148 @@ public class TracingScript {
 
 > BTrace 的用途：打印调用堆栈、参数、返回值；进行性能监视、定位连接泄漏、内存泄漏、解决多线程竞争问题等
 
-## 3、HotSpot 虚拟机插件及工具(HSDIS：JIT生成代码反汇编)
+## 3、BTrace 详解
 
-`HSDIS`：一个被官方推荐的 HotSpot 虚拟机即时编译代码的反汇编插件，包含在 HotSpot 虚拟机的源码中
+```java
+//BTrace 脚本示例
 
-> 在 OpenJDK 的网站也可以找到单独的源码下载，但并没有提供编译后的程序
+import static com.sun.btrace.BTraceUtils.println;
+import static com.sun.btrace.BTraceUtils.str;
 
-- 作用：让 HotSpot 的 `-XX：+PrintAssembly` 指令调用它来把即时编译器动态生成的本地代码还原为汇编代码输出，同时还会自动产生大量非常有价值的注释，这样就可以通过输出的汇编代码来从最本质的角度分析问题
+import com.sun.btrace.AnyType;
+import com.sun.btrace.BTraceUtils;
+import com.sun.btrace.annotations.BTrace;
+import com.sun.btrace.annotations.Kind;
+import com.sun.btrace.annotations.Location;
+import com.sun.btrace.annotations.OnMethod;
+import com.sun.btrace.annotations.Return;
+import com.sun.btrace.annotations.Self;
+
+//打印方法入参及返回值
+@BTrace(unsafe = true) // BTrace跟踪脚本，并启用unsafe模式(因为使用了BTraceUtils以外的方法，即String.valueOf(obj))
+public class MethodReturnTracing {
+    @OnMethod(clazz = "com.xxx.impl.BmHaikuiPoiAdminThriftIfaceImpl", // 类的全限定名
+              method = "getHaikuiPoiSimpleView", // 方法名
+              location = @Location(Kind.RETURN)) // 表示跟踪某个类的某个方法，位置为方法返回处
+    // @Return注解将上面被跟踪方法的返回值绑定到此探查方法的参数上
+    public static void onMethodReturn(@Self Object self, long poiId, @Return AnyType result) { 
+        println(BTraceUtils.Time.timestamp("yyyy-MM-dd HH:mm:ss")); // 打印时间
+        println("method self: " + str(self));
+        println("method params: " + poiId); // 打印入参
+        //因String.valueOf(obj)为外部方法，故需使用unsafe模式
+        println("method return: " + String.valueOf(result)); // 打印结果对象
+        println("=========================="); // 强烈建议加上，否则会因为输出缓冲看不到最新打印结果
+    }
+}
+```
+
+### (1) 命令行启动
+
+常用的三个命令：
+
+- `btrace`：用于将脚本 attach 应用 Java 进程
+
+- `btracec`：用于编译脚本
+- `btracer`：用于带着脚本启动 Java 进程并同时 attach
+
+```shell
+$ btrace <PID> <trace_script> 
+      It will attach to the java application with the given PID and compile and submit the trace script.
+$ btracec <trace_script> 
+      It will compile the provided trace script.
+$ btracer <compiled_script> <args to launch a java app> 
+      It will start the specified java application with the btrace agent running and the script previously compiled by btracec loaded.
+```
+
+- `<trace_script>`：Xxx.java，表示 BTrace 跟踪脚本
+
+- `<compiled_script>`：Xxx.class，表示编译后的脚本
+
+### (2) 常用注解
+
+#### 1. 方法注解
+
+- `@OnMethod`：用于在方法内指定目标类 class(一个或多个)、目标方法method(一个或者多个)、目标位置location(一个或多个)
+
+    > `@OnMethod(clazz=<cname_spec>[, method=<mname_spec>]? [, type=<signature>]? [, location=<location_spec>]?)` 
+    >
+    > - `cname_spec == | + | /regex/`：`/regex/` 用于标识类名的标准正则表达式
+    >     - `class_name`：全限定类名
+    >     - `+class_name`：一个带 `+` 前缀的全限定类名，表示前置类名的所有子类和实现者
+    > - `mname_spec == | /regex/`
+    >     - `method_name`：简单(没有签名或者返回类型)的方法名
+    >     - `arg_type`：在 java 中写入的参数类型
+    > - `signature == ((arg_type(,arg_type)*)?`
+    > - `return_type`：在 Java 中编写的方法的返回类型，当到达指定的匹配的方法时，调用有此注解的动作方法
+
+- `@OnTimer`：用于指定必须每N毫秒周期性地运行的跟踪操作
+
+    > `@OnTimer([[value=]?<value>]?)`
+    >
+    > - value 用于指定时间 时间被指定为此注解的long类型“value”属性
+
+- `@OnError`：用于指定每当通过跟踪某个其他探测器的操作抛出任何异常时运行的操作
+
+    > 当同一 BTrace 类中的任何其他 BTrace 操作方法抛出任何异常时，将调用此注解注解过的 BTrace 方法
+
+- `@OnExit`：用于指定当BTrace代码调用“exit（int）”内置函数来完成跟踪“session”时运行的操作
+
+- `@OnEvent`：用于将跟踪方法与BTrace客户端发送的“外部”event相关联
+
+    > `@OnEvent([[value=]?<event_name>]?)` 
+    >
+    > `event_name`：当 BTrace 客户端发送“event”时，将调用由此注解注解过的BTrace方法
+
+- `@OnLowMemory`：用于跟踪超过内存阈值的 even
+
+- `@OnProbe`：用于指定避免在 BTrace 脚本中使用内部类实现
+
+    > `@OnProbe(namespace=<namespace_name>, name=<probe_name>)` 
+    >
+    > - `namespace_name`：以java包形式的任意命名空间名称
+    > - `probe_name`：探针名称
+
+- `@Sampled`：启用对注解的处理程序的采样，与 `@OnMethod` 注释结合使用
+
+    > ` @Sampled([kind=<sampler_kind>[,mean=<number>])` 
+
+#### 2. 参数注解
+
+- `@ProbeClassName`：用于标记处理程序方法的参数，使用当前拦截方法的类名
+
+    > 仅适用于由 @OnMethod 注解的方法
+
+- `@ProbeMethodName`：用于标记处理程序方法的参数，使用当前拦截方法的类名
+
+    > `@ProbeMethodName([fqn=(true|false)]?)` 
+    >
+    > -  `fqn`：表示应使用完全限定名而不是简单名称，默认为 false
+    >
+    > 仅适用于由@OnMethod注解的方法
+
+- `@Self`：表示用于访问当前拦截的方法的封闭实例的参数
+
+    > 将此注解用于处理程序参数将有效地过滤掉所有其他匹配的静态方法（没有要使用的实例）
+
+- `@Return`：此注解的参数将包含当前拦截方法的返回值
+
+    > 仅适用于location = @Location(Kind.RETURN)，并且将仅拦截返回非空值的方法
+
+- `@Duration`：方法执行持续时间将在由 `@Duration` 注解的参数提供
+
+    > 仅适用于 `location = @Location(Kind.RETURN)` 和 `long` 参数
+
+- `@TargetInstance`：将提供对当前被拦截的方法的被调用实例(类似 `@Self`)的访问
+
+    > 目标方法调用或字段访问仅适用于 `location = @Location([Kind.CALL | Kind.FIELD_GET | Kind.FIELD_SET)` 非静态方法调用或字段访问
+
+- `@TargetMethodOrField`：将提供对正在调用的方法或正在访问的字段(类似 `@ProbeMethodName`)的名称的访问
+
+    > `@TargetMethodOrField([fqn=(true|false)]?)` 
+    >
+    > - fqn 表示应使用完全限定名而不是简单名称，默认为 false
+    >
+    > 适用于 `location =  Location([Kind.CALL | Kind.FIELD_GET | Kind.FIELD_SET)` 
 
 # 五、调优案例分析与实战
 
