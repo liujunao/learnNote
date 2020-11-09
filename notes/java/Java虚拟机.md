@@ -3172,6 +3172,12 @@ $ btracer <compiled_script> <args to launch a java app>
     >
     > 适用于 `location =  Location([Kind.CALL | Kind.FIELD_GET | Kind.FIELD_SET)` 
 
+#### 3. 案例代码
+
+案例代码：[btrace 代码](https://github.com/lfckop/btrace)
+
+
+
 # 五、调优案例分析与实战
 
 ## 1、案例分析
