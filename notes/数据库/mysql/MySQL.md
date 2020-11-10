@@ -2527,19 +2527,340 @@ end repeat 【标签】;
 
 # 一、mysql 架构
 
-## 1. 修改字符集
+<img src="../../../pics/mysql/global/mysql_2.png">
 
-- 查看字符集： 
+## 1、查询缓存
 
-  - `show variables like '%char%';`
+### (1) 简介
 
-  ![](../../../pics/mysql/mysqlG1_1.png)
+- **结构**：哈希表，key 由查询语句本身、查询的数据、客户端协议的版本等生成
+- **作用**：提升查询性能，对应用程序透明
+- **副作用**：写缓存和清缓存有性能损耗，尤其对写密集的应用
 
-  - `show variables like 'collation_%';`
+|            参数            | 含义                                                         |
+| :------------------------: | ------------------------------------------------------------ |
+|     `have_query_cache`     | 是否支持缓存，YES 支持，NO 不支持                            |
+|     `query_cache_type`     | OFF(0) 关闭缓存，ON(1) 开启缓存<br/>DEMAND(2) 代表当 sql 语句中有 SQL_CACHE 关键词时才缓存 |
+|     `query_cache_size`     | 查询缓存的大小(最小为 40KB，推荐 64MB，不要超过 256MB)       |
+|    `query_cache_limit`     | 单次查询能使用的缓冲区大小，缺省为 1MB                       |
+| `query_cache_min_res_unit` | 指定分配缓冲区空间的最小单位，缺省为 4KB<br/>**估计值**：`(query_cache_size - Qcache_free_memory) / Qcache_queries_in_cache` |
 
-    ![](../../../pics/mysql/mysqlG1_2.png)
+<img src="/Users/yinren/allText/learnNote/pics/mysql/global/mysql_3.png" align=left width="550">
 
-- 修改字符集
+### (2) 缓存命中率
+
+**缓存命中率**：`Qcache_hits/(Qcache_hits + Com_select)` 或 `(Qcache_hits – Qcache_inserts) / Qcache_hits`
+
+**缓存使用率**：`(query_cache_size – Qcache_free_memory) / query_cache_size`
+
+<img src="/Users/yinren/allText/learnNote/pics/mysql/global/mysql_4.png" align=left width="550">
+
+|           参数            | 含义                                                         |
+| :-----------------------: | ------------------------------------------------------------ |
+|   `Qcache_free_blocks`    | 处于空闲状态的 Query Cache 中内存 Block 数目                 |
+|   `Qcache_free_memory`    | 处于空闲状态的 Query Cache 内存总量                          |
+|       `Qcache_hits`       | Query Cache 命中次数                                         |
+|     `Qcache_inserts`      | 向 Query Cache 中插入新的 Query Cache 的次数(即未命中次数)   |
+|  `Qcache_lowmem_prunes`   | 当 Query Cache 内存容量不够，需要从中删除老的 Query Cache 以给新的 Cache 对象使用的次数 |
+|    `Qcache_not_cached`    | 未被缓存的 SQL 数，包括无法被缓存的 SQL 及由于 query_cache_type 设置的不会被缓存的 SQL |
+| `Qcache_queries_in_cache` | 在 Query Cache 中的 SQL 数量                                 |
+|   `Qcache_total_blocks`   | Query Cache 中总的 Block 数量                                |
+
+### (3) 查询缓存详解
+
+- **查询缓存的工作原理**： 缓存 SELECT 操作或预处理查询的结果集和SQL语句
+
+    > 新的 SELECT 语句或预处理查询语句，先去查询缓存，判断是否存在可用的记录集
+    >
+    > - 判断标准：与缓存的 SQL 语句，是否完全一样，区分大小写
+
+- **无法缓存**的情况：
+
+    1. 查询语句中加了 `SQL_NO_CACHE` 参数
+
+    2. 查询语句中含有获得值的函数，包涵自定义函数，如：`CURDATE()、GET_LOCK()、RAND()、CONVERT_TZ` 等
+
+    3. 对系统数据库的查询：`mysql、information_schema` 查询语句中使用 SESSION 级别变量或存储过程中的局部变量
+
+    4. 查询语句中使用了 `LOCK IN SHARE MODE、FOR UPDATE` 的语句
+
+        > 查询语句中类似 `SELECT …INTO` 导出数据的语句 
+
+    5. 对临时表的查询操作、存在警告信息的查询语句、不涉及任何表或视图的查询语句、某用户只有列级别权限的查询语句
+
+    6. 事务隔离级别为 `Serializable`，所有查询语句都不能缓存
+
+### (4) InnoDB 缓冲池
+
+查询：`show global status like 'innodb%read%'\G`
+
+|                  参数                   | 含义                                                         |
+| :-------------------------------------: | ------------------------------------------------------------ |
+|       `Innodb_buffer_pool_reads`        | 从物理磁盘读取页的次数                                       |
+|     `Innodb_buffer_pool_read_ahead`     | 预读的次数                                                   |
+| `Innodb_buffer_pool_read_ahead_evicted` | 预读的页，但没有读取就从缓冲池中被替换的页的数量，一般用来判断预读的效率 |
+|   `Innodb_buffer_pool_read_requests`    | 从缓冲池中读取页的次数                                       |
+|           `Innodb_data_read`            | 总共读入的字节数                                             |
+|           `Innodb_data_reads`           | 发起读取请求的次数，每次读取可能需要读取多个页               |
+
+**InnoDB 缓冲池命中率**：
+
+<img src="/Users/yinren/allText/learnNote/pics/mysql/global/mysql_5.png">
+
+## 2、解析器和预处理器
+
+- **解析器**：
+    - 词法分析：语句分词，解析出关键字、函数名等 token
+    - 语法分析：基本语法规则检验，比如：关键词顺序、引号是否闭合等
+- **预处理器**：表和列是否存在、字段别名是否有歧义、权限校验等
+
+## 3、查询优化
+
+- **重排关联表顺序**：减少扫描行数，可通过 STRAIGHT JOIN 关键字取消重排
+- **等价变换**：简化表达式、去除冗余判断等
+- **子查询优化**：子查询需要创建临时表，一般会转为表连接
+- **覆盖索引扫描**：直接访问索引就可以获取到所需要的数据，不需要通过索引取数据行
+- **提前终止**：已查到满足条件的数据(使用 limit)或检测到 where 条件不可能成立时
+
+## 4、查询检查
+
+- `EXPLAIN`：查询 SQL 执行计划，也是优化查询性能的利器
+
+    > 用法：`EXPLAIN + SQL (\G)`
+
+- `SHOW WARNINGS`：显示最后一个执行的语句所产生的错误、警告、提示等信息
+
+    > 在 EXPLAIN 后，执行该语句可以看到重建后的查询语句
+
+## 5、关联查询
+
+> MySQL 对任何关联都执行嵌套循环关联操作
+
+<img src="/Users/yinren/allText/learnNote/pics/mysql/global/mysql_6.png" align=left width="800">
+
+## 6、存储引擎
+
+**存储引擎**：负责数据的存储和查询，并附属了一整套管理工具
+
+|            |                       InnoDB                        |       MyISAM       |
+| :--------: | :-------------------------------------------------: | :----------------: |
+|  存储限制  |                        64 TB                        |       256 TB       |
+|    事务    |                        支持                         |       不支持       |
+|   锁粒度   |                       行级锁                        |       表级锁       |
+|    外键    |                        支持                         |       不支持       |
+| 支持的索引 | B-Tree<br/>全文索引、哈希索引(自适应，不支持自定义) | B-Tree<br>全文索引 |
+|   表行数   |               通过全表扫描，动态统计                |    已存储表行数    |
+
+## 架构回顾
+
+<img src="/Users/yinren/allText/learnNote/pics/mysql/global/mysql_7.png">
+
+# 二、库表设计详解
+
+<img src="/Users/yinren/allText/learnNote/pics/mysql/global/mysql_8.png" align=left width="800">
+
+## 1、规范
+
+- **库**：使用驼峰命名，库名要能体现业务规范
+- **表**：使用驼峰命名，表名要能反映出功能，表必须有注释
+- **列**：使用小写命名，列表要能表达具体含义，列的数据类型尽量选整型且范围够用即可，列必须有注释
+- **索引**：普通索引：`IX_<column1_column2,...>`，唯一索引：`UK_<column1_column2,...>` 
+
+## 2、索引
+
+索引：是存储引擎用于快速找到记录的一种数据结构
+
+- 索引类型：BTree、Hash、全文索引等
+- 数据组织方式：聚簇、非聚簇
+
+### (1) 索引类型
+
+<img src="/Users/yinren/allText/learnNote/pics/mysql/global/mysql_9.png" align=left>
+
+|        特性        | B+ 树                                                        | Hash 索引                                      |
+| :----------------: | ------------------------------------------------------------ | ---------------------------------------------- |
+|      等值查询      | 支持                                                         | 支持                                           |
+|      范围查询      | 支持                                                         | 不支持                                         |
+| 使用部分索引键查询 | 支持                                                         | 不支持                                         |
+|      结果排序      | 支持                                                         | 不支持                                         |
+| 查询平均时间复杂度 | $O(log_mn)$ <br/>性能较稳定，m 为单节点关键字个数，n 为总关键字个数<br/>理论上，n 一定时，m 越大，树的高度越低，查询复杂度越小 | $O(1)$ <br/>等值查询高效，键重复率高时性能退化 |
+
+### (2) 数据组织形式
+
+- **聚簇索引**：表记录的物理存储顺序与索引顺序一致，且索引的叶子节点就是数据节点
+
+- **非聚簇索引**：表记录的物理存储顺序与索引顺序无关，叶节点包含主键值或指向数据块的指针
+
+    > 因存储引擎而异，InnoDB 存放主键和索引键值，MyISAM 存放数据库指针
+
+<img src="/Users/yinren/allText/learnNote/pics/mysql/global/mysql_10.png" align=left>
+
+### (3) 索引设计
+
+- **建议创建索引的列**：`WHERE、JOIN、GROUP BY、ORDER BY` 等语句使用的列
+
+- **利用最左前缀**：`(A,B,C): A, A&B, A&C, A&B&C, B, C, B&C`
+
+- **选择索引列的顺序**：
+
+    - **经常被使用到的列优先**：利用最左前缀，尽量复用已有索引
+
+    - **区分度大的列优先**：尽快排除更多的记录
+
+        > 区分度：`distinct(col) / count(col)`，至少大于 0.1
+
+    - **宽度小的列优先**：宽度越小，单节点的 key 值越多，索引树的高度越低，查询复杂度越低
+
+        > 列宽度 = 列的数据类型
+
+### (4) 索引优化
+
+<img src="/Users/yinren/allText/learnNote/pics/mysql/global/mysql_11.png" align=left width="800">
+
+## 3、字符集和校对集
+
+- 字符集：由一些列字符符号及其编码组成的集合
+
+- 校对：一组用于某个字符集的比对规则
+
+    > 以字符集的名字开头，以 `_ci、_cs、_bin` 结尾：
+    >
+    > - `_ci`：表示大小写不敏感
+    > - `_cs`：表示大小写敏感
+    > - `_bin`：表示按二进制编码值比较
+
+---
+
+- `show character set;` 
+
+    <img src="/Users/yinren/allText/learnNote/pics/mysql/global/mysql_12.png" align=left width="700">
+
+- `show collation;`
+
+    <img src="/Users/yinren/allText/learnNote/pics/mysql/global/mysql_13.png" align=left width="700">
+
+---
+
+**MySQL 字符集设置的场景**：
+
+- **创建对象(库、表、列)时**，可显示指定所用字符集，也可通过继承关系获取
+
+    > 未指定时，通过如下继承关系得到默认的字符集：
+    >
+    > <img src="/Users/yinren/allText/learnNote/pics/mysql/global/mysql_14.png" align=left width="700">
+
+- 服务器和客户端通信时，可通过配置，实现不同编码间的转换
+
+    > 控制通信时的字符集变量：
+    >
+    > | 字符集变量                 | 功能                                                         |
+    > | -------------------------- | ------------------------------------------------------------ |
+    > | `character_set_client`     | MySQL Server 假定客户端对发送 SQL 语句时设置的字符集         |
+    > | `character_set_connection` | MySQL Server 接收客户端发布的查询请求后，将其统一转换成该字符集，之后交由服务器内部处理 |
+    > | `character_set_results`    | MySQL Server 将结果集和错误信息返回给客户端时设置的字符集    |
+    >
+    > <img src="/Users/yinren/allText/learnNote/pics/mysql/global/mysql_15.png" align=left>
+
+---
+
+<img src="/Users/yinren/allText/learnNote/pics/mysql/global/mysql_16.png" align=left>
+
+## 4、分库分表
+
+### (1) 简介
+
+- **什么是分库分表(what)**：
+
+    - 把原本存储于一个库的数据分块存储到多个库上
+    - 把原本存储于一个表的数据分块存储到多张表上
+
+- **为什么要分库分表(why)**：
+
+    - 单库资源有限，会影响应用性能，阻碍业务发展
+
+        > - 业务场景拓展，数据写入和查询频次增加，IO 资源不够，导致性能下降
+        > - 业务数据增加，磁盘和内存资源遇到瓶颈，比如：无法新增表、无法创建索引等
+
+    - 单表数据过大，同样影响增删改查性能
+
+        > 索引高度增大，IO 增加，索引维护复杂
+
+- **何时分库分表(when)**：
+
+    | 指标       | 阈值(版本 <= 5.7.21)       | 阈值(版本 >= 5.7.22)       |
+    | ---------- | -------------------------- | -------------------------- |
+    | 单库容量   | 300 GB                     | 300 GB                     |
+    | 单表数据量 | 60 GB                      | 60 GB                      |
+    | 单表行数   | 最佳 1000 W，不能超过 2 亿 | 最佳 1000 W，不能超过 2 亿 |
+    | 单库单表写 | 4 K                        | 7 K                        |
+    | 单库单表读 | 40 W                       | 60W                        |
+
+- **如何分库分表(how)**：
+
+    - **垂直拆分**：将表按照功能模块、关系密切程度进行划分，部署到不同的库上，如：将评价表和评价带图表划分到一个库
+    - **水平拆分**：当一个表的数据量过大时，可将该表的数据按照某种规则分散到多张表上，一般将这些表分散在多个库上
+
+### (2) 分库分表策略
+
+- **水平分表策略**：
+
+    - **哈希**：哈希取模路由
+
+        > 举例：一般选择业务查询的主体标识作为 key，比如：userId
+        >
+        > 优缺点：数据分布均匀、请求散列均匀、不易出现热点访问；但扩容困难
+
+    - **range**：根据业务查询的主体 ID 进行划分
+
+        > 举例：userId 范围 1-10000 在表一，10001-20000 在表二
+        >
+        > 优缺点：分表数据量可控，最终会平衡；扩容方便，但存在热点访问问题
+
+    - **时间**：根据数据的生产时间进行划分
+
+        > 举例：时间在一月份的在表一，二月份的在表二
+        >
+        > 优缺点：扩容方便，但分表数据量不可控，也容易造成热点访问问题
+
+- **单库分表数**：
+
+    - 分库数：A * B / D / (1024*3)​(取最接近 $2^n$ 的数，建议向上取)
+    - 分表数：A / C(取最接近 $2^n$ 的数，建议向上取)
+    - 单库分表数：分表数 / 分库数
+
+    > 其中：
+    >
+    > - A：预估 3-5 年的总记录数
+    > - B：单条记录大小(Byte)
+    > - C：单表建议记录数(小于 1KW，不要超过 2 亿)
+    > - D：单库建议容量(小于 300GB)
+    >
+    > <img src="/Users/yinren/allText/learnNote/pics/mysql/global/mysql_17.png" align=left width="700">
+
+- **全局主键生成策略**：部分场景需要做数据的合并，要保证一条记录全局唯一，比如：表进入 hive 时
+
+    | 生成策略      | 优点                          | 缺点                            |
+    | ------------- | ----------------------------- | ------------------------------- |
+    | UUID          | 本地实现，低延迟              | ID 过长(128位)，浪费存储空间    |
+    | 数据库自增 ID | 实现简单，成本低              | 有单点，容易产生性能瓶颈        |
+    | Snowflake     | 分布式生成，无单点            | 可能会出现重复 ID，数据间隙较大 |
+    | Leaf          | ID 为 64 位正整数，SLA 有保障 | 暂无                            |
+
+# 三、查看字符集与配置文件
+
+## 1、修改字符集
+
+- **查看字符集**： 
+
+  - `show variables like '%char%';` 
+
+      <img src="../../../pics/mysql/mysqlG1_1.png" align=left>
+
+  - `show variables like 'collation_%';` 
+
+    <img src="../../../pics/mysql/mysqlG1_2.png" align=left>
+
+- **修改字符集**
 
   - `set variable_name=utf8`，如： `set character_set_database=utf8;`
   - `set variables_name=utf8_general_ci`，如： `set collation_database=utf8_general_ci;`
@@ -2548,7 +2869,7 @@ end repeat 【标签】;
 
   > 这样，插入汉字就不会报错或乱码
 
-## 2. 配置文件
+## 2、配置文件
 
 - **二进制日志 log-bin**： 用于主从复制
 - **错误日志 log-error**： 记录严重的警告和错误信息，每次启动和关闭的详细信息，默认关闭
@@ -2558,25 +2879,25 @@ end repeat 【标签】;
   - `myd` 文件： 存放表数据
   - `myi` 文件： 存放表索引
 
-## 3. 逻辑架构
+## 3、逻辑架构
 
-![](../../../pics/mysql/mysqlG1_1.png)
+<img src="../../../pics/mysql/mysqlG1_1.png" align=left>
 
 - 插件式的存储引擎架构将查询处理与其他系统任务以及数据存储提取分离
 
 - 查看存储引擎：
 
-  - `show engines;`
+  - `show engines;` 
 
-    ![](../../../pics/mysql/mysqlG1_3.png)
+    <img src="../../../pics/mysql/mysqlG1_3.png" align=left>
 
-  - `show variables like '%storage_engine%';`
+  - `show variables like '%storage_engine%';` 
 
-    ![](../../../pics/mysql/mysqlG1_4.png)
+    <img src="../../../pics/mysql/mysqlG1_4.png" align=left>
 
-# 二、索引优化
+# 四、索引优化
 
-## 1. SQL 性能下降
+## 1、SQL 性能下降
 
 > - 等待时间长
 > - 执行时间长
@@ -2586,9 +2907,9 @@ end repeat 【标签】;
 - 关联过多 join ( 设计缺陷或不得已的需求)
 - 服务器调优及各个参数设置(缓冲、线程数等)
 
-## 2. Join 查询
+## 2、Join 查询
 
-### 1. SQL 执行顺序
+### (1) SQL 执行顺序
 
 ```mysql
 # SQL 语句
@@ -2617,7 +2938,7 @@ LIMIT <limit_number>
 
 ![](../../../pics/mysql/mysqlG2_1.png)
 
-### 2. 7 种Join查询
+### (2) 7 种 Join 查询
 
 ![](../../../pics/mysql/mysqlG2_2.png) ![](../../../pics/mysql/mysqlG2_3.png) ![](../../../pics/mysql/mysqlG2_4.png)
 
@@ -2625,30 +2946,30 @@ LIMIT <limit_number>
 
 ![](../../../pics/mysql/mysqlG2_7.png) ![](../../../pics/mysql/mysqlG2_8.png)
 
-## 3. 索引简介
+## 3、索引简介
 
-### 1. 简介
+### (1) 简介
 
 - 是帮助 MySQL 高效获取数据的数据结构
 - 以索引文件的方式(`.frm`)存储在硬盘上
 
-### 2. 优势
+### (2) 优势
 
 - 提高数据检索的效率，降低数据库的 IO 成本
 - 通过索引进行排序，降低排序成本，减少 CPU 消耗
 
-### 3. 劣势
+### (3) 劣势
 
 - 索引会增加内存消耗，因为索引表保存了主键和索引字段
 - 索引会降低更新表的速度，因为更新表时，还得向索引表中添加索引列字段
 
-### 4. 分类
+### (4) 分类
 
 - **单值索引**：一个索引只包含单个列，一个表可有多个单列索引
 - **唯一索引**：索引列的值必须唯一，但允许有空值
 - **复合索引**：一个索引包含多个列
 
-### 5. 基本语法
+### (5) 基本语法
 
 - **创建**： 
 
@@ -2676,14 +2997,14 @@ LIMIT <limit_number>
 
 - **查看**： `SHOW INDEX FROM table_name\G`
 
-### 6. 索引结构
+### (6) 索引结构
 
 - `BTree` 索引
 - `Hash` 索引
 - `full-text` 全文索引
 - `R-Tree` 索引
 
-### 7. 是否需要索引
+### (7) 是否需要索引
 
 **创建索引情况**：
 
@@ -2714,9 +3035,9 @@ LIMIT <limit_number>
 - 查询中排序的字段：排序字段若通过索引去访问将大大提高排序速度
 - 查询中统计或分组字段
 
-## 4. 性能分析
+## 4、性能分析
 
-### 1. MySQL Query Optimizer
+### (1) MySQL Query Optimizer
 
 - MySQL 中专门负责优化 SELECT 语句的优化器模块
 
@@ -2730,15 +3051,15 @@ LIMIT <limit_number>
   > - 分析 Query 中的 Hint 信息来确定执行计划
   > - 若无 Hint 信息，则会读取所涉及对象的统计信息，根据 Query 进行写相应的计算分析，然后得出执行计划
 
-### 2. MySQL 常见瓶颈
+### (2) MySQL 常见瓶颈
 
 - **CPU**： 在数据装入内存或从磁盘上读取数据时，CPU 可能会饱和
 - **IO**： 在装入数据远大于内存容量时，会出现磁盘 IO 瓶颈
 - **服务器硬件的性能瓶颈**： `top,free,vmstat` 可查看系统的性能状态
 
-### 3. Explain
+### (3) Explain
 
-####1. 简介
+#### 1. 简介
 
 - 使用 `EXPLAIN` 关键字可模拟优化器执行 SQL 查询语句，从而知道 MySQL 如何处理 SQL 语句
 - 分析查询语句或表结构的性能瓶颈
@@ -2850,11 +3171,11 @@ LIMIT <limit_number>
   >
   > - `distinct`： 优化distinct操作，在找到第一个匹配的元祖后即停止找同样值得动作
 
-## 5. 索引优化
+## 5、索引优化
 
 推荐阅读： **[MYSQL中IN与EXISTS的区别](https://blog.csdn.net/weixin_39539399/article/details/80851817)**
 
-### 1. 索引分析
+### (1) 索引分析
 
 #### 1. 单表
 
@@ -3015,7 +3336,7 @@ LIMIT <limit_number>
 - 保证 join 语句中被驱动表上 join 条件字段已经被索引
 - 当无法保证被驱动表的 join 条件字段被索引且内存资源充足情况下，不要太吝啬 JoinBuffer 的设置
 
-### 2. 索引失效
+### (2) 索引失效
 
 #### 1. 建表
 
@@ -3310,18 +3631,18 @@ create index idx_test03_c1234 on test03(c1,c2,c3,c4);
 - 定值，范围还是排序，一般 order by 是给个范围
 - group by 基本上都需要进行排序，会有临时表产生
 
-### 3. 一般建议
+### (3) 一般建议
 
 - 对于单键索引，尽量选择针对当前 query 过滤性更好的索引
 - 在选择组合索引时，当前 query 中过滤性最好的字段在索引字段顺序中，位置越靠前越好
 - 在选择组合索引时，尽量选择能包含当前 query 中的 where 子句中更多字段的索引
 - 尽可能通过分析统计信息和调整 query 的写法来达到选择合适索引的目的
 
-# 三、查询截取分析
+# 五、查询截取分析
 
-## 1. 查询优化
+## 1、查询优化
 
-### 1. 小表驱动大表
+### (1) 小表驱动大表
 
 - 优化原则(RBO)： 小表驱动大表，即**小的数据集驱动大的数据集**
 
@@ -3348,7 +3669,7 @@ for select * from B where B.id=A.id
   - EXISTS 子查询的实际执行过程可能经过了优化而不是我们理解上的逐条对比，如果担忧效率问题，可进行实际检验以确定是否有效率问题
   - EXISTS 子查询往往也可以用条件表达式、其他子查询或 JOIN 来替代，何种最优需具体分析
 
-### 2. order by 关键字优化
+### (2) order by 关键字优化
 
 - **`ORDER BY` 子句尽量使用 Index 方式排序，避免使用 FileSort(内排序) 方式排序** 
 
@@ -3461,7 +3782,7 @@ for select * from B where B.id=A.id
   - `WHERE a = const ORDER BY a,d ==> d 不是索引的一部分`
   - `WHERE a in(...) ORDER BY b,c ==> 对于排序来说，多个相等条件也是范围查询`
 
-### 3. group by 关键字优化
+### (3) group by 关键字优化
 
 与 order by 的规则基本一致，但注意以下几点：
 
@@ -3469,14 +3790,14 @@ for select * from B where B.id=A.id
 - 当无法使用索引列时，增大 `sort_buffer_size 与 max_length_for_sort_data` 参数的设置
 - where 高于 having，能写在 where 限定条件下就不要用 having
 
-## 2. 慢查询日志
+## 2、慢查询日志
 
-### 1. 简介
+### (1) 简介
 
 - 是 MySQL 的一种日志记录，用来记录在 MySQL 中响应时间超过阙值的语句
 - 具体指运行时间超过 `long_query_time` 值的 SQL，则会被记录到慢查询日志中，默认为 10(s)
 
-### 2. 如何使用
+### (2) 如何使用
 
 - **说明**：
 
@@ -3486,9 +3807,9 @@ for select * from B where B.id=A.id
 
 - **查看是否开启及如何开启**： 
 
-  > - 查看是否开启： `SHOW VARIABLES LIKE '%slow_query_log%';`
+  > - 查看是否开启： `SHOW VARIABLES LIKE '%slow_query_log%';` 
   >
-  >   ![](../../../pics/mysql/mysqlG3_7.png)
+  >   <img src="../../../pics/mysql/mysqlG3_7.png" align=left>
   >
   > - 开启： `SET GLOBAL slow_query_log=1;` 
   >
@@ -3510,7 +3831,7 @@ for select * from B where B.id=A.id
   >
   > - 命令 `SHOW VARIABLES LIKE 'long_query_time%';` 可查看该值，默认为 10秒
   >
-  >   ![](../../../pics/mysql/mysqlG3_8.png)
+  >   <img src="../../../pics/mysql/mysqlG3_8.png" align=left>
   >
   > - 可使用命令修改，也可修改 `my.cnf` 配置文件：`SET GLOBAL long_query_time=XX;`
   >
@@ -3518,23 +3839,25 @@ for select * from B where B.id=A.id
 
 - **查看当前系统有多少条慢查询记录**：`SHOW GLOBAL STATUS LIKE '%Slow_queries%';`
 
-### 3. 日志分析工具 mysqldumpslow
+### (3) 日志分析工具 mysqldumpslow
 
 > 日志分析工具 mysqldumpslow 用于在生产环境中分析日志，查找和分析 SQL
 
 命令 `mysqldumpslow --help` 查看帮助：
 
-![](../../../pics/mysql/mysqlG3_9.png)
+<img src="../../../pics/mysql/mysqlG3_9.png" align=left>
 
 **相关参数信息**：
 
-![](../../../pics/mysql/mysqlG3_10.png)
+<img src="../../../pics/mysql/mysqlG3_10.png" align=left>
 
-使用举例：
+---
 
-![](../../../pics/mysql/mysqlG3_11.png)
+**使用举例**：
 
-## 3. 批量插入数据脚本
+<img src="../../../pics/mysql/mysqlG3_11.png" align=left>
+
+## 3、批量插入数据脚本
 
 **建表**： 
 
@@ -3652,7 +3975,7 @@ CREATE TABLE emp
   CALL insert_emp(100001,500000); # 需要等待一段时间
   ```
 
-## 4. Show Profile
+## 4、Show Profile
 
 - **简介**： 是 MySQL 提供的可以用来分析当前会话中语句执行的资源消耗情况，可用于 SQL 的调优测量
 
@@ -3661,30 +3984,32 @@ CREATE TABLE emp
 - **分析步骤**：
 
   - 查看当前 MySQL 版本是否支持：`show variables like 'profiling';`
+  
   - 开启功能：`set profiling=on; `
+
   - 运行 SQL(任意SQL语句都行)： `select * from emp group by id limit 150000; select * from emp group by id order by 5;`
 
-  - 查看结果： `show profiles;`
+  - 查看结果： `show profiles;` 
 
-    ![](../../../pics/mysql/mysqlG3_12.png)
+    <img src="../../../pics/mysql/mysqlG3_12.png" align=left>
 
   - 诊断 SQL： `show profile cpu,block io for query [Query_ID]`
 
     如： `show profile cpu,block io for query 3` ==> 此处的 3 对应上图的 Query_ID 的 3
 
-    ![](../../../pics/mysql/mysqlG3_13.png)
+    <img src="../../../pics/mysql/mysqlG3_13.png" align=left>
 
     **所有配置参数及解释**：
 
-    ![](../../../pics/mysql/mysqlG3_14.png)
-
+    <img src="../../../pics/mysql/mysqlG3_14.png" align=left>
+  
   - **日常开发需要注意的结论**：
     - `converting HEAP to MyISAM` 查询结果太大，内存不够用了往磁盘上搬
     - `creating tmp table` 创建临时表：拷贝数据到临时表，用完再删除
     - `copying to tmp table on disk` 把内存中临时表复制到磁盘，危险
     - `locked`
 
-## 5. 全局查询日志
+## 5、全局查询日志
 
 > - 记录执行的 SQL 语句
 > - **永远不要在生产环境中开启此功能**
@@ -3711,9 +4036,9 @@ CREATE TABLE emp
   select * from mysql.general_log;
   ```
 
-# 四、MySQL 锁机制
+# 六、MySQL 锁机制
 
-## 1. 概述
+## 1、概述
 
 - **定义**： 锁是计算机协调多个进程或线程并发访问某一资源的机制
 - **锁的分类**：
@@ -3724,7 +4049,7 @@ CREATE TABLE emp
     - **表锁**
     - **行锁**
 
-## 2. 三锁
+## 2、三锁
 
 ### 1. 表锁(偏读)
 
@@ -3773,11 +4098,11 @@ insert into mylock(name) values('e');
 
 > 记得 `unlock tables` 删掉 mylock 的读锁
 
-![](../../../pics/mysql/mysqlG4_2.png)
+<img src="../../../pics/mysql/mysqlG4_2.png" align=left>
 
 新开一个终端，执行 `select * from mylock;` 将一直处于**阻塞状态**
 
-![](../../../pics/mysql/mysqlG4_3.png)
+<img src="../../../pics/mysql/mysqlG4_3.png" align=left>
 
 ---
 
@@ -3801,7 +4126,7 @@ insert into mylock(name) values('e');
 
 - 可通过检查 `table_locks_waited 和 table_locks_immediate` 状态变量来分析系统上的表锁定： `show status like 'table%';` 
 
-  ![](../../../pics/mysql/mysqlG4_4.png)
+  <img src="../../../pics/mysql/mysqlG4_4.png" align=left>
 
   - `table_locks_immediate`：产生表级锁定次数，表示可立即获取锁的查询字数，每立即获取锁时值加1
   - `table_locks_waited `： 出现表级锁定争用而发生等待的次数(不能立即获取锁的次数，每等待一次，锁值加1)，此值高说明存在较严重的表级锁争用情况
@@ -3930,9 +4255,9 @@ create index test_innodb_b on test_innodb_lock(b);
 
 #### 4. 行锁分析
 
-- 通过检查 `InnoDB_row_lock` 状态变量来分析系统上的行锁的争夺情况： `show status like 'innodb_row_lock%';`
+- 通过检查 `InnoDB_row_lock` 状态变量来分析系统上的行锁的争夺情况： `show status like 'innodb_row_lock%';` 
 
-  ![](../../../pics/mysql/mysqlG4_18.png)
+  <img src="../../../pics/mysql/mysqlG4_18.png" align=left>
 
   - `Innodb_row_lock_current_waits`： 当前系统正在等待锁定的数量
   - `Innodb_row_lock_time`： 从系统启动到现在锁定总时间长度
@@ -3955,9 +4280,9 @@ create index test_innodb_b on test_innodb_lock(b);
 - 开锁和加锁时间介于表锁与行锁之间，会出现死锁
 - 锁定粒度界于行锁与表锁之间，并发度一般
 
-# 五、主从复制
+# 七、主从复制
 
-## 1. 复制的基本原理
+## 1、复制的基本原理
 
 - slave 会从 master 读取 binlog 来进行数据同步
 
@@ -3971,17 +4296,59 @@ create index test_innodb_b on test_innodb_lock(b);
 
   ![](../../../pics/mysql/mysqlG5_1.png)
 
-## 2. 复制的基本原则
+## 2、复制的基本原则
 
 - 每个 slave 只有一个 master
 - 每个 slave 只能有一个唯一的服务器 ID
 - 每个 master 可以有多个 slave
 
-## 3. 复制的最大问题
+## 3、复制的最大问题
 
 - **延时**
 
-## 4. 一主一从配置
+## 4、一主一从配置
 
 - MySQL 版本一致且后台以服务运行
 - 主从都配置在 [mysqld] 节点下，都是小写
+
+# 八、其他问题
+
+## 1、Mysql 查询慢的原因
+
+- **没有索引或没有用到索引** 
+
+- **查询出的数据量过大**
+
+    > 优化： 
+    >
+    > - 限制结果集的数据量
+    > - 返回了不必要的行和列
+    > - 查询语句不好，没有优化
+
+- **出现死锁** 
+
+    > 查询锁表： `show OPEN TABLES where In_use > 0;` 
+
+- **I/O 吞吐量小，形成了瓶颈效应**
+
+    > 监控命令：`$iostat -d -k 1 10`
+    >
+    > - `-d` 表示显示设备（磁盘）使用状态
+    > - `-k` 某些使用 block 为单位的列强制使用 Kilobytes 为单位
+    > - `1 10` 表示数据显示每隔1秒刷新一次，共显示10次
+    >
+    > 优化： 
+    >
+    > - 把数据、日志、索引放到不同的I/O设备上，增加读取速度
+    > - 纵向、横向分割表，减少表的尺寸
+    > - 升级硬件 
+
+- **没有创建计算列导致查询不优化**
+
+- **内存不足** 
+
+    > 监控内存使用：`vmstat [-n] [延时[次数]]` 
+    >
+    > 优化： 扩大服务器的内存
+
+- 网络速度慢
