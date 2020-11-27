@@ -2,106 +2,70 @@
 
 # 一、Java8
 
-## 1. Lambda 表达式
+## 1、Lambda 表达式
 
-### 1. Lambda 表达式
+### (1) 语法格式
 
-- Lambda 是一个**匿名函数**，可以将 Lambda 分为两部分：
+- **语法格式一**：无参数，无返回值：`() -> System.out.println("Hello Lambda!");`
 
-  - 左侧：指定了 Lambda 表达式需要的所有参数
-  - 右侧：指定了 Lambda 体，即 Lambda 表达式要执行的功能
+  ```java
+  @Test
+  public void test(){
+      int num = 0;
+  
+      Runnable r = new Runnable() {
+          @Override
+          public void run() {
+              System.out.println("Hello World!" + num);
+          }
+      };
+      r.run();
+  
+      System.out.println("-------------------------------");
+  
+   	Runnable r1 = () -> System.out.println("Hello Lambda!");
+      r1.run();
+  }
+  ```
 
-- Lambda 表达式需要**函数式接口**支持
+- **语法格式二**：有一个参数，并且无返回值：`(x) -> System.out.println(x)`
 
-  - **函数式接口**：只有**一个抽象方法的接口**，可以使用注解 `@FunctionalInterface` 检查是否是函数式接口
+  ```java
+  @Test
+  public void test(){
+      Consumer<String> con = (x) -> System.out.println(x);
+      con.accept("hello");
+  }
+  ```
 
-    ```java
-    //声明函数式接口
-    @FunctionalInterface
-    public interface MyFun {
-    	public Integer getValue(Integer num);
-    }
-    
-    //对一个数进行运算
-    @Test
-    public void test(){
-        Integer num = operation(100, (x) -> x * x);
-        System.out.println(num);
-    
-        System.out.println(operation(200, (y) -> y + 200));
-    }
-    
-    public Integer operation(Integer num, MyFun mf){
-        return mf.getValue(num);
-    }
-    ```
+- **语法格式三**：若只有一个参数，小括号可以省略不写：`x -> System.out.println(x)`
 
-- **语法格式**：
+  ```java
+  @Test
+  public void test2(){
+      Consumer<String> con = x -> System.out.println(x);
+      con.accept("hello");
+  }
+  ```
 
-  - **语法格式一**：无参数，无返回值：`() -> System.out.println("Hello Lambda!");`
+- **语法格式四**：有两个以上的参数，有返回值，并且 Lambda 体中有多条语句
 
-    ```java
-    @Test
-    public void test(){
-        int num = 0;
-    
-        Runnable r = new Runnable() {
-            @Override
-            public void run() {
-                System.out.println("Hello World!" + num);
-            }
-        };
-        r.run();
-    
-        System.out.println("-------------------------------");
-    
-     	Runnable r1 = () -> System.out.println("Hello Lambda!");
-        r1.run();
-    }
-    ```
+  ```java
+  Comparator<Integer> com = (x, y) -> {
+  	System.out.println("函数式接口");
+  	return Integer.compare(x, y);
+   };
+  ```
 
-  - **语法格式二**：有一个参数，并且无返回值：`(x) -> System.out.println(x)`
+- **语法格式五**：若 Lambda 体中只有一条语句， return 和 大括号都可以省略不写
 
-    ```java
-    @Test
-    public void test(){
-        Consumer<String> con = (x) -> System.out.println(x);
-        con.accept("hello");
-    }
-    ```
+  ```java
+  Comparator<Integer> com = (x, y) -> Integer.compare(x, y);
+  ```
 
-  - **语法格式三**：若只有一个参数，小括号可以省略不写：`x -> System.out.println(x)`
+- **语法格式六**：Lambda 表达式的参数列表的数据类型可以省略不写，因为JVM编译器通过上下文推断出，数据类型，即“类型推断”：`(Integer x, Integer y) -> Integer.compare(x, y);` 
 
-    ```java
-    @Test
-    public void test2(){
-        Consumer<String> con = x -> System.out.println(x);
-        con.accept("hello");
-    }
-    ```
-
-  - **语法格式四**：有两个以上的参数，有返回值，并且 Lambda 体中有多条语句
-
-    ```java
-    Comparator<Integer> com = (x, y) -> {
-    	System.out.println("函数式接口");
-    	return Integer.compare(x, y);
-     };
-    ```
-
-  - **语法格式五**：若 Lambda 体中只有一条语句， return 和 大括号都可以省略不写
-
-    ```java
-    Comparator<Integer> com = (x, y) -> Integer.compare(x, y);
-    ```
-
-  - **语法格式六**：Lambda 表达式的参数列表的数据类型可以省略不写，因为JVM编译器通过上下文推断出，数据类型，即“类型推断”：`(Integer x, Integer y) -> Integer.compare(x, y);`
-
-### 2. 类型推断
-
-- **类型推断**： Lambda 表达式中无需指定类型，由编译器推断出来
-
-### 3. 新特性体验
+### (2) 案例
 
 **需求：**获取公司中年龄小于 35 的员工信息
 
@@ -269,139 +233,430 @@ public void test7(){
 }
 ```
 
-## 2. 函数式接口
+## 2、接口扩展
 
-### 1. 什么是函数式接口
+### (1) 函数式接口
 
-- **函数式接口**：只包含一个抽象方法的接口
-- `@FunctionalInterface` 注解用于检查是否是一个函数式接口，同时也向 javadoc 声明为函数式接口
+**函数式接口**：只有**一个抽象方法的接口**，可以使用注解 `@FunctionalInterface` 检查是否是函数式接口
 
-### 2. Java 内置四大核心函数式接口
+> Lambda 表达式需要**函数式接口**支持
 
-1. **消费型接口：** `void Consumer<T>`，对类型为 T 的对象应用操作，包含方法：`void accept(T t)` 
+```java
+//声明函数式接口
+@FunctionalInterface
+public interface MyFun {
+	public Integer getValue(Integer num);
+}
 
-   ```java
-   @Test
-   public void test(){
-       happy(10000, (m) -> System.out.println("每次消费：" + m + "元"));
-   } 
-   
-   public void happy(double money, Consumer<Double> con){
-       con.accept(money);
-   }
-   ```
-   
-2. **供给型接口：** `T Supplier<T>`，返回类型为T的对象，包含方法：`T get()`
+//对一个数进行运算
+@Test
+public void test(){
+    Integer num = operation(100, (x) -> x * x);
+    System.out.println(num);
 
-   ```java
-   @Test
-   public void test(){
-       List<Integer> numList = getNumList(10, () -> (int)(Math.random() * 100));
-       for (Integer num : numList) {
-           System.out.println(num);
-       }
-   }
-   
-   //需求：产生指定个数的整数，并放入集合中
-   public List<Integer> getNumList(int num, Supplier<Integer> sup){
-       List<Integer> list = new ArrayList<>();
-       for (int i = 0; i < num; i++) {
-           Integer n = sup.get();
-           list.add(n);
-       }
-       return list;
-   }
-   ```
-   
-3. **函数型接口：** `R Function<T, R>`，对类型为T的对象应用操作，并返回结果，结果是 R 类型的对象，包含方法：`R apply(T t)`
+    System.out.println(operation(200, (y) -> y + 200));
+}
 
-   ```java
-   @Test
-   public void test3(){
-       String newStr = strHandler("\t\t\t hello   ", (str) -> str.trim());
-       System.out.println(newStr);
-   
-       String subStr = strHandler("hello", (str) -> str.substring(2, 5));
-       System.out.println(subStr);
-   }
-   
-   //需求：用于处理字符串
-   public String strHandler(String str, Function<String, String> fun){
-       return fun.apply(str);
-   }
-   ```
-   
-4. **断定型接口：** `boolean Predicate<T>`，确定类型为 T 的对象是否满足某约束，并返回 boolean 值，包含方法`boolean test(T t)`
+public Integer operation(Integer num, MyFun mf){
+    return mf.getValue(num);
+}
+```
 
-   ```java
-   @Test
-   public void test4(){
-       List<String> list = Arrays.asList("Hello", "atguigu", "Lambda", "www", "ok");
-       List<String> strList = filterStr(list, (s) -> s.length() > 3);
-       for (String str : strList) {
-           System.out.println(str);
-       }
-   }
-   
-   //需求：将满足条件的字符串，放入集合中
-   public List<String> filterStr(List<String> list, Predicate<String> pre){
-       List<String> strList = new ArrayList<>();
-       for (String str : list) {
-           if(pre.test(str)){
-               strList.add(str);
-           }
-       }
-       return strList;
-   }
-   ```
+### (2) 接口的默认方法和静态方法
 
-### 3. 其他接口
+- **默认方法**：可以在不破坏二进制兼容性的前提下，往现存接口中添加新方法
 
-![](../../pics/java/javaN_1.png)
+    > 注：在复杂的继承体系中，默认方法可能引起歧义和编译错误
 
-## 3. 方法引用与构造器引用
+    ```java
+    private interface Defaulable {
+        //默认方法
+        default String notRequired() { 
+            return "Default implementation"; 
+        }        
+    }
+            
+    private static class DefaultableImpl implements Defaulable {
+    }
+        
+    private static class OverridableImpl implements Defaulable {
+        @Override
+        public String notRequired() {
+            return "Overridden implementation";
+        }
+    }
+    ```
 
-### 1. 方法引用
+- **静态方法**：
 
-- **方法引用：** 使用操作符 `::`  将方法名和对象或类的名字分隔开来
+    ```java
+    private interface DefaulableFactory {
+        //静态方法
+        static Defaulable create(Supplier< Defaulable > supplier) {
+            return supplier.get();
+        }
+    }
+    
+    //调用
+    public static void main( String[] args ) {
+        Defaulable defaulable = DefaulableFactory.create(DefaultableImpl::new);
+        System.out.println(defaulable.notRequired());
+            
+        defaulable = DefaulableFactory.create(OverridableImpl::new);
+        System.out.println(defaulable.notRequired());
+    }
+    
+    //结果
+    Default implementation
+    Overridden implementation
+    ```
+
+---
+
+**接口默认方法案例**：
+
+- 接口默认方法的**类优先原则**：若一个父类提供了具体的实现，则接口中具有相同名称和参数的默认方法会被忽略
+
+    ```java
+    public class TestDefaultInterface {
+    	public static void main(String[] args) {
+    		SubClass sc = new SubClass();
+    		System.out.println(sc.getName());//打印 "嘿嘿嘿" --> 调用 MyClass
+    	}
+    }
+    
+    //SubClass 类
+    public class SubClass extends MyClass implements MyFun{//”类优先”原则
+    
+    }
+    
+    //MyFun 接口
+    public interface MyFun {
+    	default String getName(){
+    		return "哈哈哈";
+    	}
+    }
+    
+    //MyClass 类
+    public class MyClass {
+    	String getName(){
+    		return "嘿嘿嘿";
+    	}
+    }
+    ```
+
+- **接口冲突**：若两个父接口提供了具有相同名称和参数列表的方法，则必须覆盖该方法来解决冲突
+
+    ```java
+    public class TestDefaultInterface {
+    	public static void main(String[] args) {
+    		SubClass sc = new SubClass();
+    		System.out.println(sc.getName());
+    		
+    		MyInterface.show();
+    	}
+    }
+    
+    //SubClass 实现类
+    public class SubClass implements MyFun, MyInterface{
+    	@Override
+    	public String getName() {
+    		return MyInterface.super.getName();//必须指定哪个接口的默认方法
+    	}
+    }
+    
+    //MyInterface 接口
+    public interface MyInterface {
+    	default String getName(){
+    		return "呵呵呵";
+    	}
+    	
+    	public static void show(){
+    		System.out.println("接口中的静态方法");
+    	}
+    }
+    
+    //MyFun 接口
+    public interface MyFun {
+    	default String getName(){
+    		return "哈哈哈";
+    	}
+    }
+    ```
+
+### (3) Java 内置四大核心函数式接口
+
+#### 1. Function 功能型函数式接口
+
+`Function` 接口：接受一个输入参数 `T`，返回一个结果 `R` 
+
+```java
+package java.util.function;
+
+import java.util.Objects;
+
+@FunctionalInterface
+public interface Function<T, R> {
+    // 接受输入参数，对输入执行所需操作后，返回一个结果
+    R apply(T t);
+
+    // 返回一个先执行 before 函数对象 apply 方法，再执行当前函数对象 apply 方法的函数对象
+    default <V> Function<V, R> compose(Function<? super V, ? extends T> before) {
+       Objects.requireNonNull(before);
+       return (V v) -> apply(before.apply(v));
+    }
+
+    // 返回一个先执行当前函数对象 apply 方法， 再执行 after 函数对象 apply 方法的函数对象
+    default <V> Function<T, V> andThen(Function<? super R, ? extends V> after) {
+        Objects.requireNonNull(after);
+        return (T t) -> after.apply(apply(t));
+    }   
+
+    // 返回一个执行了 apply() 方法之后只会返回输入参数的函数对象
+    static <T> Function<T, T> identity() {
+        return t -> t;
+    } 
+}
+```
+
+---
+
+**案例一**：
+
+```java
+public class FunctionDemo {
+    static int modifyTheValue(int valueToBeOperated, Function<Integer, Integer> function) {
+        return function.apply(valueToBeOperated);
+    }
+
+    public static void main(String[] args) {
+        int myNumber = 10;
+        //方式一：lambda 表达式实现
+        int res1 = modifyTheValue(myNumber, x -> x + 20);
+        System.out.println(res1); //30
+
+        //方式二：匿名内部类实现
+        int res2 = modifyTheValue(myNumber, new Function<Integer, Integer>() {
+            @Override
+            public Integer apply(Integer t) {
+                return t + 20;
+            }
+        });
+        System.out.println(res2); //30
+    }
+}
+```
+
+**案例二**：
+
+```java
+public static Integer modifyTheValue2(int value, Function<Integer, Integer> function1, 
+                                      		Function<Integer, Integer> function2){
+         //value作为function1的参数，返回一个结果，该结果作为function2的参数，返回一个最终结果
+         return  function1.andThen(function2).apply(value);
+    }
+
+public static void main(String[] args) {
+    System.out.println(modifyTheValue2(3, val -> val + 2, val -> val + 3));
+}
+```
+
+#### 2. Consumer 消费型函数式接口
+
+`Consumer` 接口：接受一个输入参数并且无返回的操作
+
+```java
+@FunctionalInterface
+public interface Consumer<T> {
+    void accept(T t);
+    
+    default Consumer<T> andThen(Consumer<? super T> after) {
+        Objects.requireNonNull(after);
+        return (T t) -> { accept(t); after.accept(t); };
+    }
+}
+```
+
+---
+
+**案例**：
+
+```java
+@Test
+public void test(){
+    happy(10000, (m) -> System.out.println("每次消费：" + m + "元"));
+} 
+
+public void happy(double money, Consumer<Double> con){
+    con.accept(money);
+}
+```
+
+#### 3. Supplier 供给型函数式接口
+
+`Supplier` 接口：无参数，返回一个结果
+
+```java
+@FunctionalInterface
+public interface Supplier<T> {
+    T get();
+}
+```
+
+---
+
+案例：
+
+```java
+public static String supplierTest(Supplier<String> supplier) {  
+    return supplier.get();  
+}  
+
+public static void main(String args[]) {
+    String name = "冷冷";
+    System.out.println(supplierTest(() -> name.length() + "")); //2
+}
+```
+
+#### 4. Predicate 断言型函数式接口
+
+`Predicate` 接口：接受一个输入参数，返回一个布尔值结果
+
+```java
+@FunctionalInterface
+public interface Predicate<T> {
+    boolean test(T t);
+    
+    default Predicate<T> and(Predicate<? super T> other) {
+        Objects.requireNonNull(other);
+        return (t) -> test(t) && other.test(t);
+    }
+    
+    default Predicate<T> negate() {
+        return (t) -> !test(t);
+    }
+    
+    default Predicate<T> or(Predicate<? super T> other) {
+        Objects.requireNonNull(other);
+        return (t) -> test(t) || other.test(t);
+    }
+    
+    static <T> Predicate<T> isEqual(Object targetRef) {
+        return (null == targetRef) ? Objects::isNull : object -> targetRef.equals(object);
+    }
+}
+```
+
+---
+
+**案例一**：
+
+```java
+public static boolean predicateTest(int value, Predicate<Integer> predicate) {
+    return predicate.test(value);
+}
+
+public static void main(String[] args) {
+    System.out.println(predicateTest(3, (x) -> x == 3)); //true
+}
+```
+
+**案例二**：
+
+```java
+public static void eval(List<Integer> list, Predicate<Integer> predicate) {
+    for (Integer n : list) {
+        if (predicate.test(n)) {
+            System.out.print(n + " ");
+        }
+    }
+}
+
+public static void main(String args[]) {
+    List<Integer> list = Arrays.asList(1, 2, 3, 4, 5, 6, 7, 8, 9);
+    System.out.println("输出所有数据:");
+    eval(list, n -> true); //传递参数 n
+
+    System.out.println("\n输出所有偶数:");
+    eval(list, n -> n % 2 == 0);
+
+    System.out.println("\n输出大于 3 的所有数字:");
+    eval(list, n -> n > 3);
+}
+
+//结果
+输出所有数据:
+1 2 3 4 5 6 7 8 9 
+输出所有偶数:
+2 4 6 8 
+输出大于 3 的所有数字:
+4 5 6 7 8 9
+```
+
+**案例三**：
+
+```java
+public static boolean validInput(String name, Predicate<String> function) {  
+    return function.test(name);  
+}  
+
+public static void main(String args[]) {
+    String name = "冷冷";
+    if(validInput(name, s -> !s.isEmpty() &&  s.length() <= 3 )) {
+        System.out.println("名字输入正确");
+    }
+}
+```
+
+### (4) 其他接口
+
+<img src="../../pics/java/javaN_1.png" align=left>
+
+## 3、方法引用与构造器引用
+
+### (1) 方法引用
+
+**方法引用**：使用操作符 `::`  将方法名和对象或类的名字分隔开来
+
+```java
+@Test
+public void test1(){
+    PrintStream ps = System.out;
+    Consumer<String> con = (str) -> ps.println(str);
+    con.accept("Hello World！");
+
+    System.out.println("--------------------------------");
+
+    Consumer<String> con2 = ps::println;
+    con2.accept("Hello Java8！");
+
+    Consumer<String> con3 = System.out::println;
+}
+```
+
+---
+
+**三种主要使用情况**：
+
+- `对象::实例方法`
 
   ```java
   @Test
-  public void test1(){
-      PrintStream ps = System.out;
-      Consumer<String> con = (str) -> ps.println(str);
-      con.accept("Hello World！");
+  public void test2(){
+      Employee emp = new Employee(101, "张三", 18, 9999.99);
   
-      System.out.println("--------------------------------");
+      Supplier<String> sup = () -> emp.getName();
+      System.out.println(sup.get());
   
-      Consumer<String> con2 = ps::println;
-      con2.accept("Hello Java8！");
+      System.out.println("----------------------------------");
   
-      Consumer<String> con3 = System.out::println;
+      Supplier<String> sup2 = emp::getName;
+      System.out.println(sup2.get());
   }
   ```
-  
-- **三种主要使用情况**：
 
-  - `对象::实例方法`
-
-    ```java
-    @Test
-    public void test2(){
-        Employee emp = new Employee(101, "张三", 18, 9999.99);
-    
-        Supplier<String> sup = () -> emp.getName();
-        System.out.println(sup.get());
-    
-        System.out.println("----------------------------------");
-    
-        Supplier<String> sup2 = emp::getName;
-        System.out.println(sup2.get());
-    }
-    ```
-  
 - `类::静态方法`
-  
+
   ```java
     @Test
     public void test3(){
@@ -423,11 +678,11 @@ public void test7(){
         Comparator<Integer> com2 = Integer::compare;
     }
   ```
-  
-  - `类::实例方法`
+
+- `类::实例方法`
 
     ```java
-  @Test
+    @Test
     public void test5(){
         BiPredicate<String, String> bp = (x, y) -> x.equals(y);
         System.out.println(bp.test("abcde", "abcde"));
@@ -446,12 +701,7 @@ public void test7(){
     }
     ```
 
-**注意：**
-
-- 方法引用所引用的方法的参数列表与返回值类型需要与函数式接口中抽象方法的参数列表和返回值类型一致
-- 若 Lambda 的参数列表的第一个参数是实例方法的调用者，第二个参数(或无参)是实例方法的参数时，格式： ClassName::MethodName
-
-### 2. 构造器引用
+### (2) 构造器引用
 
 > 格式：`ClassName::new` 
 
@@ -478,7 +728,7 @@ public void test7(){
 }
 ```
 
-### 3. 数组引用
+### (3) 数组引用
 
 > 格式：`type[] :: new`
 
@@ -497,13 +747,11 @@ public void test8(){
 }
 ```
 
-## 4、Stream API
+## 4、Stream
 
 推荐阅读：**[Java 8 中的 Streams API 详解(IBM)](https://developer.ibm.com/zh/technologies/java/articles/j-lo-java8streamapi/)** 
 
 ### (1) Stream 简介
-
-- Stream 如同一个迭代器，单向、不可往复，数据只能遍历一次，遍历过一次后即用尽
 
 **Stream 优势**：
 
@@ -511,55 +759,52 @@ public void test8(){
 
 - 提供串行和并行模式操作，其中并发模式能充分利用多核处理器的优势，使用 fork/join 并行方式来拆分任务和加速处理过程
 
-    > Stream 的并行操作依赖于 Java7 中引入的 Fork/Join 框架来拆分任务和加速处理过程
-
-**聚合操作**：Java 代码经常不得不依赖于关系型数据库的聚合操作
-
-- Java 7 的排序、取值实现
-
-    ```java
-    List<Transaction> groceryTransactions = new Arraylist<>();
-    for(Transaction t: transactions){
-    	if(t.getType() == Transaction.GROCERY){
-    		groceryTransactions.add(t);
-    	}
-    }
-    
-    Collections.sort(groceryTransactions, new Comparator(){
-    	public int compare(Transaction t1, Transaction t2){
-    		return t2.getValue().compareTo(t1.getValue());
-    	}
-    });
-    
-    List<Integer> transactionIds = new ArrayList<>();
-    for(Transaction t: groceryTransactions){
-    	transactionsIds.add(t.getId());
-    }
-    ```
-
-- Java 8 的排序、取值实现
-
-    ```java
-    List<Integer> transactionsIds = transactions.parallelStream()
-    											.filter(t -> t.getType() == Transaction.GROCERY)
-     											.sorted(comparing(Transaction::getValue).reversed())
-    											.map(Transaction::getId)
-    											.collect(toList());
-    ```
-
-### (2) Stream 的操作
-
-**使用流的三个基本步骤**：
-
-- **创建Stream**：一个数据源（如：集合、数组），获取一个流
-- **中间操作**：一个中间操作链，对数据源的数据进行处理
-- **终止操作(终端操作)**：一个终止操作，执行中间操作链，并产生结果
-
-> 每次转换原有 Stream 对象不改变，返回一个新的 Stream 对象(可以多次转换)，即允许操作像链条一样排列，变成一个管道
-
-<img src="../../pics/java/javaN_2.png" align=left>
+    > `parallelStream` 开启线程数 = 内核数 - 1
+    >
+    > **修改并行线程数**：
+    >
+    > ```java
+    > @PostConstruct
+    > public void init() {
+    >     System.setProperty("java.util.concurrent.ForkJoinPool.common.parallelism", "15"); //设置线程数为 15
+    > }
+    > ```
+    >
+    > 推荐阅读：==[**为什么说parallelStream不是什么善茬**](https://my.oschina.net/u/4133389/blog/3098479)== 
 
 ---
+
+JDK7 与 JDK8 对比案例：
+
+```java
+//Java 7 的排序、取值实现
+List<Transaction> groceryTransactions = new Arraylist<>();
+for(Transaction t: transactions){
+	if(t.getType() == Transaction.GROCERY){
+		groceryTransactions.add(t);
+	}
+}
+
+Collections.sort(groceryTransactions, new Comparator(){
+	public int compare(Transaction t1, Transaction t2){
+		return t2.getValue().compareTo(t1.getValue());
+	}
+});
+
+List<Integer> transactionIds = new ArrayList<>();
+for(Transaction t: groceryTransactions){
+	transactionsIds.add(t.getId());
+}
+
+//Java 8 的排序、取值实现
+List<Integer> transactionsIds = transactions.parallelStream()
+											.filter(t -> t.getType() == Transaction.GROCERY)
+ 											.sorted(comparing(Transaction::getValue).reversed())
+											.map(Transaction::getId)
+											.collect(toList());
+```
+
+### (2) Stream 的构造与转换
 
 **生成 Stream Source 的多种方式**：
 
@@ -583,44 +828,25 @@ public void test8(){
 
 ---
 
-**流的两种操作类型**：
+- **常见构造 Stream 的方法**：
 
-- **Intermediate** ：一个流可以后面跟随零个或多个 intermediate 操作
+    ```java
+    // 1. Individual values
+    Stream stream = Stream.of("a", "b", "c");
+    // 2. Arrays
+    String [] strArray = new String[] {"a", "b", "c"};
+    stream = Stream.of(strArray);
+    stream = Arrays.stream(strArray);
+    // 3. Collections
+    List<String> list = Arrays.asList(strArray);
+    stream = list.stream();
+    // 4. concat
+    Stream<Integer> firstStream = Stream.of(1, 2, 3);
+    Stream<Integer> secondStream = Stream.of(4, 5, 6);
+    Stream<Integer> resultingStream = Stream.concat(firstStream, secondStream);
+    ```
 
-    > - 目的：打开流，做出某种程度的数据映射/过滤，然后返回一个新的流，交给下一个操作使用
-    >
-    > - 操作惰性化：即仅仅调用到这类方法，并没有真正开始流的遍历
-
-- **Terminal** ：一个流只能有一个 terminal 操作，当这个操作执行后，流就无法再被操作
-
-    > Terminal 操作的执行，才会真正开始流的遍历，并且会生成一个结果，或一个 side effect
-
--  **short-circuiting**：用于操作一个无限大的 Stream，并在有限时间内完成操作
-
-    - 对于一个 intermediate 操作，若接受一个无限大的 Stream，则返回一个有限的新 Stream
-    - 对于一个 terminal 操作，若接受一个无限大的 Stream，则能在有限的时间计算出结果
-
-### (3) Stream 的构造与转换
-
-常见构造 Stream 的方法：
-
-```java
-// 1. Individual values
-Stream stream = Stream.of("a", "b", "c");
-// 2. Arrays
-String [] strArray = new String[] {"a", "b", "c"};
-stream = Stream.of(strArray);
-stream = Arrays.stream(strArray);
-// 3. Collections
-List<String> list = Arrays.asList(strArray);
-stream = list.stream();
-// 4. concat
-Stream<Integer> firstStream = Stream.of(1, 2, 3);
-Stream<Integer> secondStream = Stream.of(4, 5, 6);
-Stream<Integer> resultingStream = Stream.concat(firstStream, secondStream);
-```
-
-> 三种基本数值型对应的包装类型 Stream：`IntStream、LongStream、DoubleStream`
+    > 三种基本数值型对应的包装类型 Stream：`IntStream、LongStream、DoubleStream`
 
 - **数值流的构造**：
 
@@ -644,11 +870,30 @@ Stream<Integer> resultingStream = Stream.concat(firstStream, secondStream);
     String str = stream.collect(Collectors.joining()).toString();
     ```
 
-### (4) Stream 的操作
+### (3) Stream 的操作
+
+**流的三种操作类型**：
+
+- **Intermediate** ：一个流可以后面跟随零个或多个 intermediate 操作
+
+    > - 目的：打开流，做出某种程度的数据映射/过滤，然后返回一个新的流，交给下一个操作使用
+    >
+    > - 操作惰性化：即仅仅调用到这类方法，并没有真正开始流的遍历
+
+- **Terminal** ：一个流只能有一个 terminal 操作，当这个操作执行后，流就无法再被操作
+
+    > Terminal 操作的执行，才会真正开始流的遍历，并且会生成一个结果，或一个 side effect
+
+- **short-circuiting**：用于操作一个无限大的 Stream，并在有限时间内完成操作
+
+    - 对于一个 intermediate 操作，若接受一个无限大的 Stream，则返回一个有限的新 Stream
+    - 对于一个 terminal 操作，若接受一个无限大的 Stream，则能在有限的时间计算出结果
+
+---
 
 #### 1. Intermediate
 
-- `map/flatMap`：将 input Stream 的每一个元素，映射成 output Stream 的另一个元素
+- `map/flatMap`：将 InputStream 的每一个元素，映射成 output Stream 的另一个元素
 
     > - 转换大写：
     >
@@ -663,7 +908,7 @@ Stream<Integer> resultingStream = Stream.concat(firstStream, secondStream);
     >     List<Integer> squareNums = nums.stream().map(n -> n * n).collect(Collectors.toList());
     >     ```
     >
-    > - 一对多：flatMap 将 input Stream 层级结构扁平化，即将最底层元素抽出放到一起，最终 output Stream 都是直接的数字
+    > - 一对多：flatMap 将 InputStream 层级结构扁平化，即将最底层元素抽出放到一起，最终 OutputStream 都是直接的数字
     >
     >     ```java
     >     Stream<List<Integer>> inputStream = Stream.of(
@@ -712,9 +957,9 @@ Stream<Integer> resultingStream = Stream.concat(firstStream, secondStream);
 
 - `limit/skip`：limit 返回 Stream 的前面 n 个元素；skip 则是扔掉前 n 个元素
 
-    > -  **limit 和 skip 对运行次数的影响** 
+    > - **limit 和 skip 对运行次数的影响** 
     >
-    >     > 这是一个有 10，000 个元素的 Stream，但在 short-circuiting 操作 limit 和 skip 的作用下：
+    >     > 这是一个有 10,000 个元素的 Stream，但在 short-circuiting 操作 limit 和 skip 的作用下：
     >     >
     >     > - 管道中 map 操作指定的 getName() 方法的执行次数为 limit 所限定的 10 次
     >     > - 而最终返回结果在跳过前 3 个元素后只有后面 7 个返回
@@ -726,9 +971,12 @@ Stream<Integer> resultingStream = Stream.concat(firstStream, secondStream);
     >             Person person = new Person(i, "name" + i);
     >             persons.add(person);
     >         }
-    >         List<String> personList2 = persons.stream()
-    >                 				.map(Person::getName).limit(10).skip(3).collect(Collectors.toList());
-    >         System.out.println(personList2);
+    >         List<String> personList = persons.stream()
+    >                 						  .map(Person::getName)
+    >             							  .limit(10)
+    >             							  .skip(3)
+    >             							  .collect(Collectors.toList());
+    >         System.out.println(personList);
     >     }
     >     
     >     private class Person {
@@ -831,7 +1079,7 @@ Stream<Integer> resultingStream = Stream.concat(firstStream, secondStream);
     > }
     > ```
     >
-    > 注意：forEach 是 Terminal 操作，Input Steam 执行一次后，就会被销毁
+    > 注意：forEach 是 Terminal 操作，InputSteam 执行一次后，就会被销毁
     >
     > ```java
     > Stream<Integer> stream = Stream.of(1, 2, 3, 4);
@@ -900,7 +1148,7 @@ Stream<Integer> resultingStream = Stream.concat(firstStream, secondStream);
     >     System.out.println(words);
     >     ```
 
-- Match：
+- `Match`：
 
     - `anyMatch`：Stream 中只要有一个元素符合传入的 predicate，返回 true
     - `allMatch`：Stream 中全部元素符合传入的 predicate，返回 true
@@ -925,7 +1173,7 @@ Stream<Integer> resultingStream = Stream.concat(firstStream, secondStream);
     > Any child? true
     > ```
 
-- `collect`：将流转换为其他形式，接收一个Collector接口的实现，用于汇总Stream元素
+- `collect`：将流转换为其他形式，接收一个 Collector 接口的实现，用于汇总 Stream 元素
 
     >  <img src="../../pics/java/javaN_4.png" align=left>
     >
@@ -942,20 +1190,20 @@ Stream<Integer> resultingStream = Stream.concat(firstStream, secondStream);
     >      System.out.println("----------------------------------");
     >  
     >      HashSet<String> hs = emps.stream()
-    >          					 .map(Employee::getName)
-    >          					 .collect(Collectors.toCollection(HashSet::new));
+    >          					   .map(Employee::getName)
+    >          					   .collect(Collectors.toCollection(HashSet::new));
     >      hs.forEach(System.out::println);
     >  }
     >  
     >  public void test4(){
     >      Optional<Double> max = emps.stream()
-    >          					   .map(Employee::getSalary)
-    >          					   .collect(Collectors.maxBy(Double::compare));
+    >          					     .map(Employee::getSalary)
+    >          					     .collect(Collectors.maxBy(Double::compare));
     >      System.out.println(max.get());
     >  
     >      Optional<Employee> op = emps.stream()
-    >          						.collect(Collectors.minBy((e1, e2) -> 
-    >                          						Double.compare(e1.getSalary(), e2.getSalary())));
+    >          						  .collect(Collectors.minBy((e1, e2) -> 
+    >                          							Double.compare(e1.getSalary(), e2.getSalary())));
     >      System.out.println(op.get());
     >  
     >      Double sum = emps.stream().collect(Collectors.summingDouble(Employee::getSalary));
@@ -968,14 +1216,14 @@ Stream<Integer> resultingStream = Stream.concat(firstStream, secondStream);
     >      System.out.println(count);
     >  
     >      DoubleSummaryStatistics dss = emps.stream()
-    >          							  .collect(Collectors.summarizingDouble(Employee::getSalary));
+    >          							    .collect(Collectors.summarizingDouble(Employee::getSalary));
     >      System.out.println(dss.getMax());
     >  }
     >  
     >  //分组
     >  public void test5(){
     >      Map<Status, List<Employee>> map = emps.stream()
-    >  										  .collect(Collectors.groupingBy(Employee::getStatus));
+    >  										.collect(Collectors.groupingBy(Employee::getStatus));
     >      System.out.println(map);
     >  }
     >  
@@ -997,21 +1245,21 @@ Stream<Integer> resultingStream = Stream.concat(firstStream, secondStream);
     >  @Test
     >  public void test7(){
     >      Map<Boolean, List<Employee>> map = emps.stream()
-    >          						.collect(Collectors.partitioningBy((e) -> e.getSalary() >= 5000));
+    >          							.collect(Collectors.partitioningBy((e) -> e.getSalary() >= 5000));
     >      System.out.println(map);
     >  }
     >  
     >  public void test8(){
     >      String str = emps.stream()
-    >          			 .map(Employee::getName)
-    >          			 .collect(Collectors.joining("," , "----", "----"));
+    >          			   .map(Employee::getName)
+    >          			   .collect(Collectors.joining("," , "----", "----"));
     >      System.out.println(str);
     >  }
     >  
     >  public void test9(){
     >      Optional<Double> sum = emps.stream()
-    >          					   .map(Employee::getSalary)
-    >          					   .collect(Collectors.reducing(Double::sum));
+    >          					     .map(Employee::getSalary)
+    >          					     .collect(Collectors.reducing(Double::sum));
     >      System.out.println(sum.get());
     >  }
     >  ```
@@ -1124,19 +1372,19 @@ Stream<Integer> resultingStream = Stream.concat(firstStream, secondStream);
     >     Adult number: 77
     >     ```
 
-### (5) 并行流与串行流
+### (4) 并行流与串行流
 
 - **并行流**：把一个内容分成多个数据块，并用不同的线程分别处理每个数据块的流
 
-- Stream API 可以声明性地通过 `parallel() 与sequential()` 在并行流与顺序流之间进行切换
+    > Stream API 可以声明性地通过 `parallel()` 与 `sequential()` 在并行流与顺序流之间进行切换
 
-- **Fork/Join 框架**：就是在必要的情况下，将一个大任务，进行拆分(fork)成若干个小任务（拆到不可再拆时），再将一个个的小任务运算的结果进行join 汇总.
+- **Fork/Join 框架**：将大任务拆分(fork)成若干个小任务(拆到不可再拆时)，再将一个个小任务运算的结果进行 join 汇总
 
-  ![](../../pics/java/javaN_3.png)
+  <img src="../../pics/java/javaN_3.png" align=left>
 
 - **Fork/Join 框架与传统线程池的区别：** 
 
-  **工作窃取模式：** 当执行新的任务时，可以拆分成更小的任务执行，并将小任务加到线程队列中，然后再从一个随机线程的队列中偷一个并把它放在自己的队列中
+  **工作窃取模式：** 当执行新任务时，拆分成更小的任务执行，并将小任务加到线程队列中，然后再从一个随机线程的队列中偷一个并把它放在自己的队列中
 
   > **fork/join 框架的优势**：
   >
@@ -1193,97 +1441,76 @@ Stream<Integer> resultingStream = Stream.concat(firstStream, secondStream);
   		}
   	}
   }
-  
   ```
 
-## 5、接口中的默认方法与静态方法
+## 5、新时间日期API
 
-- 接口中默认方法使用 `default` 关键字修饰
+### (1) Clock
 
-- 接口默认方法的**类优先原则**： 
+> `Clock` 可以替代 `System.currentTimeMillis()` 和 `TimeZone.getDefault()` 
 
-  - **选择父类中的方法：** 若一个父类提供了具体的实现，则接口中具有相同名称和参数的默认方法会被忽略
+```java
+final Clock clock = Clock.systemUTC();
+System.out.println(clock.instant()); //2014-04-12T15:19:29.282Z
+System.out.println(clock.millis()); //1397315969360
+```
 
-    ```java
-    public class TestDefaultInterface {
-    	public static void main(String[] args) {
-    		SubClass sc = new SubClass();
-    		System.out.println(sc.getName());//打印 "嘿嘿嘿"
-    	}
-    }
-    
-    //SubClass 类
-    public class SubClass extends MyClass implements MyFun{//”类优先”原则
-    
-    }
-    
-    //MyFun 接口
-    public interface MyFun {
-    	default String getName(){
-    		return "哈哈哈";
-    	}
-    }
-    
-    //MyClass 类
-    public class MyClass {
-    	String getName(){
-    		return "嘿嘿嘿";
-    	}
-    }
-    
-    ```
+### (2) LocalDate、LocalTime、LocalDateTime、ZoneDateTime、Duration
 
-  - **接口冲突：** 若两个父接口提供了具有相同名称和参数列表的方法，则必须覆盖该方法来解决冲突
+LocalDate、LocalTime、LocalDateTime 类的实例是不可变的对象：
 
-    ```java
-    public class TestDefaultInterface {
-    	public static void main(String[] args) {
-    		SubClass sc = new SubClass();
-    		System.out.println(sc.getName());
-    		
-    		MyInterface.show();
-    	}
-    }
-    
-    //SubClass 实现类
-    public class SubClass implements MyFun, MyInterface{
-    	@Override
-    	public String getName() {
-    		return MyInterface.super.getName();//必须指定哪个接口的默认方法
-    	}
-    }
-    
-    //MyInterface 接口
-    public interface MyInterface {
-    	default String getName(){
-    		return "呵呵呵";
-    	}
-    	
-    	public static void show(){
-    		System.out.println("接口中的静态方法");
-    	}
-    }
-    
-    //MyFun 接口
-    public interface MyFun {
-    	default String getName(){
-    		return "哈哈哈";
-    	}
-    }
-    
-    ```
-
-## 6、新时间日期API
-
-### 1. 使用LocalDate、LocalTime、LocalDateTime
-
-- LocalDate、LocalTime、LocalDateTime 类的实例是不可变的对象，分别表示使用ISO-8601日历系统的日期、时间、日期和时间
+- `LocalDate` 仅包含 ISO-8601日历系统中的日期部分
+- `LocalTime` 仅仅包含 ISO-8601 日历系统中的时间部分
+- `LocalDateTime` 包含 ISO-8601 日历系统中的日期和时间部分，但不包含时区信息
+- `ZoneDateTime` 包含 ISO-8601 日历系统中的日期和时间部分，及时区信息
+- `Duration` 持有的时间精确到秒和纳秒，可以很容易得计算两个日期之间的不同
 
 > **注：** ISO-8601日历系统是国际标准化组织制定的现代公民的日期和时间的表示法
 
 ```java
 @Test
 public void test1(){
+    final Clock clock = Clock.systemUTC();
+	//LocalDate
+	final LocalDate date = LocalDate.now();
+	final LocalDate dateFromClock = LocalDate.now(clock);
+	System.out.println(date); //2014-04-12
+	System.out.println(dateFromClock); //2014-04-12
+    
+    //LocalTime
+	final LocalTime time = LocalTime.now();
+	final LocalTime timeFromClock = LocalTime.now(clock);
+	System.out.println(time); //11:25:54.568
+	System.out.println(timeFromClock); //11:25:54.568
+    
+    //LocalDateTime
+    final LocalDateTime datetime = LocalDateTime.now();
+	final LocalDateTime datetimeFromClock = LocalDateTime.now(clock);
+	System.out.println(datetime); //2014-04-12T11:37:52.309
+	System.out.println(datetimeFromClock); //2014-04-12T11:37:52.309
+    
+    //ZoneDateTime
+	final ZonedDateTime zonedDatetime = ZonedDateTime.now();
+	final ZonedDateTime zonedDatetimeFromClock = ZonedDateTime.now(clock);
+	final ZonedDateTime zonedDatetimeFromZone = ZonedDateTime.now(ZoneId.of("America/Los_Angeles"));
+	System.out.println(zonedDatetime); //2014-04-12T11:47:01.017-04:00[America/New_York]
+	System.out.println(zonedDatetimeFromClock); //2014-04-12T15:47:01.017Z
+	System.out.println(zonedDatetimeFromZone); //2014-04-12T08:47:01.017-07:00[America/Los_Angeles]
+    
+    //Duration: 计算2014年4月16日和2015年4月16日之间的天数和小时数
+	final LocalDateTime from = LocalDateTime.of(2014, Month.APRIL, 16, 0, 0, 0);
+	final LocalDateTime to = LocalDateTime.of(2015, Month.APRIL, 16, 23, 59, 59);
+	final Duration duration = Duration.between(from, to);
+	System.out.println("Duration in days: " + duration.toDays()); //Duration in days: 365
+	System.out.println("Duration in hours: " + duration.toHours()); //Duration in hours: 8783
+}
+```
+
+<img src="../../pics/java/javaN_7.png" align=left>
+
+```java
+@Test
+public void test2(){
     LocalDateTime ldt = LocalDateTime.now();
     System.out.println(ldt);
 
@@ -1303,18 +1530,15 @@ public void test1(){
     System.out.println(ldt.getMinute());
     System.out.println(ldt.getSecond());
 }
-
 ```
 
-![](../../pics/java/javaN_7.png)
+### (2) Instant
 
-### 2. Instant 时间戳
-
-- **时间戳**： 以Unix元年(UTC时区1970年1月1日午夜)开始所经历的描述进行运算
+`Instant`： 以Unix元年(UTC时区1970年1月1日午夜)开始所经历的描述进行运算
 
 ```java
 @Test
-public void test2(){
+public void test(){
     Instant ins = Instant.now();  //默认使用 UTC 时区(北京为东八区，时间为： UTC + 8h)
     System.out.println(ins);
 
@@ -1326,13 +1550,12 @@ public void test2(){
     Instant ins2 = Instant.ofEpochSecond(5);//相较于Unix元年增加 5 秒
     System.out.println(ins2);
 }
-
 ```
 
-### 3. Duration 和Period
+### (3) Duration 和Period
 
-- **Duration：** 用于计算两个**时间间隔**
-- **Period：** 用于计算两个**日期间隔**
+- `Duration`：用于计算两个**时间间隔**
+- `Period`：用于计算两个**日期间隔**
 
 ```java
 @Test
@@ -1354,13 +1577,12 @@ public void test3(){
     System.out.println(pe.getMonths());
     System.out.println(pe.getDays());
 }
-
 ```
 
-### 4. 日期的操纵
+### (4) 日期的操纵
 
-- **TemporalAdjuster : ** 时间校正器，将日期调整到“下个周日”等操作
-- **TemporalAdjusters : ** 通过静态方法提供了大量的常用 TemporalAdjuster 的实现
+- `TemporalAdjuster`：时间校正器，将日期调整到“下个周日”等操作
+- `TemporalAdjusters`：通过静态方法提供了大量的常用 TemporalAdjuster 的实现
 
 ```java
 @Test
@@ -1390,10 +1612,9 @@ public void test4(){
     });
     System.out.println(ldt5);
 }
-
 ```
 
-### 5. 解析与格式化
+### (5) 解析与格式化
 
 `java.time.format.DateTimeFormatter` 类：
 
@@ -1406,22 +1627,18 @@ public void test4(){
 ```java
 @Test
 public void test5(){
-//		DateTimeFormatter dtf = DateTimeFormatter.ISO_LOCAL_DATE;
-
     DateTimeFormatter dtf = DateTimeFormatter.ofPattern("yyyy年MM月dd日 HH:mm:ss E");
 
     LocalDateTime ldt = LocalDateTime.now();
     String strDate = ldt.format(dtf);
-
     System.out.println(strDate);
 
     LocalDateTime newLdt = ldt.parse(strDate, dtf);
     System.out.println(newLdt);
 }
-
 ```
 
-### 6. 时区的处理
+### (6) 时区的处理
 
 - 带时区的时间为分别为：`ZonedDate`、`ZonedTime`、`ZonedDateTime` 
 
@@ -1447,12 +1664,286 @@ public void test7(){
     ZonedDateTime zdt = ZonedDateTime.now(ZoneId.of("US/Pacific"));
     System.out.println(zdt);
 }
+```
 
+## 6、CompletableFuture
+
+推荐阅读：
+- [Java CompletableFuture 详解](https://colobu.com/2016/02/29/Java-CompletableFuture/)
+- [20个使用 Java CompletableFuture的例子](https://colobu.com/2018/03/12/20-Examples-of-Using-Java%E2%80%99s-CompletableFuture/)
+
+### (1) Future 与 CompletionStage
+> CompletableFuture 实现了 CompletionStage 和 Future 接口
+```java
+//Future
+public T get()
+public T get(long timeout, TimeUnit unit)
+
+//CompletionStage
+public T getNow(T valueIfAbsent) //若计算完成则返回结果或抛出异常，否则返回给定的 valueIfAbsent 值
+public T join() //返回计算结果或抛出 unchecked 异常(CompletionException)
+```
+
+### (2) 创建 CompletableFuture 对象
+```java
+public static <U> CompletableFuture<U> completedFuture(U value)
+
+public static CompletableFuture<Void> 	runAsync(Runnable runnable)
+public static CompletableFuture<Void> 	runAsync(Runnable runnable, Executor executor)
+public static <U> CompletableFuture<U> 	supplyAsync(Supplier<U> supplier)
+public static <U> CompletableFuture<U> 	supplyAsync(Supplier<U> supplier, Executor executor)
+```
+以 `Async` 结尾且没有指定 `Executor` 的方法会使用 `ForkJoinPool.commonPool()` 作为线程池执行异步代码：
+- `runAsync`：以 Runnable 函数式接口类型为参数，CompletableFuture 的计算结果为空
+- `supplyAsync`：以 `Supplier<U>` 函数式接口类型为参数，CompletableFuture 的计算结果类型为 U
+
+---
+因为方法的参数类型都是函数式接口，所以可以使用lambda表达式实现异步任务，比如：
+```java
+CompletableFuture<String> future = CompletableFuture.supplyAsync(() -> {
+    //长时间的计算任务
+    return "·00";
+});
+```
+### (3) 计算结果完成时的处理
+当 `CompletableFuture` 的计算结果完成或抛出异常时，可以执行特定的 Action，主要方法：
+```java
+public CompletableFuture<T> whenComplete(BiConsumer<? super T,? super Throwable> action)
+public CompletableFuture<T> whenCompleteAsync(BiConsumer<? super T,? super Throwable> action)
+public CompletableFuture<T> whenCompleteAsync(BiConsumer<? super T,? super Throwable> action
+                                              							, Executor executor)
+public CompletableFuture<T> exceptionally(Function<Throwable,? extends T> fn)
+```
+- 参数 `action` 类型为 `BiConsumer<? super T,? super Throwable>`，即可以处理正常计算结果或异常情况
+- 方法不以 `Async` 结尾，意味着 `action` 使用相同的线程执行；而 `Async` 可能会使用其它的线程去执行(如果使用相同的线程池，也可能会被同一个线程选中执行)
+- `exceptionally` 返回新的 CompletableFuture：当原始 CompletableFuture 抛出异常时，就会触发这个CompletableFuture 的计算，调用 function 计算值，否则如果原始的 CompletableFuture 正常计算完后，这个新的CompletableFuture也计算完成，它的值和原始的CompletableFuture的计算的值相同，即这个exceptionally方法用来处理异常的情况
+
+```java
+public class Main {
+    private static Random rand = new Random();
+    private static long t = System.currentTimeMillis();
+    static int getMoreData() {
+        System.out.println("begin to start compute");
+        try {
+            Thread.sleep(10000);
+        } catch (InterruptedException e) {
+            throw new RuntimeException(e);
+        }
+        System.out.println("end to start compute. passed " 
+                           + (System.currentTimeMillis() - t)/1000 + " seconds");
+        return rand.nextInt(1000);
+    }
+    public static void main(String[] args) throws Exception {
+        CompletableFuture<Integer> future = CompletableFuture.supplyAsync(Main::getMoreData);
+        Future<Integer> f = future.whenComplete((v, e) -> {
+            System.out.println(v);
+            System.out.println(e);
+        });
+        System.out.println(f.get());
+        System.in.read();
+    }
+}
+```
+---
+下面方法返回的 CompletableFuture 对象的值与原来的 CompletableFuture 计算的值不同，即当原先的CompletableFuture 的值计算完成或抛出异常时，会触发这个 CompletableFuture 对象的计算，结果由 BiFunction 参数计算而得，因此这组方法兼有 whenComplete 和转换的两个功能
+```java
+public <U> CompletableFuture<U> handle(BiFunction<? super T,Throwable,? extends U> fn)
+public <U> CompletableFuture<U> handleAsync(BiFunction<? super T,Throwable,? extends U> fn)
+public <U> CompletableFuture<U> handleAsync(BiFunction<? super T,Throwable,? extends U> fn, Executor executor)
+```
+> 同样，不以 `Async` 结尾的方法由原来的线程计算，以 `Async` 结尾的方法由默认的线程池 `ForkJoinPool.commonPool()` 或指定的线程池 executor 运行
+
+### (4) 转换
+由于回调功能，不必等待阻塞着调用线程：
+- 而是告诉 CompletableFuture 当计算完成时请执行某个 function
+- 且还可以将这些操作串联起来，或将 CompletableFuture 组合起来
+
+```java
+public <U> CompletableFuture<U> thenApply(Function<? super T,? extends U> fn)
+public <U> CompletableFuture<U> thenApplyAsync(Function<? super T,? extends U> fn)
+public <U> CompletableFuture<U> thenApplyAsync(Function<? super T,? extends U> fn, Executor executor)
+```
+- 功能：当原来的 CompletableFuture 计算完后，将结果传递给函数 fn，并作为新的 CompletableFuture 计算结果
+	
+	> 即将 `CompletableFuture<T>` 转换成 `CompletableFuture<U>`
+- 这些转换并不是马上执行，也不会阻塞，而是**在前一个 stage 完成后继续执行**
+
+注：不以 Async 结尾的方法由原来的线程计算，以 Async 结尾的方法由默认的线程池 ForkJoinPool.commonPool() 或指定的线程池 executor 运行
+```java
+CompletableFuture<Integer> future = CompletableFuture.supplyAsync(() -> {
+    return 100;
+});
+CompletableFuture<String> f =  future.thenApplyAsync(i -> i * 10).thenApply(i -> i.toString());
+System.out.println(f.get()); //"1000"
+```
+与 `handle` 方法的区别：
+- handle 方法会处理正常计算值和异常，因此可以屏蔽异常，避免异常继续抛出
+- thenApply 方法只是用来处理正常值，因此一旦有异常就会抛出
+
+### (5) 纯消费(执行Action)
+> 上面的方法是当计算完成时，会生成新的计算结果(thenApply, handle)，或返回同样的计算结果whenComplete
+
+CompletableFuture 还提供了一种处理结果的方法，只对结果执行 Action，而不返回新的计算值:
+```java
+//参数是函数式接口 Consumer，这个接口只有输入，没有返回值
+public CompletableFuture<Void> thenAccept(Consumer<? super T> action)
+public CompletableFuture<Void> thenAcceptAsync(Consumer<? super T> action)
+public CompletableFuture<Void> thenAcceptAsync(Consumer<? super T> action, Executor executor)
+```
+案例：
+```java
+CompletableFuture<Integer> future = CompletableFuture.supplyAsync(() -> {
+    return 100;
+});
+CompletableFuture<Void> f =  future.thenAccept(System.out::println);
+System.out.println(f.get());
+```
+
+---
+- `thenAcceptBoth`：当两个 CompletionStage 都正常完成计算时，就会执行提供的 action，用来组合另外一个异步的结果
+- `runAfterBoth`：当两个 CompletionStage 都正常完成计算时，执行一个 Runnable，这个Runnable并不使用计算的结果
+```java
+public <U> CompletableFuture<Void> thenAcceptBoth(CompletionStage<? extends U> other, BiConsumer<? super T,? super U> action)
+public <U> CompletableFuture<Void> thenAcceptBothAsync(CompletionStage<? extends U> other, BiConsumer<? super T,? super U> action)
+public <U> CompletableFuture<Void> thenAcceptBothAsync(CompletionStage<? extends U> other, BiConsumer<? super T,? super U> action, Executor executor)
+public     CompletableFuture<Void> runAfterBoth(CompletionStage<?> other,  Runnable action)
+```
+案例：
+```java
+CompletableFuture<Integer> future = CompletableFuture.supplyAsync(() -> {
+    return 100;
+});
+CompletableFuture<Void> f =  future.thenAcceptBoth(CompletableFuture.completedFuture(10), (x, y) -> System.out.println(x * y));
+System.out.println(f.get());
+```
+
+---
+下面一组方法当计算完成时，会执行一个 Runnable，与 thenAccept 不同，Runnable 并不使用 CompletableFuture 计算的结果，因此先前的 CompletableFuture 计算的结果被忽略，这个方法返回CompletableFuture<Void>类型的对象
+```java
+public CompletableFuture<Void> thenRun(Runnable action)
+public CompletableFuture<Void> thenRunAsync(Runnable action)
+public CompletableFuture<Void> thenRunAsync(Runnable action, Executor executor)
+```
+案例：
+```java
+CompletableFuture<Integer> future = CompletableFuture.supplyAsync(() -> {
+    return 100;
+});
+CompletableFuture<Void> f =  future.thenRun(() -> System.out.println("finished"));
+System.out.println(f.get());
+```
+
+### (6) 组合
+```java
+//Function 参数是当前 CompletableFuture 的计算值
+//返回结果是一个新的 CompletableFuture，并组合原来的 CompletableFuture 和函数返回的 CompletableFuture
+public <U> CompletableFuture<U> thenCompose(Function<? super T,? extends CompletionStage<U>> fn)
+public <U> CompletableFuture<U> thenComposeAsync(Function<? super T,? extends CompletionStage<U>> fn)
+public <U> CompletableFuture<U> thenComposeAsync(Function<? super T,? extends CompletionStage<U>> fn, Executor executor)
+```
+注：`thenCompose` 返回的对象并不一是函数 fn 返回的对象，若原来的 CompletableFuture 还没有计算出来，就会生成一个新的组合后的 CompletableFuture
+```java
+CompletableFuture<Integer> future = CompletableFuture.supplyAsync(() -> {
+    return 100;
+});
+CompletableFuture<String> f =  future.thenCompose( i -> {
+    return CompletableFuture.supplyAsync(() -> {
+        return (i * 10) + "";
+    });
+});
+System.out.println(f.get()); //1000
+```
+
+---
+功能类似 `thenAcceptBoth`：
+- 只不过 thenAcceptBoth 是纯消费，其函数参数没有返回值
+- 而 thenCombine 的函数参数 fn 有返回值
+```java
+public <U,V> CompletableFuture<V> thenCombine(CompletionStage<? extends U> other, BiFunction<? super T,? super U,? extends V> fn)
+public <U,V> CompletableFuture<V> thenCombineAsync(CompletionStage<? extends U> other, BiFunction<? super T,? super U,? extends V> fn)
+public <U,V> CompletableFuture<V> thenCombineAsync(CompletionStage<? extends U> other, BiFunction<? super T,? super U,? extends V> fn, Executor executor)
+```
+注：两个 CompletionStage 并行执行，并没有先后依赖顺序，`other` 并不会等待先前的 CompletableFuture 执行完毕后再执行
+```java
+CompletableFuture<Integer> future = CompletableFuture.supplyAsync(() -> {
+    return 100;
+});
+CompletableFuture<String> future2 = CompletableFuture.supplyAsync(() -> {
+    return "abc";
+});
+CompletableFuture<String> f =  future.thenCombine(future2, (x,y) -> y + "-" + x);
+System.out.println(f.get()); //abc-100
+```
+
+### (7) Either
+下面的方法是当任意一个 CompletableFuture 计算完成时就会执行
+```java
+public CompletableFuture<Void>  acceptEither(CompletionStage<? extends T> other, Consumer<? super T> action)
+public CompletableFuture<Void>  acceptEitherAsync(CompletionStage<? extends T> other, Consumer<? super T> action)
+public CompletableFuture<Void>  acceptEitherAsync(CompletionStage<? extends T> other, Consumer<? super T> action, Executor executor)
+public <U> CompletableFuture<U> applyToEither(CompletionStage<? extends T> other, Function<? super T,U> fn)
+public <U> CompletableFuture<U> applyToEitherAsync(CompletionStage<? extends T> other, Function<? super T,U> fn)
+public <U> CompletableFuture<U> applyToEitherAsync(CompletionStage<? extends T> other, Function<? super T,U> fn, Executor executor)
+```
+- `acceptEither`：当任意一个 CompletionStage 完成时，action 就会被执行，返回 `CompletableFuture<Void>`
+- `applyToEither`：当任意一个 CompletionStage 完成时，fn 会被执行，返回值会当作新的 `CompletableFuture<U>` 的计算结果
+
+```java
+Random rand = new Random();
+CompletableFuture<Integer> future = CompletableFuture.supplyAsync(() -> {
+    try {
+        Thread.sleep(10000 + rand.nextInt(1000));
+    } catch (InterruptedException e) {
+        e.printStackTrace();
+    }
+    return 100;
+});
+CompletableFuture<Integer> future2 = CompletableFuture.supplyAsync(() -> {
+    try {
+        Thread.sleep(10000 + rand.nextInt(1000));
+    } catch (InterruptedException e) {
+        e.printStackTrace();
+    }
+    return 200;
+});
+CompletableFuture<String> f =  future.applyToEither(future2,i -> i.toString());
+```
+
+### (8) 辅助方法 allOf 和 anyOf
+下面两个方法用来组合多个CompletableFuture：
+```java
+public static CompletableFuture<Void> 	allOf(CompletableFuture<?>... cfs)
+public static CompletableFuture<Object> anyOf(CompletableFuture<?>... cfs)
+```
+- `allOf`：当所有的 CompletableFuture 都执行完后执行计算
+- `anyOf`：当任意一个 CompletableFuture 执行完后就会执行计算，计算的结果相同
+
+```java
+Random rand = new Random();
+CompletableFuture<Integer> future1 = CompletableFuture.supplyAsync(() -> {
+    try {
+        Thread.sleep(10000 + rand.nextInt(1000));
+    } catch (InterruptedException e) {
+        e.printStackTrace();
+    }
+    return 100;
+});
+CompletableFuture<String> future2 = CompletableFuture.supplyAsync(() -> {
+    try {
+        Thread.sleep(10000 + rand.nextInt(1000));
+    } catch (InterruptedException e) {
+        e.printStackTrace();
+    }
+    return "abc";
+});
+//CompletableFuture<Void> f =  CompletableFuture.allOf(future1,future2);
+CompletableFuture<Object> f =  CompletableFuture.anyOf(future1,future2);
+System.out.println(f.get());
 ```
 
 ## 7、其他新特性
 
-### 1. Optional 类
+### (1) Optional
 
 > `Optional<T>`：一个容器类，代表一个值存在或不存在，替换 null ，可以避免空指针异常
 
@@ -1486,15 +1977,15 @@ public void test7(){
   System.out.println(op.get());
   ```
 
-- `isPresent() `： 判断是否包含值
+- `isPresent() `：判断是否包含值
 
-- `orElse(T t)` ： 如果调用对象包含值，返回该值，否则返回 t
+- `orElse(T t)`：如果调用对象包含值，返回该值，否则返回 t
 
-- `orElseGet(Supplier s)` ： 如果调用对象包含值，返回该值，否则返回s 获取的值
+- `orElseGet(Supplier s)`：如果调用对象包含值，返回该值，否则返回 s 获取的值
 
-- `map(Function f)` ： 如果有值对其处理，并返回处理后的Optional，否则返回Optional.empty()
+- `map(Function f)`：如果有值对其处理，并返回处理后的 Optional，否则返回 Optional.empty()
 
-- `flatMap(Function mapper)` ： 与map 类似，要求返回值必须是Optional
+- `flatMap(Function mapper)`：与 map 类似，要求返回值必须是 Optional
 
   ```java
   Optional<Employee> op = Optional.of(new Employee(101, "张三", 18, 9999.99));
@@ -1506,6 +1997,183 @@ public void test7(){
   System.out.println(op3.get());
   ```
 
-### 2. 重复注解与类型注解
+---
 
-![](../../pics/java/javaN_6.png)
+**案例**：
+
+- **案例一**：
+
+    ```java
+    Optional<String> fullName = Optional.ofNullable(null);
+    System.out.println("Full Name is set? " + fullName.isPresent());        
+    System.out.println("Full Name: " + fullName.orElseGet(() -> "[none]")); 
+    System.out.println(fullName.map(s -> "Hey " + s + "!").orElse("Hey Stranger!"));
+    
+    //结果
+    Full Name is set? false
+    Full Name: [none]
+    Hey Stranger!
+    ```
+
+- **案例二**：
+
+    ```java
+    Optional< String > firstName = Optional.of( "Tom" );
+    System.out.println( "First Name is set? " + firstName.isPresent() );        
+    System.out.println( "First Name: " + firstName.orElseGet( () -> "[none]" ) ); 
+    System.out.println( firstName.map( s -> "Hey " + s + "!" ).orElse( "Hey Stranger!" ) );
+    System.out.println();
+    
+    //结果
+    First Name is set? true
+    First Name: Tom
+    Hey Tom!
+    ```
+
+### (2) 重复注解
+
+> Java 8中使用 `@Repeatable` 注解定义重复注解
+
+```java
+package com.javacodegeeks.java8.repeatable.annotations;
+
+import java.lang.annotation.ElementType;
+import java.lang.annotation.Repeatable;
+import java.lang.annotation.Retention;
+import java.lang.annotation.RetentionPolicy;
+import java.lang.annotation.Target;
+
+public class RepeatingAnnotations {
+    @Target(ElementType.TYPE)
+    @Retention(RetentionPolicy.RUNTIME)
+    public @interface Filters {
+        Filter[] value();
+    }
+    
+    @Target(ElementType.TYPE)
+    @Retention(RetentionPolicy.RUNTIME)
+    @Repeatable(Filters.class) //定义
+    public @interface Filter {
+        String value();
+    };
+    
+    //使用
+    @Filter("filter1")
+    @Filter("filter2")
+    public interface Filterable {        
+    }
+    
+    public static void main(String[] args) {
+        for(Filter filter: Filterable.class.getAnnotationsByType(Filter.class)) {
+            System.out.println(filter.value());
+        }
+    }
+}
+```
+
+> 附：`ElementType.TYPE_USER` 和 `ElementType.TYPE_PARAMETER` 是 JDK8 新增的两个注解，用于描述注解的使用场景
+
+### (3) Nashorn JavaScript引擎
+
+> 可以在 JVM 上开发和运行 JS 应用
+
+```java
+ScriptEngineManager manager = new ScriptEngineManager();
+ScriptEngine engine = manager.getEngineByName("JavaScript");
+        
+System.out.println(engine.getClass().getName()); //jdk.nashorn.api.scripting.NashornScriptEngine
+System.out.println("Result:" + engine.eval("function f() { return 1; }; f() + 1;")); //Result: 2
+```
+
+---
+
+`jjs`：是一个基于标准 Nashorn 引擎的命令行工具，可以接受 js 源码并执行
+
+```js
+//js 代码
+function f() { 
+     return 1; 
+}; 
+print( f() + 1 );
+
+//执行：jjs func.js
+//结果：2
+```
+
+### (4) Base64
+
+```java
+package com.javacodegeeks.java8.base64;
+
+import java.nio.charset.StandardCharsets;
+import java.util.Base64;
+
+public class Base64s {
+    public static void main(String[] args) {
+        final String text = "Base64 finally in Java 8!";
+        
+        final String encoded = Base64.getEncoder().encodeToString(text.getBytes(StandardCharsets.UTF_8));
+        System.out.println(encoded); //QmFzZTY0IGZpbmFsbHkgaW4gSmF2YSA4IQ==
+        
+        final String decoded = new String(Base64.getDecoder().decode(encoded),StandardCharsets.UTF_8);
+        System.out.println(decoded); //Base64 finally in Java 8!
+    }
+}
+```
+
+### (5) 并行数组
+
+> `parallelSort()` 可以显著加快多核机器上的数组排序
+
+```java
+package com.javacodegeeks.java8.parallel.arrays;
+
+import java.util.Arrays;
+import java.util.concurrent.ThreadLocalRandom;
+
+public class ParallelArrays {
+    public static void main(String[] args) {
+        long[] arrayOfLong = new long [20000];        
+        
+        //使用 parallelSetAll 生成 20000个随机数
+        Arrays.parallelSetAll(arrayOfLong, index -> ThreadLocalRandom.current().nextInt(1000000));
+        Arrays.stream(arrayOfLong).limit(10).forEach(i -> System.out.print(i + " "));
+        System.out.println();
+        //使用 parallelSort 进行排序
+        Arrays.parallelSort(arrayOfLong);     
+        Arrays.stream(arrayOfLong).limit(10).forEach(i -> System.out.print( i + " "));
+        System.out.println();
+    }
+}
+```
+
+### (6) 类依赖分析器：jdeps
+
+`jdeps` 命令行工具：可以展示包层级和类层级的 Java 类依赖关系，
+
+- 输入：`.class` 文件、目录或 Jar 文件
+- 输出：把依赖关系输出到控制台
+
+```shell
+#分析 SpringFramework 库
+jdeps org.springframework.core-3.0.5.RELEASE.jar
+
+#结果
+org.springframework.core-3.0.5.RELEASE.jar -> C:\Program Files\Java\jdk1.8.0\jre\lib\rt.jar
+   org.springframework.core (org.springframework.core-3.0.5.RELEASE.jar)
+      -> java.io                                            
+      -> java.lang                                          
+      -> java.lang.annotation                               
+      -> java.lang.ref                                      
+      -> java.lang.reflect                                  
+      -> java.util                                          
+      -> java.util.concurrent                               
+      -> org.apache.commons.logging                         not found
+      -> org.springframework.asm                            not found
+      -> org.springframework.asm.commons                    not found
+   org.springframework.core.annotation (org.springframework.core-3.0.5.RELEASE.jar)
+      -> java.lang                                          
+      -> java.lang.annotation                               
+      -> java.lang.reflect                                  
+      -> java.util
+```

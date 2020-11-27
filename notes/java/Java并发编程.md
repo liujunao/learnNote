@@ -7,7 +7,7 @@
 
 # 一、基础知识
 
-## 1. 并发编程的优缺点
+## 1、并发编程的优缺点
 
 ### 1. 优点
 
@@ -83,7 +83,7 @@
 
   >  注意： 一旦临界区资源被一个线程占有，那么其他线程必须等待
 
-## 2. 线程的状态转换
+## 2、线程的状态转换
 
 ### 1. 线程的创建
 
@@ -283,7 +283,7 @@ public class CreateThreadDemo {
   >
   > > 在Java程序中，通过一个**整型成员变量Priority**来控制优先级，优先级的范围从1~10.在构建线程的时候可以通过**setPriority(int)**方法进行设置，默认优先级为 5
 
-## 3. 守护线程Daemon
+## 3、守护线程 Daemon
 
 ```java
 public class DaemonDemo {
@@ -323,7 +323,7 @@ i am alive
 
 > 注意： 守护线程在退出时，并不会执行 finnally 块中的代码
 
-## 4. Ring Buffer
+## 4、Ring Buffer
 
 推荐阅读： [Ring Buffer 有什么特别?](https://www.cnblogs.com/shanyou/archive/2013/02/04/2891300.html) 
 
@@ -369,7 +369,7 @@ RingBuffer用序号来标记 buffer 的末尾，当收到一个 NAK 信号时，
 
   > java内存模型是**共享内存的并发模型**，线程之间主要通过**读-写共享变量**来完成隐式通信
 
-## 1. JMM 内存模型
+## 1、JMM 内存模型
 
 ![](../../pics/concurrent/concurrent_4.png)
 
@@ -378,7 +378,7 @@ RingBuffer用序号来标记 buffer 的末尾，当收到一个 NAK 信号时，
 - 线程A从主内存中将共享变量读入线程A的工作内存后并进行操作，之后将数据重新写回到主内存中
 - 线程B从主存中读取最新的共享变量
 
-## 2. 重排序
+## 2、重排序
 
 编译器和处理器的三种重排序： **1 为编译器重排序； 2，3 为处理器重排序** 
 
@@ -399,7 +399,7 @@ RingBuffer用序号来标记 buffer 的末尾，当收到一个 NAK 信号时，
 
 - **内存系统重排序**： 由于处理器使用缓存和读/写缓冲区，这使得加载和存储操作看上去可能是在乱序执行的
 
-## 3. happens-before 规则
+## 3、happens-before 规则
 
 **happens-before 规则定义**： 
 
@@ -435,7 +435,7 @@ RingBuffer用序号来标记 buffer 的末尾，当收到一个 NAK 信号时，
 - Future表示的任务的所有操作Happens-Before Future#get()操作
 - 向Executor提交一个Runnable或Callable的操作Happens-Before任务开始执行操作
 
-## 4. DCL(Double Check Lock)
+## 4、DCL(Double Check Lock)
 
 ### 1. 单例模式中的 DCL
 
@@ -533,7 +533,7 @@ public class Singleton {
   }
   ```
 
-## 5. Java 初始化锁
+## 5、Java 初始化锁
 
 - 对于每一个类或者接口 `C`，都有一个唯一的初始化锁 `LC` 与之相对应
 - 从 `C` 到 `LC` 的映射，由 JVM 的具体去实现
@@ -543,7 +543,7 @@ public class Singleton {
 
 # 三、并发关键字
 
-## 1. synchronized
+## 1、synchronized
 
 ### 1. 基本使用
 
@@ -777,7 +777,7 @@ CAS 问题：
 
 - 推荐阅读： [Java--死锁以及死锁的排查](https://mrdear.cn/2018/06/16/java/Java_study--deadlock/index.html) 
 
-## 2. volatile
+## 2、volatile
 
 ### 1. 简介
 
@@ -836,7 +836,7 @@ JMM会针对编译器制定volatile重排序规则表：NO 表示禁止重排序
 
 ![](../../pics/concurrent/concurrent_16.png)
 
-## 3. final 域重排序
+## 3、final 域重排序
 
 > final 全局变量定义时必须进行初始化且不更更改
 >
@@ -946,7 +946,7 @@ public class FinalReferenceDemo {
 
   额外增加约束：禁止在构造函数对**一个final修饰的对象的成员域的写入**与随后将**这个被构造的对象的引用赋值给引用变量** 重排序
 
-## 4. 三大特性
+## 4、三大特性
 
 ### 1. 原子性
 
@@ -970,7 +970,7 @@ public class FinalReferenceDemo {
 
 - **可见性**： 指当一个线程修改了共享变量后，其他线程能够立即得知这个修改
 
-## 5. 线程八锁
+## 5、线程八锁
 
 > 线程八锁的关键：
 >
@@ -1310,7 +1310,7 @@ class Number{
 
 ![](../../pics/concurrent/concurrent_20.png)
 
-## 1. AQS 简介
+## 1、AQS 简介
 
 ### 1. 基本方法
 
@@ -1611,9 +1611,9 @@ class Number{
   > }
   > ```
 
-## 3. ReentrantLock 可重入锁
+## 2、ReentrantLock 可重入锁
 
-- **ReentrantLock 可重入锁**： 一种递归无阻塞的同步机制，提供了比 synchronized 更强大、灵活的锁机制，可以减少死锁发生的概率
+- **ReentrantLock 可重入锁**： 递归无阻塞的同步机制，提供比 synchronized 更强大、灵活的锁机制，可以减少死锁发生的概率
 
 ### 1. 获取与释放锁
 
@@ -1784,7 +1784,7 @@ public final boolean hasQueuedPredecessors() {
 |  锁类型  |                可重入 不可中断 非公平                | 可重入 可判断 可公平（两者皆可） |
 |   性能   |                       少量同步                       |             大量同步             |
 
-## 4. ReentrantReadWriteLock 读写锁
+## 3、ReentrantReadWriteLock 读写锁
 
 ### 1. 简介
 
@@ -2074,7 +2074,13 @@ public static class ReadLock implements Lock, java.io.Serializable {
   > }
   > ```
 
-## 5. Condition 机制
+## 4、StampedLock(替代 ReadWriteLock) ==
+
+
+
+
+
+## 5、Condition 机制
 
 ### 1. 简介
 
@@ -2266,7 +2272,7 @@ Contition 提供的方法：
 
 ![](../../pics/concurrent/concurrent_28.png)
 
-## 6. LockSupport
+## 6、LockSupport
 
 ![](../../pics/concurrent/concurrent_29.png)
 
@@ -2290,7 +2296,7 @@ Contition 提供的方法：
   }
   ```
 
-## 7. CAS
+## 7、CAS
 
 > **CAS 是整个 JUC 的基石**
 
@@ -2371,7 +2377,7 @@ CPU 提供了两种方法来实现多处理器的原子操作：总线加锁或�
 
 # 五、并发工具类
 
-## 1. 循环栅栏 CyclicBarrier
+## 1、循环栅栏 CyclicBarrier
 
 > 让一组线程到达一个屏障时被阻塞，直到最后一个线程到达屏障时，屏障才会开门，所有被屏障拦截的线程才会继续干活
 
@@ -2394,7 +2400,7 @@ CPU 提供了两种方法来实现多处理器的原子操作：总线加锁或�
 
 - 比如： 需要统计多个 Excel 中的数据，然后等到一个总结果，可以通过多线程处理每一个 Excel，执行完成后得到相应的结果，最后通过 barrierAction 来计算这些线程的计算结果，得到所有 Excel 的总和
 
-## 2. 倒计时器 CountDownLatch
+## 2、倒计时器 CountDownLatch
 
 > 在完成一组正在其他线程中执行的操作之前，允许一个或多个线程一直等待
 
@@ -2408,7 +2414,7 @@ CountDownlatch与CyclicBarrier的区别：
 
 - CountDownLatch 的计数器无法被重置；CyclicBarrier 的计数器可以被重置后使用
 
-## 3. 信号量 Semaphore
+## 3、信号量 Semaphore
 
 > 信号量维护了一个许可集：
 >
@@ -2427,7 +2433,7 @@ Semaphore 提供了两个构造函数：
 
 - `Semaphore(int permits, boolean fair)`：创建具有给定的许可数和给定的公平设置的 Semaphore
 
-## 4. 数据交换 Exchanger
+## 4、数据交换 Exchanger
 
 > 允许在并发任务之间交换数据，即 Exchanger 类允许在两个线程之间定义同步点，当两个线程都到达同步点时，交换数据结构
 
@@ -2435,7 +2441,7 @@ Semaphore 提供了两个构造函数：
 
 # 六、并发容器
 
-## 1. concurrentHashMap
+## 1、concurrentHashMap
 
 ### 1. 重要概念
 
@@ -3004,7 +3010,7 @@ private final void treeifyBin(Node<K,V>[] tab, int index) {
 }
 ```
 
-## 2. ConcurrentLinkedQueue
+## 2、ConcurrentLinkedQueue
 
 > ConcurrentLinkedQueue 是一个基于链接节点的无边界的线程安全队列： 
 >
@@ -3217,7 +3223,7 @@ final void updateHead(Node<E> h, Node<E> p) {
 
   ![](../../pics/concurrent/concurrent_41.png)
 
-## 3. ConcurrentSkipListMap
+## 3、ConcurrentSkipListMap
 
 **SkipList(跳表)**： 一种可以替代平衡树的数据结构，默认按照 key 值升序
 
@@ -3228,11 +3234,11 @@ final void updateHead(Node<E> h, Node<E> p) {
 
 > **同 redis 的跳跃表**
 
-## 4. CopyOnWriteArrayList
+## 4、CopyOnWriteArrayList
 
 > 请看 Java 容器
 
-## 5. ThreadLocal
+## 5、ThreadLocal
 
 推荐阅读： [Java进阶（七）正确理解Thread Local的原理与适用场景](http://www.jasongj.com/java/threadlocal/) 
 
@@ -3438,7 +3444,13 @@ public void remove() {
 
   > 主要目的： 为每一个线程隔离一个类的实例，这个实例的作用范围仅限于线程内部
 
-## 6. 阻塞队列
+## 6、InternalThreadLocal(替代 ThreadLocal) ==
+
+推荐阅读：[使用 InternalThreadLocal 提升性能](https://mp.weixin.qq.com/s/vpdMMbKmyOsyI0gB0w6d7Q)
+
+
+
+## 7、阻塞队列
 
 ### 1. ArrayBlockingQueue
 
@@ -3525,7 +3537,7 @@ LinkedBlockingDeque 是可选容量的：
 
 > **不允许使用  Executors 创建线程池**
 
-## 1. ThreadPoolExecutor
+## 1、ThreadPoolExecutor
 
 ### 1. 内部状态
 
@@ -4119,7 +4131,7 @@ public ThreadPoolExecutor(int corePoolSize, int maximumPoolSize, long keepAliveT
   > }
   > ```
 
-## 2. ScheduledThreadPoolExecutor
+## 2、ScheduledThreadPoolExecutor
 
 - `ScheduledThreadPoolExecutor`： 继承 ThreadPoolExecutor 且实现了 ScheduledExecutorService 接口
 
@@ -4938,9 +4950,15 @@ public class FutureTaskTest {
   }
   ```
 
+## 6、concurrentForkJoinPool ==
+
+
+
+
+
 # 八、原子类(Atomic)
 
-## 1. Unsafe
+## 1、Unsafe
 
 推荐阅读： **[Java中Unsafe类详解](https://www.cnblogs.com/mickole/articles/3757278.html)**
 
@@ -4978,7 +4996,7 @@ public class FutureTaskTest {
 
 - **CAS 操作**： 通过 compareAndSwapXXX 方法实现
 
-## 2. 实现原理
+## 2、实现原理
 
 > **cpu 时分复用**： cpu 的时间片分配给不同的线程/进程轮流执行，时间片间需要进行 cpu 切换，即进程切换
 >
@@ -5001,7 +5019,7 @@ public final boolean compareAndSet(int expect, int update) {
 }
 ```
 
-## 3. 操作类型
+## 3、操作类型
 
 ### 1. 原子更新基本类型
 
@@ -5136,11 +5154,20 @@ public class AtomicDemo {
 6
 ```
 
+## 4、JDK8 新增工具类 ==
+
+- `DoubleAccumulator`
+- `DoubleAdder`
+- `LongAccumulator`
+- `LongAdder`
+
+
+
 # # 活跃性、性能、测试
 
 # 九、避免活跃性危险
 
-## 1. 死锁
+## 1、死锁
 
 ### 1. 锁顺序死锁
 
@@ -5169,7 +5196,7 @@ public class Test {
 }
 ```
 
-### 2. 动态的锁顺序死锁
+### 2、动态的锁顺序死锁
 
 ```java
 /**动态的锁顺序死锁
@@ -5320,7 +5347,7 @@ class Dispather{
 - 使用显示锁检测死锁，并且可以从死锁中恢复过来
 - 通过线程转储信息来分析死锁
 
-## 3. 其他活跃性危险
+## 3、其他活跃性危险
 
 - **饥饿**：由于线程无法访问它所需要的资源而不能继续执行时，就发生了饥饿
 - **糟糕的响应性也很影响活跃性**
@@ -5328,7 +5355,7 @@ class Dispather{
 
 # 十、性能与可伸缩性
 
-## 1. 概述
+## 1、概述
 
 - 应用程序的性能可以用多个指标来衡量：服务时间，延迟时间，吞吐率，效率，可伸缩性，容量
 
@@ -5341,7 +5368,7 @@ class Dispather{
   > - `F`： 为须被串行执行的部分
   > - `N`： 处理器的数量
 
-## 2. 线程引入开销
+## 2、线程引入开销
 
 ### 1. 上下文切换
 
@@ -5369,7 +5396,7 @@ class Dispather{
   > - **自旋等待**： 通过循环不断的尝试获取锁，直到成功
   > - 两种方式的效率高低： 取决于上下文切换的开销和等待时间
 
-## 3. 减少锁竞争
+## 3、减少锁竞争
 
 - 影响锁竞争的可能性因素：
   - **锁的请求频率**
@@ -5397,6 +5424,6 @@ class Dispather{
 - **锁分段**： 对一组独立对象上的锁进行分解
 - **锁分段缺点**： 要获取多个锁来实现独占访问，因而导致难度更高，开销更大
 
-## 4. 放弃使用独占锁
+## 4、放弃使用独占锁
 
 - **替代方式： 并发容器，读-写锁，不可变对象，原子变量** 
