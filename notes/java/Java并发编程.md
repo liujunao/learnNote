@@ -4802,7 +4802,331 @@ public class FutureTaskTest {
 }
 ```
 
-## 5、ForkJoin 分支/合并框架(工作窃取)
+## 5、CompletableFuture ==
+
+推荐阅读：
+
+- [Java CompletableFuture 详解](https://colobu.com/2016/02/29/Java-CompletableFuture/)
+- [20个使用 Java CompletableFuture的例子](https://colobu.com/2018/03/12/20-Examples-of-Using-Java%E2%80%99s-CompletableFuture/)
+
+### (1) Future 与 CompletionStage
+
+> CompletableFuture 实现了 CompletionStage 和 Future 接口
+
+```java
+//Future
+public T get()
+public T get(long timeout, TimeUnit unit)
+
+//CompletionStage
+public T getNow(T valueIfAbsent) //若计算完成则返回结果或抛出异常，否则返回给定的 valueIfAbsent 值
+public T join() //返回计算结果或抛出 unchecked 异常(CompletionException)
+```
+
+### (2) 创建 CompletableFuture 对象
+
+```java
+public static <U> CompletableFuture<U> completedFuture(U value)
+
+public static CompletableFuture<Void> 	runAsync(Runnable runnable)
+public static CompletableFuture<Void> 	runAsync(Runnable runnable, Executor executor)
+public static <U> CompletableFuture<U> 	supplyAsync(Supplier<U> supplier)
+public static <U> CompletableFuture<U> 	supplyAsync(Supplier<U> supplier, Executor executor)
+```
+
+以 `Async` 结尾且没有指定 `Executor` 的方法会使用 `ForkJoinPool.commonPool()` 作为线程池执行异步代码：
+
+- `runAsync`：以 Runnable 函数式接口类型为参数，CompletableFuture 的计算结果为空
+- `supplyAsync`：以 `Supplier<U>` 函数式接口类型为参数，CompletableFuture 的计算结果类型为 U
+
+---
+
+因为方法的参数类型都是函数式接口，所以可以使用lambda表达式实现异步任务，比如：
+
+```java
+CompletableFuture<String> future = CompletableFuture.supplyAsync(() -> {
+    //长时间的计算任务
+    return "·00";
+});
+```
+
+### (3) 计算结果完成时的处理
+
+当 `CompletableFuture` 的计算结果完成或抛出异常时，可以执行特定的 Action，主要方法：
+
+```java
+public CompletableFuture<T> whenComplete(BiConsumer<? super T,? super Throwable> action)
+public CompletableFuture<T> whenCompleteAsync(BiConsumer<? super T,? super Throwable> action)
+public CompletableFuture<T> whenCompleteAsync(BiConsumer<? super T,? super Throwable> action
+                                              							, Executor executor)
+public CompletableFuture<T> exceptionally(Function<Throwable,? extends T> fn)
+```
+
+- 参数 `action` 类型为 `BiConsumer<? super T,? super Throwable>`，即可以处理正常计算结果或异常情况
+- 方法不以 `Async` 结尾，意味着 `action` 使用相同的线程执行；而 `Async` 可能会使用其它的线程去执行(如果使用相同的线程池，也可能会被同一个线程选中执行)
+- `exceptionally` 返回新的 CompletableFuture：当原始 CompletableFuture 抛出异常时，就会触发这个CompletableFuture 的计算，调用 function 计算值，否则如果原始的 CompletableFuture 正常计算完后，这个新的CompletableFuture也计算完成，它的值和原始的CompletableFuture的计算的值相同，即这个exceptionally方法用来处理异常的情况
+
+```java
+public class Main {
+    private static Random rand = new Random();
+    private static long t = System.currentTimeMillis();
+    static int getMoreData() {
+        System.out.println("begin to start compute");
+        try {
+            Thread.sleep(10000);
+        } catch (InterruptedException e) {
+            throw new RuntimeException(e);
+        }
+        System.out.println("end to start compute. passed " 
+                           + (System.currentTimeMillis() - t)/1000 + " seconds");
+        return rand.nextInt(1000);
+    }
+    public static void main(String[] args) throws Exception {
+        CompletableFuture<Integer> future = CompletableFuture.supplyAsync(Main::getMoreData);
+        Future<Integer> f = future.whenComplete((v, e) -> {
+            System.out.println(v);
+            System.out.println(e);
+        });
+        System.out.println(f.get());
+        System.in.read();
+    }
+}
+```
+
+---
+
+下面方法返回的 CompletableFuture 对象的值与原来的 CompletableFuture 计算的值不同，即当原先的CompletableFuture 的值计算完成或抛出异常时，会触发这个 CompletableFuture 对象的计算，结果由 BiFunction 参数计算而得，因此这组方法兼有 whenComplete 和转换的两个功能
+
+```java
+public <U> CompletableFuture<U> handle(BiFunction<? super T,Throwable,? extends U> fn)
+public <U> CompletableFuture<U> handleAsync(BiFunction<? super T,Throwable,? extends U> fn)
+public <U> CompletableFuture<U> handleAsync(BiFunction<? super T,Throwable,? extends U> fn, Executor executor)
+```
+
+> 同样，不以 `Async` 结尾的方法由原来的线程计算，以 `Async` 结尾的方法由默认的线程池 `ForkJoinPool.commonPool()` 或指定的线程池 executor 运行
+
+### (4) 转换
+
+由于回调功能，不必等待阻塞着调用线程：
+
+- 而是告诉 CompletableFuture 当计算完成时请执行某个 function
+- 且还可以将这些操作串联起来，或将 CompletableFuture 组合起来
+
+```java
+public <U> CompletableFuture<U> thenApply(Function<? super T,? extends U> fn)
+public <U> CompletableFuture<U> thenApplyAsync(Function<? super T,? extends U> fn)
+public <U> CompletableFuture<U> thenApplyAsync(Function<? super T,? extends U> fn, Executor executor)
+```
+
+- 功能：当原来的 CompletableFuture 计算完后，将结果传递给函数 fn，并作为新的 CompletableFuture 计算结果
+
+    > 即将 `CompletableFuture<T>` 转换成 `CompletableFuture<U>`
+
+- 这些转换并不是马上执行，也不会阻塞，而是**在前一个 stage 完成后继续执行**
+
+注：不以 Async 结尾的方法由原来的线程计算，以 Async 结尾的方法由默认的线程池 ForkJoinPool.commonPool() 或指定的线程池 executor 运行
+
+```java
+CompletableFuture<Integer> future = CompletableFuture.supplyAsync(() -> {
+    return 100;
+});
+CompletableFuture<String> f =  future.thenApplyAsync(i -> i * 10).thenApply(i -> i.toString());
+System.out.println(f.get()); //"1000"
+```
+
+与 `handle` 方法的区别：
+
+- handle 方法会处理正常计算值和异常，因此可以屏蔽异常，避免异常继续抛出
+- thenApply 方法只是用来处理正常值，因此一旦有异常就会抛出
+
+### (5) 纯消费(执行Action)
+
+> 上面的方法是当计算完成时，会生成新的计算结果(thenApply, handle)，或返回同样的计算结果whenComplete
+
+CompletableFuture 还提供了一种处理结果的方法，只对结果执行 Action，而不返回新的计算值:
+
+```java
+//参数是函数式接口 Consumer，这个接口只有输入，没有返回值
+public CompletableFuture<Void> thenAccept(Consumer<? super T> action)
+public CompletableFuture<Void> thenAcceptAsync(Consumer<? super T> action)
+public CompletableFuture<Void> thenAcceptAsync(Consumer<? super T> action, Executor executor)
+```
+
+案例：
+
+```java
+CompletableFuture<Integer> future = CompletableFuture.supplyAsync(() -> {
+    return 100;
+});
+CompletableFuture<Void> f =  future.thenAccept(System.out::println);
+System.out.println(f.get());
+```
+
+---
+
+- `thenAcceptBoth`：当两个 CompletionStage 都正常完成计算时，就会执行提供的 action，用来组合另外一个异步的结果
+- `runAfterBoth`：当两个 CompletionStage 都正常完成计算时，执行一个 Runnable，这个Runnable并不使用计算的结果
+
+```java
+public <U> CompletableFuture<Void> thenAcceptBoth(CompletionStage<? extends U> other, BiConsumer<? super T,? super U> action)
+public <U> CompletableFuture<Void> thenAcceptBothAsync(CompletionStage<? extends U> other, BiConsumer<? super T,? super U> action)
+public <U> CompletableFuture<Void> thenAcceptBothAsync(CompletionStage<? extends U> other, BiConsumer<? super T,? super U> action, Executor executor)
+public     CompletableFuture<Void> runAfterBoth(CompletionStage<?> other,  Runnable action)
+```
+
+案例：
+
+```java
+CompletableFuture<Integer> future = CompletableFuture.supplyAsync(() -> {
+    return 100;
+});
+CompletableFuture<Void> f =  future.thenAcceptBoth(CompletableFuture.completedFuture(10), (x, y) -> System.out.println(x * y));
+System.out.println(f.get());
+```
+
+---
+
+下面一组方法当计算完成时，会执行一个 Runnable，与 thenAccept 不同，Runnable 并不使用 CompletableFuture 计算的结果，因此先前的 CompletableFuture 计算的结果被忽略，这个方法返回CompletableFuture<Void>类型的对象
+
+```java
+public CompletableFuture<Void> thenRun(Runnable action)
+public CompletableFuture<Void> thenRunAsync(Runnable action)
+public CompletableFuture<Void> thenRunAsync(Runnable action, Executor executor)
+```
+
+案例：
+
+```java
+CompletableFuture<Integer> future = CompletableFuture.supplyAsync(() -> {
+    return 100;
+});
+CompletableFuture<Void> f =  future.thenRun(() -> System.out.println("finished"));
+System.out.println(f.get());
+```
+
+### (6) 组合
+
+```java
+//Function 参数是当前 CompletableFuture 的计算值
+//返回结果是一个新的 CompletableFuture，并组合原来的 CompletableFuture 和函数返回的 CompletableFuture
+public <U> CompletableFuture<U> thenCompose(Function<? super T,? extends CompletionStage<U>> fn)
+public <U> CompletableFuture<U> thenComposeAsync(Function<? super T,? extends CompletionStage<U>> fn)
+public <U> CompletableFuture<U> thenComposeAsync(Function<? super T,? extends CompletionStage<U>> fn, Executor executor)
+```
+
+注：`thenCompose` 返回的对象并不一是函数 fn 返回的对象，若原来的 CompletableFuture 还没有计算出来，就会生成一个新的组合后的 CompletableFuture
+
+```java
+CompletableFuture<Integer> future = CompletableFuture.supplyAsync(() -> {
+    return 100;
+});
+CompletableFuture<String> f =  future.thenCompose( i -> {
+    return CompletableFuture.supplyAsync(() -> {
+        return (i * 10) + "";
+    });
+});
+System.out.println(f.get()); //1000
+```
+
+---
+
+功能类似 `thenAcceptBoth`：
+
+- 只不过 thenAcceptBoth 是纯消费，其函数参数没有返回值
+- 而 thenCombine 的函数参数 fn 有返回值
+
+```java
+public <U,V> CompletableFuture<V> thenCombine(CompletionStage<? extends U> other, BiFunction<? super T,? super U,? extends V> fn)
+public <U,V> CompletableFuture<V> thenCombineAsync(CompletionStage<? extends U> other, BiFunction<? super T,? super U,? extends V> fn)
+public <U,V> CompletableFuture<V> thenCombineAsync(CompletionStage<? extends U> other, BiFunction<? super T,? super U,? extends V> fn, Executor executor)
+```
+
+注：两个 CompletionStage 并行执行，并没有先后依赖顺序，`other` 并不会等待先前的 CompletableFuture 执行完毕后再执行
+
+```java
+CompletableFuture<Integer> future = CompletableFuture.supplyAsync(() -> {
+    return 100;
+});
+CompletableFuture<String> future2 = CompletableFuture.supplyAsync(() -> {
+    return "abc";
+});
+CompletableFuture<String> f =  future.thenCombine(future2, (x,y) -> y + "-" + x);
+System.out.println(f.get()); //abc-100
+```
+
+### (7) Either
+
+下面的方法是当任意一个 CompletableFuture 计算完成时就会执行
+
+```java
+public CompletableFuture<Void>  acceptEither(CompletionStage<? extends T> other, Consumer<? super T> action)
+public CompletableFuture<Void>  acceptEitherAsync(CompletionStage<? extends T> other, Consumer<? super T> action)
+public CompletableFuture<Void>  acceptEitherAsync(CompletionStage<? extends T> other, Consumer<? super T> action, Executor executor)
+public <U> CompletableFuture<U> applyToEither(CompletionStage<? extends T> other, Function<? super T,U> fn)
+public <U> CompletableFuture<U> applyToEitherAsync(CompletionStage<? extends T> other, Function<? super T,U> fn)
+public <U> CompletableFuture<U> applyToEitherAsync(CompletionStage<? extends T> other, Function<? super T,U> fn, Executor executor)
+```
+
+- `acceptEither`：当任意一个 CompletionStage 完成时，action 就会被执行，返回 `CompletableFuture<Void>`
+- `applyToEither`：当任意一个 CompletionStage 完成时，fn 会被执行，返回值会当作新的 `CompletableFuture<U>` 的计算结果
+
+```java
+Random rand = new Random();
+CompletableFuture<Integer> future = CompletableFuture.supplyAsync(() -> {
+    try {
+        Thread.sleep(10000 + rand.nextInt(1000));
+    } catch (InterruptedException e) {
+        e.printStackTrace();
+    }
+    return 100;
+});
+CompletableFuture<Integer> future2 = CompletableFuture.supplyAsync(() -> {
+    try {
+        Thread.sleep(10000 + rand.nextInt(1000));
+    } catch (InterruptedException e) {
+        e.printStackTrace();
+    }
+    return 200;
+});
+CompletableFuture<String> f =  future.applyToEither(future2,i -> i.toString());
+```
+
+### (8) 辅助方法 allOf 和 anyOf
+
+下面两个方法用来组合多个CompletableFuture：
+
+```java
+public static CompletableFuture<Void> 	allOf(CompletableFuture<?>... cfs)
+public static CompletableFuture<Object> anyOf(CompletableFuture<?>... cfs)
+```
+
+- `allOf`：当所有的 CompletableFuture 都执行完后执行计算
+- `anyOf`：当任意一个 CompletableFuture 执行完后就会执行计算，计算的结果相同
+
+```java
+Random rand = new Random();
+CompletableFuture<Integer> future1 = CompletableFuture.supplyAsync(() -> {
+    try {
+        Thread.sleep(10000 + rand.nextInt(1000));
+    } catch (InterruptedException e) {
+        e.printStackTrace();
+    }
+    return 100;
+});
+CompletableFuture<String> future2 = CompletableFuture.supplyAsync(() -> {
+    try {
+        Thread.sleep(10000 + rand.nextInt(1000));
+    } catch (InterruptedException e) {
+        e.printStackTrace();
+    }
+    return "abc";
+});
+//CompletableFuture<Void> f =  CompletableFuture.allOf(future1,future2);
+CompletableFuture<Object> f =  CompletableFuture.anyOf(future1,future2);
+System.out.println(f.get());
+```
+
+## 6、ForkJoin 分支/合并框架(工作窃取)
 
 - 主要用于并行计算，类似 MapReduce，即把**大的计算任务拆分成多个小任务并行计算**
 
@@ -4950,7 +5274,7 @@ public class FutureTaskTest {
   }
   ```
 
-## 6、concurrentForkJoinPool ==
+## 7、concurrentForkJoinPool ==
 
 
 

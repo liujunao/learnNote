@@ -5214,30 +5214,140 @@ JVM 的**方法调用字节码指令**：
 
     **编译器**： 把代码编译成本地代码提升执行效率
 
-- HotSpot **内置的即时编译器**： `Client Compiler和Server Compiler`，简称为**C1编译器和C2编译器**
+---
 
-    > 可以使用 `-client 或 -server` 参数去强制指定运行模式
+Java 执行过程：
 
-- HotSpot 的**分层编译**： 解释器替编译器收集性能监控信息，提高代码的优化程度
+- **第一步(前端编译)**：由 `javac` 将源码编译成字节码，进行词法分析、语法分析、语义分析
 
+- **第二步(解释执行)**：无需编译直接逐条将字节码解释执行
+
+    > 解释执行过程中，虚拟机同时对程序运行的信息进行收集，编译器逐渐进行后端编译，把字节码编译成机器码
+    >
+    > 注：不是所有的代码都会被编译，只有被 JVM 认定为的热点代码，才可能被编译
+
+<img src="../../pics/java/jvm_105.png" align=left>
+
+### (2) JVM 的编译器
+
+JVM 内置的即时编译器： `Client Compiler` 和 `Server Compiler`，简称为**C1编译器和C2编译器**
+
+> 可以使用 `-client 或 -server` 参数去强制指定运行模式
+
+- `Client Compiler` 注重启动速度和局部的优化
+
+    > C1 会做三件事：
+    >
+    > - 局部简单可靠的优化，如：字节码的基础优化，方法内联、常量传播等，放弃许多耗时较长的全局优化
+    >
+    > - 将字节码构造成高级中间表示 `HIR`，HIR 与平台无关，通常采用图结构，适合 JVM 对程序进行优化
+    >
+    > - 最后将 HIR 转换成低级中间表示 `LIR`，在LIR的基础上会进行寄存器分配、窥孔优化等操作，最终生成机器码
+    >
+    >     > 窥孔优化：局部优化方式，编译器在一个或多个基本块中，针对生成的代码，结合 CPU 指令特点，通过一些带来性能提升的转换规则或通过整体的分析，进行指令转换，提升代码性能
+
+- `Server Compiler` 关注全局的优化，性能更好，但由于会进行更多的全局分析，所以启动速度会变慢
+
+    > `C2` 进行编译优化时，会使用一种控制流与数据流结合的图数据结构 `Ideal Graph`：
+    >
+    > - `Ideal Graph` 表示当前程序的数据流向和指令间的依赖关系
+    >
+    >     > 依靠这种图结构，某些优化步骤(如：涉及浮动代码块的优化步骤)变得不那么复杂
+    >
+    > - `Ideal Graph` 在解析字节码时构建，根据字节码指令向一个空的 `Graph` 添加节点
+    >
+    >     > `Graph` 中的节点通常对应一个指令块，每个指令块包含多条相关联的指令，JVM 会利用一些优化技术对这些指令进行优化，如：Global Value Numbering、常量折叠等，解析结束后，还会进行一些死代码的剔除操作
+    >
+    > - `Ideal Graph` 生成后，会在这个基础上结合收集的程序运行信息来进行一些全局优化
+    >
+    >     > 这个阶段如果 JVM 判断此时没有全局优化的必要，会跳过这部分优化
+    >
+    > `Ideal Graph` 最后被转化为一种更接近机器层面的 `MachNode Graph`，最后编译的机器码就是从 MachNode Graph 中获得
+    >
+    > <img src="../../pics/java/jvm_106.png" align=left>
+
+- `Graal Compiler`(JDK9)：
+
+    > 相比 C2 编译器，Graal 有这样几种关键特性：
+    >
+    > - Graal 更青睐基于预测的激进优化，所以 Graal 的峰值性能通常要比 C2 更好
+    >
+    >     > 比如：分支预测，根据程序不同分支的运行概率，选择性地编译一些概率较大的分支
+    >
+    > - 使用 Java 编写，对于 Java 语言，尤其是新特性，比如 Lambda、Stream 等更加友好
+    >
+    > - 更深层次的优化，比如虚函数的内联、部分逃逸分析等
+    >
+    >  可通过 `-XX:+UnlockExperimentalVMOptions、-XX:+UseJVMCICompiler` 启用 Graal，并会替换 C2 编译器
+
+### (3) 分层编译
+
+- **分层编译**： 解释器替编译器收集性能监控信息，提高代码的优化程度
     - **第0层，程序解释运行**，解释器不开启性能监控功能，可触发第 1 层编译 
     - **第1层，C1编译**，将字节码编译为本地代码，进行简单、可靠的优化，如有必要将加入性能监控的逻辑 
     - **第2层，C2编译**，将字节码编译为本地代码，启用一些编译耗时较长的优化，甚至会根据性能监控信息进行不可靠的激进优化 
 
-- **用 Client Compiler 获取更高的编译速度，用 Server Compiler 获取更好的编译质量**
+> 用 Client Compiler 获取更高的编译速度，用 Server Compiler 获取更好的编译质量
 
-### (2) 编译对象与触发条件
+---
+
+分层编译将 JVM 执行状态分为五个层次：
+
+- 0 层：解释执行
+- 1 层：执行不带 profiling 的 C1 代码
+- 2 层：执行仅带方法调用次数以及循环回边执行次数 profiling 的 C1 代码
+- 3 层：执行带所有 profiling 的 C1 代码
+- 4 层：执行 C2 代码
+
+> `profiling`：收集能够反映程序执行状态的数据，如：方法调用次数、循环回边的执行次数
+
+- C1 层代码的执行效率：1层 > 2层 > 3层
+
+- 1 层和 4 层都是终止状态，当一个方法到达终止状态后，只要编译的代码没有失效，则 JVM 就不会再次发出该方法的编译请求
+- 服务实际运行时，JVM 会根据服务运行情况，从解释执行开始，选择不同的编译路径，直到到达终止状态
+
+---
+
+<img src="../../pics/java/jvm_107.png" align=left>
+
+常见的编译路径：
+
+- 路径①：代表编译的一般情况，热点方法从解释执行到被 3 层的 C1 编译，最后被 4 层的 C2 编译
+
+- 路径②：JVM 会在 3 层编译后，放弃进入 C2 编译，直接选择用 1 层的 C1 编译运行
+
+    > 场景：若方法比较小(如：getter/setter方法)，3 层的 `profiling` 没有收集到有价值的数据，JVM 会断定该方法对于 C1 代码和C2 代码的执行效率相同
+
+- 路径③：当 C1 忙碌时，在解释执行过程中对程序进行 profiling ，根据信息直接进入第 4 层的 C2 编译
+
+- 路径④：当 C2 忙碌时，方法会被 2 层的 C1 编译，然后再被 3 层的 C1 编译，以减少方法在 3 层的执行时间
+
+    > C1 的执行效率是1层 > 2层 > 3层，第 3 层一般要比第 2 层慢 35% 以上
+
+- 路径⑤：若编译器做了激进优化(如：分支预测)，在实际运行时发现预测出错，这时就会进行反优化，重新进入解释执行
+
+### (4) 及时编译的触发
 
 - **被 JIT编译的热点代码**分类： 
     - **被多次调用的方法：** 编译器会以整个方法作为编译对象，属于**标准的 JIT 编译方式**
     - **被多次执行的循环体：** 编译器会以整个方法作为编译对象，这种编译方式称之为**栈上替换（OSR编译）** 
 - **热点探测**：**基于采样的热点探测**和**基于计数器的热点探测(HotSpot 采用)**
 
+---
+
+- 当方法的调用次数和循环回边的次数的和，超过 `-XX:CompileThreshold` 的指定阈值时(使用C1时，默认值为1500；使用C2时，默认值为10000)，就会触发即时编译
+
+- 若开启分层编译，`-XX:CompileThreshold` 的阈值将失效，触发编译会由以下的条件来判断：
+    - 方法调用次数大于 `-XX:TierXInvocationThreshold` 指定的阈值乘以系数
+    - 方法调用次数大于 `-XX:TierXMINInvocationThreshold` 指定的阈值乘以系数，且方法调用次数和循环回边次数之和大于 `-XX:TierXCompileThreshold` 指定的阈值乘以系数
+
+---
+
 方法调用计数器触发的即时编译交互过程如下图所示：
 
-![](../../pics/java/jvm_29.png)
+<img src="../../pics/java/jvm_29.png" align=left width=500>
 
-### (3) 编译过程
+### (5) 编译过程
 
 - **Client Compiler** 是一个简单快速的**三段式编译器**，关注**局部性优化**，放弃耗时长的全局优化
 
@@ -5253,7 +5363,7 @@ JVM 的**方法调用字节码指令**：
 
     会执行所有经典的优化动作，如无用代码消除、循环展开、循环表达式外提、消除公共子表达式、常量传播、基本块重排序等，还会实现如范围检查消除、空值检查消除等Java语言特性密切相关的优化技术
 
-### (4) 实战：查看及分析即时编译结果
+### (6) 实战：查看及分析即时编译结果
 
 
 
@@ -5283,21 +5393,398 @@ JVM 的**方法调用字节码指令**：
 
 ### (1) 优化技术概览
 
-![](../../pics/java/jvm_31.png)
+<img src="../../pics/java/jvm_31.png" align=left width=700>
 
-![](../../pics/java/jvm_32.png)
+<img src="../../pics/java/jvm_32.png" align=left width=700>
 
-### (2) 方法内联
+### (2) 中间表达形式
 
-- **内联函数**： 在程序编译时，编译器将程序中出现的内联函数的调用表达式用内联函数的函数体来进行替换
+#### 1. 简介
 
-    > 编译器只会考虑把 final 修饰的函数变成内联函数
+编译器分为前端和后端：
 
-- **方法内联**： JVM 会把频繁执行的方法调用替换成方法体本身
+- 前端编译：经过词法分析、语法分析、语义分析生成中间表达形式 `IR` 
 
-    > **类型继承关系分析(CHA)**技术和**内联缓存**来完成虚方法内联 
+    > Java 字节码就是一种 `IR`，但是字节码的结构复杂，不适合做全局的分析优化
 
-### (3) 逃逸分析
+- 后端编译：对 `IR` 进行优化，生成目标代码
+
+#### 2. SSA
+
+静态单赋值 `SSA`：图结构的 `IR`，每个变量只能被赋值一次，且只有当变量被赋值后才能使用
+
+- `SSA IR` 形式的伪代码：由于 `SSA IR` 的每个变量只能赋值一次，所以代码中的 `a` 在 SSA IR 中会分成 `a_1、a_2` 两个变量来赋值，这样编译器可以很容易通过扫描这些变量来发现 a_1 赋值后并没有使用，赋值是冗余的
+
+    ```java
+    Plain Text
+    {
+      a_1 = 1;
+      a_2 = 2;
+      b_1 = a_2;
+    }
+    ```
+
+- 死代码删除例子：
+
+    ```java
+    public void DeadCodeElimination{
+      int a = 2;
+      int b = 0
+      if(2 > 1){
+         a = 1;
+      } else{
+         b = 2;
+      }
+      add(a,b)
+    }
+    
+    //得到 SSA IR 伪代码
+    a_1 = 2;
+    b_1 = 0
+    if true:
+      a_2 = 1;
+    else
+      b_2 = 2;
+    add(a,b)
+        
+    //编译器通过执行字节码可以发现 b_2 赋值后不会被使用，else分支不会被执行，经过死代码删除后就可以得到代码：
+    public void DeadCodeElimination{
+      int a = 1;
+      int b = 0;
+      add(a,b)
+    }
+    ```
+
+#### 3. C1 的中间表达形式
+
+C1 编译器的中间表达形式分类：下述两种 IR 都是 SSA 形式
+
+- 高级中间表达形式 `HIR`：由很多基本块组成的控制流图结构，每个块包含很多 SSA 形式的指令
+
+    > 基本块的结构如下图所示：
+    >
+    > <img src="../../pics/java/jvm_108.png" align=left>
+    >
+    > - `predecessors` 表示前驱基本块
+    >
+    >     > 由于前驱可能是多个，所以是由多个 BlockBegin 组成的可扩容数组 `BlockList`
+    >
+    > - `successors` 表示多个后继基本块 BlockEnd
+    > - 主体块：包含程序执行的指令和一个 next 指针，指向下一个执行的主体块
+    >
+    > ---
+    >
+    > 从字节码到 `HIR` 构造最终调用 `GraphBuilder`：
+    >
+    > - 第一步：`GraphBuilder` 遍历字节码构造所有代码基本块储存为一个链表结构
+    >
+    >     > 注：此时的基本块只有 BlockBegin，不包括具体的指令
+    >
+    > - 第二步：`GraphBuilder` 用一个 ValueStack 作为操作数栈和局部变量表，模拟执行字节码，构造出对应的 HIR，填充之前空的基本块
+    >
+    > ```shell
+    > #简单字节码块构造 HIR 的过程示例
+    > 	字节码                  Local Value             operand stack              HIR
+    > 5: iload_1                  [i1,i2]                 [i1]
+    > 6: iload_2                  [i1,i2]                 [i1,i2]   
+    >                           ................................................   i3: i1 * i2
+    > 7: imul                                   
+    > 8: istore_3                 [i1,i2，i3]              [i3]
+    > #执行 iload_1 时，操作数栈压入变量i1
+    > #执行 iload_2 时，操作数栈压入变量i2
+    > #执行 imul 时弹出栈顶两个值，构造出 HIR i3 : i1 * i2，生成的 i3 入栈
+    > ```
+    >
+    > C1 编译器优化大部分都是在 HIR 上完成
+
+- 低级中间表达形式 `LIR`：优化完成后，HIR 通过优化消除一些中间节点生成 LIR，形式上更加简化
+
+#### 4. C2 的中间表达形式
+
+##### `Sea-of-Nodes`
+
+C2 编译器的 Ideal Graph 采用 `Sea-of-Nodes` 中间表达形式(`SSA` 形式)：去除变量概念，直接采用值来进行运算
+
+<img src="../../pics/java/jvm_109.png" align=left width="600">
+
+```java
+//下述代码对应上面的 IR 图
+public static int foo(int count) {
+  int sum = 0;
+  for (int i = 0; i < count; i++) {
+    sum += i;
+  }
+  return sum;
+}
+```
+
+- 图中若干个顺序执行的节点被包含在同一个基本块之中，如：B0、B1等
+
+    > B0 基本块中 0 号 Start 节点是方法入口，B3 中 21 号 Return 节点是方法出口
+
+- 红色加粗线条为控制流，蓝色线条为数据流，而其他颜色的线条则是特殊的控制流或数据流
+
+- 被控制流边所连接的是固定节点，其他的则是浮动节点
+
+    > 浮动节点：指只要能满足数据依赖关系，可以放在不同位置的节点，浮动节点变动的过程称为 Schedule
+
+- 这种图具有轻量级的边结构，图中的边仅由指向另一个节点的指针表示，节点是 Node 子类的实例，带有指定输入边的指针数组
+
+    > 这种表示的优点：改变节点的输入边很快，若想改变输入边，只要将指针指向 Node，然后存入 Node 的指针数组就可以
+
+依赖于这种图结构，通过收集程序运行的信息，JVM 可以通过 Schedule 浮动节点，从而获得最好的编译效果
+
+##### `Phi And Region Nodes`
+
+> `Ideal Graph` 是 `SSA IR`，没有变量概念，问题：不同执行路径可能会对同一变量设置不同的值
+>
+> 例如：下述代码的 `if` 语句的两个分支中，分别返回 5 和 6，根据不同的执行路径，所读取到的值很有可能不同
+>
+> ```java
+> int test(int x) {
+> 	int a = 0;
+>   	if(x == 1) {
+>      	a = 5;
+>   	} else {
+>      	a = 6;
+>   	}
+>   	return a;
+> }
+> ```
+
+`Phi Nodes`：能根据不同的执行路径选择不同的值，上面代码的表示图：
+
+<img src="../../pics/java/jvm_110.png" align=left width="500">
+
+`Phi Nodes` 保存不同路径上包含的所有值，`Region Nodes` 根据不同路径的判断条件，从 `Phi Nodes` 取得当前执行路径中变量应该赋予的值，带有 Phi 节点的 SSA 形式的伪代码如下：
+
+```java
+int test(int x) {
+  	a_1 = 0;
+  	if(x == 1){
+    	a_2 = 5;
+  	}else {
+    	a_3 = 6;
+  	}
+  	a_4 = Phi(a_2,a_3);
+  	return a_4;
+}
+```
+
+##### `Global Value Numbering(GVN)`
+
+`Global Value Numbering(GVN)`：为每个计算得到的值分配一个单独编号，然后遍历指令寻找优化机会，可以发现并消除等价计算
+
+- 若一段程序中出现多次操作数相同的乘法，则即时编译器可以将这些乘法合并，从而降低输出机器码的大小
+- 若这些乘法出现在同一执行路径上，则 GVN 将省下冗余的乘法操作
+
+`Sea-of-Nodes` 只存在值的，因此 GVN 算法非常简单：即时编译器只需判断该浮动节点是否与已存在的浮动节点的编号相同，所输入的`IR` 节点是否一致，便可以将这两个浮动节点归并成一个
+
+```java
+a = 1;
+b = 2;
+c = a + b;
+d = a + b;
+e = d;
+```
+
+GVN 会利用 Hash 算法编号：
+
+- 计算 a = 1 时，得到编号 1，计算 b = 2 时得到编号2，计算 c = a + b 时得到编号 3，这些编号都会放入 Hash 表中保存
+- 计算 d = a + b 时，会发现 a + b 已经存在 Hash 表中，不会再进行计算，直接从 Hash 表中取出计算过的值
+- 最后的 e = d 也可以由 Hash 表中查到而进行复用
+
+可以将 `GVN` 理解为在 `IR` 图上的公共子表达式消除 `CSE`，两者区别：GVN 直接比较值的相同与否，而 CSE 借助词法分析器来判断两个表达式相同与否
+
+### (3) 方法内联
+
+**方法内联**：指在编译过程中遇到方法调用时，将目标方法的方法体纳入编译范围中，并取代原方法调用的优化手段
+
+> `JIT` 大部分的优化都在内联基础上进行
+
+##### 方法内联过程
+
+- 若没有方法内联，调用 getter/setter 时，程序执行时需要保存当前方法的执行位置，创建并压入用于 getter/setter 的栈帧、访问字段、弹出栈帧，最后再恢复当前方法的执行
+
+- 内联了对 getter/setter 的方法调用后，上述操作仅剩字段访问
+
+> C2 编译器中，方法内联在解析字节码的过程中完成：
+>
+> - 当遇到方法调用字节码时，编译器将根据一些阈值参数决定是否需要内联当前方法的调用
+> - 若需要内联，则开始解析目标方法的字节码
+
+---
+
+案例：
+
+```java
+public static boolean flag = true;
+public static int value0 = 0;
+public static int value1 = 1;
+
+public static int foo(int value) {
+    int result = bar(flag);
+    if (result != 0) {
+        return result;
+    } else {
+        return value;
+    }
+}
+
+public static int bar(boolean flag) {
+    return flag ? value0 : value1;
+}
+```
+
+bar 方法的 IR 图：
+
+<img src="../../pics/java/jvm_111.png" align=left width="500">
+
+内联后的 IR 图：
+
+<img src="../../pics/java/jvm_112.png" align=left width="500">
+
+内联不仅将被调用方法的 IR 图节点复制到调用者方法的 IR 图中，还要完成以下操作：
+
+1. 被调用方法的参数替换为调用者方法进行方法调用时所传入参数
+
+    > 上面例子中，将 bar 方法中的 1 号 P(0) 节点替换为 foo 方法 3 号 LoadField 节点
+
+2. 调用者方法的 IR 图中，方法调用节点的数据依赖会变成被调用方法的返回
+
+    若存在多个返回节点，会生成一个 Phi 节点，将这些返回值聚合起来，并作为原方法调用节点的替换对象
+
+    > 图中将 8号 == 节点，以及 12 号 Return 节点连接到原 5 号 Invoke 节点的边，然后指向新生成的 24 号 Phi 节点中
+
+3. 若被调用方法抛出某种类型的异常，而调用者方法恰好有该异常类型的处理器，且覆盖这一方法调用，则即时编译器需要将被调用方法抛出异常的路径，与调用者方法的异常处理器相连接
+
+##### 方法内联条件
+
+- 编译器的大部分优化都在方法内联的基础上，因此内联的方法越多，生成代码的执行效率越高
+
+- 但对于即时编译器，内联的方法越多，编译时间就越长，程序达到峰值性能的时刻就比较晚
+
+可以通过 `-XX:MaxInlineLevel` 调整内联的层数，通过 `-XX:MaxRecursiveInlineLevel` 调整 1 层的直接递归调用
+
+<img src="../../pics/java/jvm_113.png" align=left width="700">
+
+##### 虚拟函数内联
+
+- JVM 通过保存虚函数表 `VMT` 存储 class 对象中所有的虚函数，class 的实例对象保存着一个 `VMT` 指针：
+
+- 程序运行时首先加载实例对象，然后通过实例对象找到 VMT，通过 VMT 找到对应方法的地址，所以虚函数的调用比直接指向方法地址的 classic call 性能上会差一些。
+
+注：Java 中所有非私有的成员函数的调用都是虚调用
+
+---
+
+案例一：
+
+```java
+public class SimpleInliningTest{
+    public static void main(String[] args) throws InterruptedException {
+        VirtualInvokeTest obj = new VirtualInvokeTest();
+        VirtualInvoke1 obj1 = new VirtualInvoke1();
+        for (int i = 0; i < 100000; i++) {
+            invokeMethod(obj);
+            invokeMethod(obj1);
+        }
+        Thread.sleep(1000);
+    }
+
+    public static void invokeMethod(VirtualInvokeTest obj) {
+        obj.methodCall();
+    }
+
+    private static class VirtualInvokeTest {
+        public void methodCall() {
+            System.out.println("virtual call");
+        }
+    }
+
+    private static class VirtualInvoke1 extends VirtualInvokeTest {
+        @Override
+        public void methodCall() {
+            super.methodCall();
+        }
+    }
+}
+```
+
+经过 JIT 编译器优化后，进行反汇编得到下面这段汇编代码：
+
+```objc
+0x0000000113369d37: callq  0x00000001132950a0  ; OopMap{off=476}
+                                                ;*invokevirtual methodCall  //代表虚调用
+                                                ; - SimpleInliningTest::invokeMethod@1 (line 18)
+                                                ;   {optimized virtual_call}  //虚调用已经被优化
+```
+
+由上知， JIT 对 methodCall 方法进行了虚调用优化 optimized virtual_call，经过优化后的方法可以被内联
+
+---
+
+案例二：多实现的虚调用
+
+```java
+public class SimpleInliningTest{
+    public static void main(String[] args) throws InterruptedException {
+        VirtualInvokeTest obj = new VirtualInvokeTest();
+        VirtualInvoke1 obj1 = new VirtualInvoke1();
+        VirtualInvoke2 obj2 = new VirtualInvoke2();
+        for (int i = 0; i < 100000; i++) {
+            invokeMethod(obj);
+            invokeMethod(obj1);
+        invokeMethod(obj2);
+        }
+        Thread.sleep(1000);
+    }
+
+    public static void invokeMethod(VirtualInvokeTest obj) {
+        obj.methodCall();
+    }
+
+    private static class VirtualInvokeTest {
+        public void methodCall() {
+            System.out.println("virtual call");
+        }
+    }
+
+    private static class VirtualInvoke1 extends VirtualInvokeTest {
+        @Override
+        public void methodCall() {
+            super.methodCall();
+        }
+    }
+    private static class VirtualInvoke2 extends VirtualInvokeTest {
+        @Override
+        public void methodCall() {
+            super.methodCall();
+        }
+    }
+}
+```
+
+经过反编译得到下面的汇编代码：
+
+```objc
+0x000000011f5f0a37: callq  0x000000011f4fd2e0  ; OopMap{off=28}
+                                                ;*invokevirtual methodCall  //代表虚调用
+                                                ; - SimpleInliningTest::invokeMethod@1 (line 20)
+                                                ;   {virtual_call}  //虚调用未被优化
+```
+
+由上知，多个实现的虚调用未被优化，依然是 virtual_call
+
+### (4) 逃逸分析
+
+
+
+
+
+
+
+
 
 - **逃逸分析**：分析对象动态作用域，当一个对象在方法中被定义后，可能**被外部方法所引用(方法逃逸)**，甚至还可能**被外部线程所访问到(线程逃逸)**
 - **若对象不会逃逸，则能进行高效优化**，如： 栈上分配(减轻垃圾收集的压力)、同步消除(读写不会有竞争)、标量替换
@@ -5311,7 +5798,7 @@ JVM 的**方法调用字节码指令**：
 
 - 虚拟机的执行子系统对于每次数组元素的读写都带有一次隐含的条件判断
 
-## 5、实战：深入理解 Graal 编译器
+## 4、实战：深入理解 Graal 编译器
 
 ### (1) 构建编译调试环境
 
@@ -5339,7 +5826,7 @@ JVM 的**方法调用字节码指令**：
 
 
 
-## 6、Java与C/C++的编译器对比
+## 5、Java与C/C++的编译器对比
 
 Java虚拟机的即时编译器与C/C++的静态优化编译器相比，可能会由于下列原因导致输出的本地代码有劣势：
 
@@ -5631,3 +6118,1521 @@ Java虚拟机的即时编译器与C/C++的静态优化编译器相比，可能�
   当该锁没有被其他线程获取，则持有偏向锁的线程将不需要进行同步
 
 - **目的**： 消除无竞争情况下的同步原语，进一步提高程序的运行性能
+
+# 十四、CMS GC 的九种常见问题
+
+## 1、GC 问题判断
+
+### (1) 判断 GC 是否有问题
+
+#### 1. 设定评价标准
+
+评判 GC 的两个核心指标：
+
+- **延迟(Latency)/最大停顿时间**：垃圾收集过程中一次 STW `Stop-The-World` 的最长时间，越短越好，一定程度上可接受频次的增大
+
+- **吞吐量(Throughput)**：应用系统的生命周期内，由于 GC 线程会占用 Mutator 当前可用的 CPU 时钟周期，吞吐量即为 Mutator 有效花费的时间占系统总运行时间的百分比
+
+    > 例如：系统运行了 100 min，GC 耗时 1 min，则系统吞吐量为 99%，吞吐量优先的收集器可以接受较长的停顿
+
+---
+
+> 目标：更追求低延时，避免一次 GC 停顿时间过长对用户体验造成损失
+
+衡量指标的两点判断：**一次停顿的时间不超过应用服务的 TP9999，GC 的吞吐量不小于 99.99%**
+
+- **$t_{stw} \leq t_{tp9999}$**：$t_{stw}$ 为单次停顿时间，$t_{tp9999}$ 为应用 4 个 9 耗时
+- $(1 - \frac{\sum^n_{k=1}c_k\bar{t}_k}{T_n})\times 100\% \ge 99.99\%$：$c_k$ 为一个时间周期内 gc 次数，$\bar{t}_k$ 为该时间周期平均停顿时间，$T_n$ 为总时间
+
+> 案例：假设服务 A 的 TP9999 为 80 ms，平均 GC 停顿为 30 ms，则 A 的最大停顿时间最好不要超过 80 ms，GC 频次控制在 5 min 以上一次
+
+#### 2. 读懂 GC Cause
+
+**JVM 进行 GC 操作的条件**：
+
+```cpp
+const char* GCCause::to_string(GCCause::Cause cause) {
+  switch (cause) {
+    case _java_lang_system_gc:
+      return "System.gc()";
+
+    case _full_gc_alot:
+      return "FullGCAlot";
+
+    case _scavenge_alot:
+      return "ScavengeAlot";
+
+    case _allocation_profiler:
+      return "Allocation Profiler";
+
+    case _jvmti_force_gc:
+      return "JvmtiEnv ForceGarbageCollection";
+
+    case _gc_locker:
+      return "GCLocker Initiated GC";
+
+    case _heap_inspection:
+      return "Heap Inspection Initiated GC";
+
+    case _heap_dump:
+      return "Heap Dump Initiated GC";
+
+    case _wb_young_gc:
+      return "WhiteBox Initiated Young GC";
+
+    case _wb_conc_mark:
+      return "WhiteBox Initiated Concurrent Mark";
+
+    case _wb_full_gc:
+      return "WhiteBox Initiated Full GC";
+
+    case _no_gc:
+      return "No GC";
+
+    case _allocation_failure:
+      return "Allocation Failure";
+
+    case _tenured_generation_full:
+      return "Tenured Generation Full";
+
+    case _metadata_GC_threshold:
+      return "Metadata GC Threshold";
+
+    case _metadata_GC_clear_soft_refs:
+      return "Metadata GC Clear Soft References";
+
+    case _cms_generation_full:
+      return "CMS Generation Full";
+
+    case _cms_initial_mark:
+      return "CMS Initial Mark";
+
+    case _cms_final_remark:
+      return "CMS Final Remark";
+
+    case _cms_concurrent_mark:
+      return "CMS Concurrent Mark";
+
+    case _old_generation_expanded_on_last_scavenge:
+      return "Old Generation Expanded On Last Scavenge";
+
+    case _old_generation_too_full_to_scavenge:
+      return "Old Generation Too Full To Scavenge";
+
+    case _adaptive_size_policy:
+      return "Ergonomics";
+
+    case _g1_inc_collection_pause:
+      return "G1 Evacuation Pause";
+
+    case _g1_humongous_allocation:
+      return "G1 Humongous Allocation";
+
+    case _dcmd_gc_run:
+      return "Diagnostic Command";
+
+    case _last_gc_cause:
+      return "ILLEGAL VALUE - last gc cause - ILLEGAL VALUE";
+
+    default:
+      return "unknown GCCause";
+  }
+  ShouldNotReachHere();
+}
+```
+
+重点需要关注的几个GC Cause：
+
+- `System.gc()`：手动触发 GC 操作
+- `CMS`：CMS GC 在执行过程中的一些动作，重点关注 CMS Initial Mark 和 CMS Final Remark 两个 STW 阶段
+- `Promotion Failure`：Old 区没有足够的空间分配给 Young 区晋升的对象(即使总可用内存足够大)
+- `Concurrent Mode Failure`：CMS GC 运行期间，Old 区预留的空间不足以分配给新对象，此时收集器会退化，严重影响 GC 性能
+
+- `GCLocker Initiated GC`：若线程执行在 JNI 临界区时，刚好需要进行 GC，此时 GC Locker 会阻止 GC 的发生，同时阻止其他线程进入 JNI 临界区，直到最后一个线程退出临界区时触发一次 GC
+
+---
+
+**使用这些 Cause 触发回收的时机**：
+
+```cpp
+bool CMSCollector::shouldConcurrentCollect() {
+  LogTarget(Trace, gc) log;
+
+  if (_full_gc_requested) {
+    log.print("CMSCollector: collect because of explicit  gc request (or GCLocker)");
+    return true;
+  }
+
+  FreelistLocker x(this);
+  // ------------------------------------------------------------------
+  // Print out lots of information which affects the initiation of
+  // a collection.
+  if (log.is_enabled() && stats().valid()) {
+    log.print("CMSCollector shouldConcurrentCollect: ");
+
+    LogStream out(log);
+    stats().print_on(&out);
+
+    log.print("time_until_cms_gen_full %3.7f", stats().time_until_cms_gen_full());
+    log.print("free=" SIZE_FORMAT, _cmsGen->free());
+    log.print("contiguous_available=" SIZE_FORMAT, _cmsGen->contiguous_available());
+    log.print("promotion_rate=%g", stats().promotion_rate());
+    log.print("cms_allocation_rate=%g", stats().cms_allocation_rate());
+    log.print("occupancy=%3.7f", _cmsGen->occupancy());
+    log.print("initiatingOccupancy=%3.7f", _cmsGen->initiating_occupancy());
+    log.print("cms_time_since_begin=%3.7f", stats().cms_time_since_begin());
+    log.print("cms_time_since_end=%3.7f", stats().cms_time_since_end());
+    log.print("metadata initialized %d", MetaspaceGC::should_concurrent_collect());
+  }
+  // ------------------------------------------------------------------
+
+  // If the estimated time to complete a cms collection (cms_duration())
+  // is less than the estimated time remaining until the cms generation
+  // is full, start a collection.
+  if (!UseCMSInitiatingOccupancyOnly) {
+    if (stats().valid()) {
+      if (stats().time_until_cms_start() == 0.0) {
+        return true;
+      }
+    } else {
+   
+      if (_cmsGen->occupancy() >= _bootstrap_occupancy) {
+        log.print("CMSCollector: collect for bootstrapping statistics: occupancy = %f, boot occupancy = %f",
+                  _cmsGen->occupancy(), _bootstrap_occupancy);
+        return true;
+      }
+    }
+  }
+  if (_cmsGen->should_concurrent_collect()) {
+    log.print("CMS old gen initiated");
+    return true;
+  }
+
+  CMSHeap* heap = CMSHeap::heap();
+  if (heap->incremental_collection_will_fail(true /* consult_young */)) {
+    log.print("CMSCollector: collect because incremental collection will fail ");
+    return true;
+  }
+
+  if (MetaspaceGC::should_concurrent_collect()) {
+    log.print("CMSCollector: collect for metadata allocation ");
+    return true;
+  }
+
+  // CMSTriggerInterval starts a CMS cycle if enough time has passed.
+  if (CMSTriggerInterval >= 0) {
+    if (CMSTriggerInterval == 0) {
+      // Trigger always
+      return true;
+    }
+
+    // Check the CMS time since begin (we do not check the stats validity
+    // as we want to be able to trigger the first CMS cycle as well)
+    if (stats().cms_time_since_begin() >= (CMSTriggerInterval / ((double) MILLIUNITS))) {
+      if (stats().valid()) {
+        log.print("CMSCollector: collect because of trigger interval (time since last begin %3.7f secs)",
+                  stats().cms_time_since_begin());
+      } else {
+        log.print("CMSCollector: collect because of trigger interval (first collection)");
+      }
+      return true;
+    }
+  }
+
+  return false;
+}
+```
+
+### (2) 判断是不是 GC 引发的问题
+
+如何判断是 GC 导致的故障，还是系统本身引发 GC 问题：
+
+> Case 情况：GC 耗时增大、线程 Block 增多、慢查询增多、CPU 负载高等四个表象，如何判断哪个是根因
+
+- **时序分析**：先发生的事件是根因的概率更大，通过监控手段分析各个指标的异常时间点，还原事件时间线
+
+    > 如：先观察到 CPU 负载高(有足够的时间 Gap)，则整个问题影响链就可能是：CPU 负载高 -> 慢查询增多 -> GC 耗时增大 -> 线程 Block 增多 -> RT 上涨
+
+- **概率分析**：使用统计概率学，结合历史经验推断，由近到远按类型分析
+
+    > 如：过往慢查问题较多，则整个问题影响链可能是：慢查询增多 -> GC 耗时增大 ->  CPU 负载高   -> 线程 Block 增多 -> RT上涨
+
+- **实验分析**：通过故障演练等方式对问题现场进行模拟，触发部分条件，观察是否会发生问题
+
+    > 如：只触发线程 Block 就会发生问题，则整个问题影响链就可能是：线程Block增多  -> CPU 负载高  -> 慢查询增多  -> GC 耗时增大 ->  RT 上涨
+
+- **反证分析**：对其中某一表象进行反证分析，即判断表象的发生与否跟结果是否有相关性
+
+    > 如：从整个集群的角度观察到某些节点慢查和 CPU 都正常，但也出了问题，则整个问题影响链可能是：GC 耗时增大 -> 线程 Block 增多 ->  RT 上涨
+
+---
+
+- 若是 CPU 负载高，则可能需要用火焰图看下热点
+
+- 若是慢查询增多，则可能需要看下 DB 情况
+- 若是线程 Block 引起，则可能需要看下锁竞争的情况
+- 若各个表象证明都没有问题，则可能 GC 确实存在问题，可以继续分析 GC 问题
+
+### (3) 问题分类导读
+
+#### 1. Mutator 类型
+
+Mutator 的类型根据对象存活时间比例图来看主要分为两种：
+
+> 如下图所示：`Survival Time` 表示对象存活时间，`Rate` 表示对象分配比例
+
+- **IO 交互型**：对内存要求不大，大部分对象在 TP9999 时间内死亡， Young 区越大越好，例如：分布式 RPC、MQ、HTTP 网关服务等
+- **MEM 计算型**：对内存要求高，对象存活时间长，Old 区越大越好，主要是分布式数据计算 Hadoop，分布式存储 HBase、Cassandra，自建的分布式缓存等
+
+---
+
+如下图可以简单推算分代的边界：
+
+<img src="../../pics/java/jvm_114.png" align=left>
+
+#### 2. GC 问题分类
+
+九种不同类型的 GC 问题：
+
+- `Unexpected GC`：意外发生的 GC，实际上不需要发生，可以通过一些手段去避免
+    - `Space Shock`：空间震荡问题，参见“**场景一：动态扩容引起的空间震荡**”
+    - `Explicit GC`：显示执行 GC 问题，参见“**场景二：显式 GC 的去与留**”
+- `Partial GC`：部分收集操作的 GC，只对某些分代/分区进行回收
+    - `Young GC`：分代收集里面的 Young 区收集动作，也叫 `Minor GC`
+        - ParNew： Young GC 频繁，参见“**场景四：过早晋升**”
+    - `Old GC`：分代收集里面的 Old 区收集动作，也叫 `Major GC/Full GC` 
+        - CMS：Old GC 频繁，参见“**场景五：CMS Old GC 频繁**”
+        - CMS：Old GC 不频繁但单次耗时大，参见“**场景六：单次 CMS Old GC 耗时长**”
+- `Full GC`：全量收集的 GC，对整个堆进行回收，STW 时间会比较长，一旦发生影响较大，也叫 `Major GC`，参见“**场景七：内存碎片&收集器退化**”
+- `MetaSpace`：元空间回收引发问题，参见“**场景三：MetaSpace 区 OOM**”
+- `Direct Memory`：直接内存(也称为堆外内存)回收引发问题，参见“**场景八：堆外内存 OOM**”
+- `JNI`：本地 Native 方法引发问题，参见“**场景九：JNI 引发的 GC 问题**”
+
+## 2、常见场景分析与解决
+
+> 以下 GC 问题场景，排查难度从上到下依次递增
+
+### (1) 场景一：动态扩容引起的空间震荡
+
+#### 1. 现象
+
+- 现象：服务刚启动时 GC 次数较多，最大空间剩余很多但依然发生 GC
+- 排查：可通过观察 GC 日志或通过监控工具来观察堆的空间变化情况
+- 场景：GC Cause 一般为 Allocation Failure，且在 GC 日志中会观察到经历一次 GC ，堆内各个空间的大小会被调整
+
+#### 2. 原因
+
+原因：`-Xms` 和 `-Xmx` 设置不一致，初始化时只初始 `-Xms` 大小的空间存储信息，当空间不够时再向操作系统申请，这样必然 GC
+
+具体是通过 `ConcurrentMarkSweepGeneration::compute_new_size()` 方法计算新的空间大小：
+
+```cpp
+void ConcurrentMarkSweepGeneration::compute_new_size() {
+  	assert_locked_or_safepoint(Heap_lock);
+
+  	// If incremental collection failed, we just want to expand to the limit.
+  	if (incremental_collection_failed()) {
+    	clear_incremental_collection_failed();
+    	grow_to_reserved();
+    	return;
+  	}
+
+  	// The heap has been compacted but not reset yet.
+  	// Any metric such as free() or used() will be incorrect.
+  	CardGeneration::compute_new_size();
+
+  	// Reset again after a possible resizing
+  	if (did_compact()) {
+    	cmsSpace()->reset_after_compaction();
+  	}
+}
+```
+
+若空间剩余很多时也会进行缩容操作，通过 `-XX:MinHeapFreeRatio` 和 `-XX:MaxHeapFreeRatio` 来控制扩容和缩容的比例
+
+扩容使用  `GenCollectedHeap::expand_heap_and_allocate()` 完成：
+
+```cpp
+HeapWord* GenCollectedHeap::expand_heap_and_allocate(size_t size, bool   is_tlab) {
+  	HeapWord* result = NULL;
+  	if (_old_gen->should_allocate(size, is_tlab)) {
+    	result = _old_gen->expand_and_allocate(size, is_tlab);
+  	}
+  	if (result == NULL) {
+    	if (_young_gen->should_allocate(size, is_tlab)) {
+      		result = _young_gen->expand_and_allocate(size, is_tlab);
+    	}
+  	}
+  	assert(result == NULL || is_in_reserved(result), "result not in heap");
+  	return result;
+}
+```
+
+---
+
+整个伸缩的模型理解可以看这个图，当 committed 的空间大小超过了低水位/高水位的大小，capacity 也会随之调整：
+
+<img src="../../pics/java/jvm_115.png" align=left>
+
+#### 3. 策略
+
+- **定位**：观察 CMS GC 触发时间点 Old/MetaSpace 区的 committed 占比是不是一个固定的值，或观察总内存的使用
+
+- **解决**：尽量**将成对出现的空间大小配置参数设置成固定**
+
+    > 如：-Xms 和 -Xmx，-XX:MaxNewSize 和 -XX:NewSize，-XX:MetaSpaceSize 和 -XX:MaxMetaSpaceSize 等
+
+### (2) 场景二：显式 GC 的去与留
+
+#### 1. 现象
+
+- 触发 GC 条件：扩容缩容、Old 区达到回收阈值、MetaSpace 空间不足、Young 区晋升失败、大对象担保失败等
+
+除此之外，手动调用 `System.gc` 也可以触发 GC
+
+#### 2. 原因
+
+System.gc 的源码显示，若增加 `-XX:+DisableExplicitGC` 参数后，这个方法变成了一个空方法；若没有增加则会调用 `Universe::heap()::collect` 方法，继续跟进到这个方法中，发现 System.gc 会引发一次 STW 的 Full GC，对整个堆做收集
+
+```cpp
+//DisableExplicitGC
+JVM_ENTRY_NO_ENV(void, JVM_GC(void))
+  	JVMWrapper("JVM_GC");
+  	if (!DisableExplicitGC) {
+    	Universe::heap()->collect(GCCause::_java_lang_system_gc);
+  	}
+JVM_END
+```
+
+```cpp
+void GenCollectedHeap::collect(GCCause::Cause cause) {
+  	if (cause == GCCause::_wb_young_gc) {
+    	// Young collection for the WhiteBox API.
+    	collect(cause, YoungGen);
+  	} else {
+#ifdef ASSERT
+  	if (cause == GCCause::_scavenge_alot) {
+    	// Young collection only.
+    	collect(cause, YoungGen);
+  	} else {
+    	// Stop-the-world full collection.
+    	collect(cause, OldGen);
+  	}
+#else
+    	// Stop-the-world full collection.
+    	collect(cause, OldGen);
+#endif
+  	}
+}
+```
+
+- **保留 System.gc**：CMS GC 共分为 Background 和 Foreground 两种模式：
+
+    - `Background`：常规理解的并发收集，可以不影响正常的业务线程运行
+
+    - `Foreground Collector`：会进行一次压缩式 GC，使用同 Serial Old GC 的 Lisp2 算法，其使用 Mark-Compact 来做 Full GC，一般称之为 MSC(Mark-Sweep-Compact)，收集范围是 Java 堆的 Young 区和 Old 区以及 MetaSpace
+
+        > compact 代价巨大，因此使用 Foreground Collector 时将会带来非常长的 STW
+
+        若在应用程序中 System.gc 被频繁调用，则非常危险
+
+- **去掉 System.gc**：堆内存由 JVM 自己管理，堆外内存必须要手动释放
+
+    > DirectByteBuffer 没有 Finalizer，而是通过 sun.misc.Cleaner 自动完成，是一种基于 PhantomReference 的清理工具，比普通的 Finalizer 轻量些
+
+---
+
+为 DirectByteBuffer 分配空间过程中会显式调用 System.gc ，希望通过 Full GC 来强迫已经无用的 DirectByteBuffer 对象释放掉它们关联的 Native Memory，下面为代码实现：
+
+```java
+// These methods should be called whenever direct memory is allocated or
+// freed.  They allow the user to control the amount of direct memory
+// which a process may access.  All sizes are specified in bytes.
+static void reserveMemory(long size) {
+
+    synchronized (Bits.class) {
+        if (!memoryLimitSet && VM.isBooted()) {
+            maxMemory = VM.maxDirectMemory();
+            memoryLimitSet = true;
+        }
+        if (size <= maxMemory - reservedMemory) {
+            reservedMemory += size;
+            return;
+        }
+    }
+
+    System.gc();
+    try {
+        Thread.sleep(100);
+    } catch (InterruptedException x) {
+        // Restore interrupt status
+        Thread.currentThread().interrupt();
+    }
+    synchronized (Bits.class) {
+        if (reservedMemory + size > maxMemory)
+            throw new OutOfMemoryError("Direct buffer memory");
+        reservedMemory += size;
+    }
+
+}
+```
+
+HotSpot VM 只会在 Old GC 时才对 Old 对象做 Reference Processing，而在 Young GC 时只对 Young 对象做 Reference Processing：
+
+- Young 中的 DirectByteBuffer 对象会在 Young GC 时被处理，即做 CMS GC 会对 Old 做 Reference Processing，进而能触发 Cleaner 对已死的 DirectByteBuffer 对象做清理工作
+- 若长时间没做过 GC 或只做了 Young GC，则不会在 Old 触发 Cleaner 工作，则可能让已死亡但晋升到 Old 的 DirectByteBuffer 关联的 Native Memory 得不到及时释放
+
+> 这几个实现特征使得依赖于 System.gc 触发 GC 来保证 DirectByteMemory 的清理工作能及时完成
+>
+> 若打开了 `-XX:+DisableExplicitGC`，则清理工作可能得不到及时完成，于是就有发生 Direct Memory 的 OOM
+
+#### 3. 策略
+
+- 目前互联网中的 RPC 通信会大量使用 NIO，所以建议保留
+
+此外 JVM 提供了 `-XX:+ExplicitGCInvokesConcurrent`  和 `-XX:+ExplicitGCInvokesConcurrentAndUnloadsClasses`  参数来将 System.gc 的触发类型从 Foreground 改为 Background，同时 Background 也会做 Reference Processing，这样的话就能大幅降低了 STW 开销，同时也不会发生 NIO Direct Memory OOM
+
+#### 4. 小结
+
+- 不止 CMS，在 G1 或 ZGC 中开启 `ExplicitGCInvokesConcurrent` 模式，都会采用高性能的并发收集方式进行收集，不过还是建议在代码规范方面也要做好约束，规范好 System.gc 的使用
+
+- HotSpot 对 System.gc 有特别处理，主要体现在一次 System.gc 是否与普通 GC 一样会触发 GC 的统计/阈值数据的更新，HotSpot 里的许多 GC 算法都带有自适应的功能，会根据先前收集的效率来决定接下来的 GC 中使用的参数，但 System.gc 默认不更新这些统计数据，避免用户强行 GC 对这些自适应功能的干扰(参考`-XX:+UseAdaptiveSizePolicyWithSystemGC` 参数，默认 false)
+
+### (3) 场景三：MetaSpace 区 OOM
+
+#### 1. 现象
+
+JVM 在启动后或某个时间点开始，MetaSpace 已使用大小在持续增长，同时每次 GC 也无法释放，调大 MetaSpace 空间也无法彻底解决
+
+#### 2. 原因
+
+MetaSpace 主要由 Klass Metaspace 和 NoKlass Metaspace 两大部分组成：
+
+- `Klass MetaSpace`：存储 Klass，即 Class 文件在 JVM 的运行时数据结构，默认放在 Compressed Class Pointer Space 中，是一块连续的内存区域，紧接着 Heap
+
+    > Compressed Class Pointer Space 非必须，若设置了 `-XX:-UseCompressedClassPointers`，或 -Xmx 设置大于 32 G，就不会有这块内存，这种情况下 Klass 都会存在 NoKlass Metaspace 里
+
+- `NoKlass MetaSpace`：存储 Klass 相关的其他的内容，如：Method，ConstantPool 等，可以由多块不连续的内存组成
+
+具体的定义可以在源码  `shared/vm/memory/metaspace.hpp` 中找到：
+
+```cpp
+class Metaspace : public AllStatic {
+  	friend class MetaspaceShared;
+
+ 	public:
+  		enum MetadataType {
+    		ClassType,
+   			NonClassType,
+    		MetadataTypeCount
+  		};
+  		enum MetaspaceType {
+    		ZeroMetaspaceType = 0,
+    		StandardMetaspaceType = ZeroMetaspaceType,
+    		BootMetaspaceType = StandardMetaspaceType + 1,
+    		AnonymousMetaspaceType = BootMetaspaceType + 1,
+    		ReflectionMetaspaceType = AnonymousMetaspaceType + 1,
+    		MetaspaceTypeCount
+  		};
+
+ 	private:
+  		// Align up the word size to the allocation word size
+  		static size_t align_word_size_up(size_t);
+  		// Aligned size of the metaspace.
+  		static size_t _compressed_class_space_size;
+
+  		static size_t compressed_class_space_size() {
+    		return _compressed_class_space_size;
+  		}
+
+  		static void set_compressed_class_space_size(size_t size) {
+    		_compressed_class_space_size = size;
+  		}
+
+  		static size_t _first_chunk_word_size;
+  		static size_t _first_class_chunk_word_size;
+
+  		static size_t _commit_alignment;
+  		static size_t _reserve_alignment;
+  		DEBUG_ONLY(static bool   _frozen;)
+
+  		// Virtual Space lists for both classes and other metadata
+  		static metaspace::VirtualSpaceList* _space_list;
+  		static metaspace::VirtualSpaceList* _class_space_list;
+
+  		static metaspace::ChunkManager* _chunk_manager_metadata;
+  		static metaspace::ChunkManager* _chunk_manager_class;
+
+  		static const MetaspaceTracer* _tracer;
+}
+```
+
+MetaSpace 的对象为什么无法释放，我们看下面两点：
+
+- **MetaSpace 内存管理**：类和其元数据的生命周期与其对应的类加载器相同，只要类加载器存活，在 Metaspace 中的类元数据也存活，不能被回收。
+
+    > 每个加载器有单独的存储空间，通过 ClassLoaderMetaspace 来进行管理 SpaceManager* 的指针，相互隔离
+
+- **MetaSpace 弹性伸缩**：由于 MetaSpace 空间和 Heap 并不在一起，所以这块的空间可以不用设置或单独设置
+
+    > - 一般为避免 MetaSpace 耗尽 VM 内存都会设置一个 MaxMetaSpaceSize，在运行过程中，若实际大小小于这个值，JVM 就会通过 `-XX:MinMetaspaceFreeRatio` 和 `-XX:MaxMetaspaceFreeRatio` 动态控制整个 MetaSpace 的大小
+    >
+    > - 具体使用：`MetaSpaceGC::compute_new_size()` 会在 CMSCollector 和 G1CollectorHeap 等几个收集器执行 GC 时调用
+
+```cpp
+void MetaspaceGC::compute_new_size() {
+  	assert(_shrink_factor <= 100, "invalid shrink factor");
+  	uint current_shrink_factor = _shrink_factor;
+  	_shrink_factor = 0;
+  	const size_t used_after_gc = MetaspaceUtils::committed_bytes();
+  	const size_t capacity_until_GC = MetaspaceGC::capacity_until_GC();
+
+  	const double minimum_free_percentage = MinMetaspaceFreeRatio / 100.0;
+  	const double maximum_used_percentage = 1.0 - minimum_free_percentage;
+  	const double min_tmp = used_after_gc / maximum_used_percentage;
+  	size_t minimum_desired_capacity = (size_t)MIN2(min_tmp, double(max_uintx));
+  	// Don't shrink less than the initial generation size
+  	minimum_desired_capacity = MAX2(minimum_desired_capacity, MetaspaceSize);
+
+  	log_trace(gc, metaspace)("MetaspaceGC::compute_new_size: ");
+  	log_trace(gc, metaspace)("    minimum_free_percentage: %6.2f  maximum_used_percentage: %6.2f",
+                           minimum_free_percentage, maximum_used_percentage);
+  	log_trace(gc, metaspace)("     used_after_gc       : %6.1fKB", used_after_gc / (double) K);
+
+
+  	size_t shrink_bytes = 0;
+  	if (capacity_until_GC < minimum_desired_capacity) {
+    	// If we have less capacity below the metaspace HWM, then increment the HWM.
+    	size_t expand_bytes = minimum_desired_capacity - capacity_until_GC;
+    	expand_bytes = align_up(expand_bytes, Metaspace::commit_alignment());
+    	// Don't expand unless it's significant
+    	if (expand_bytes >= MinMetaspaceExpansion) {
+      		size_t new_capacity_until_GC = 0;
+      		bool succeeded = MetaspaceGC::inc_capacity_until_GC(expand_bytes, &new_capacity_until_GC);
+      		assert(succeeded, "Should always succesfully increment HWM when at safepoint");
+
+      		Metaspace::tracer()->report_gc_threshold(capacity_until_GC,
+                                               new_capacity_until_GC,
+                                               MetaspaceGCThresholdUpdater::ComputeNewSize);
+      		log_trace(gc, metaspace)("    expanding:  minimum_desired_capacity: %6.1fKB  expand_bytes: %6.1fKB  MinMetaspaceExpansion: %6.1fKB  new metaspace HWM:  %6.1fKB",
+                               minimum_desired_capacity / (double) K,
+                               expand_bytes / (double) K,
+                               MinMetaspaceExpansion / (double) K,
+                               new_capacity_until_GC / (double) K);
+    	}
+    	return;
+  	}
+
+  	// No expansion, now see if we want to shrink
+  	// We would never want to shrink more than this
+  	assert(capacity_until_GC >= minimum_desired_capacity,
+         			SIZE_FORMAT " >= " SIZE_FORMAT,
+         			capacity_until_GC, minimum_desired_capacity);
+  	size_t max_shrink_bytes = capacity_until_GC - minimum_desired_capacity;
+
+  	// Should shrinking be considered?
+  	if (MaxMetaspaceFreeRatio < 100) {
+    	const double maximum_free_percentage = MaxMetaspaceFreeRatio / 100.0;
+    	const double minimum_used_percentage = 1.0 - maximum_free_percentage;
+    	const double max_tmp = used_after_gc / minimum_used_percentage;
+    	size_t maximum_desired_capacity = (size_t)MIN2(max_tmp, double(max_uintx));
+    	maximum_desired_capacity = MAX2(maximum_desired_capacity, MetaspaceSize);
+    	log_trace(gc, metaspace)("    maximum_free_percentage: %6.2f  minimum_used_percentage: %6.2f",
+                             maximum_free_percentage, minimum_used_percentage);
+    	log_trace(gc, metaspace)("    minimum_desired_capacity: %6.1fKB  maximum_desired_capacity: %6.1fKB",
+                             minimum_desired_capacity / (double) K, maximum_desired_capacity / (double) K);
+
+    	assert(minimum_desired_capacity <= maximum_desired_capacity, "sanity check");
+
+    	if (capacity_until_GC > maximum_desired_capacity) {
+      		// Capacity too large, compute shrinking size
+      		shrink_bytes = capacity_until_GC - maximum_desired_capacity;
+      		shrink_bytes = shrink_bytes / 100 * current_shrink_factor;
+      		shrink_bytes = align_down(shrink_bytes, Metaspace::commit_alignment());
+
+      		assert(shrink_bytes <= max_shrink_bytes,
+             			"invalid shrink size " SIZE_FORMAT " not <= " SIZE_FORMAT,
+             			shrink_bytes, max_shrink_bytes);
+      		if (current_shrink_factor == 0) {
+        		_shrink_factor = 10;
+      		} else {
+        		_shrink_factor = MIN2(current_shrink_factor * 4, (uint) 100);
+      		}
+      		log_trace(gc, metaspace)("shrinking:  initThreshold: %.1fK  maximum_desired_capacity: %.1fK",
+                               MetaspaceSize / (double) K, maximum_desired_capacity / (double) K);
+      		log_trace(gc, metaspace)("shrink_bytes: %.1fK  current_shrink_factor: %d  new shrink factor: %d 
+                                 MinMetaspaceExpansion: %.1fK",shrink_bytes / (double) K, 
+                                 current_shrink_factor, _shrink_factor, MinMetaspaceExpansion / (double) K);
+    	}
+  	}
+
+  	// Don't shrink unless it's significant
+  	if (shrink_bytes >= MinMetaspaceExpansion && ((capacity_until_GC - shrink_bytes) >= MetaspaceSize)) {
+    	size_t new_capacity_until_GC = MetaspaceGC::dec_capacity_until_GC(shrink_bytes);
+    	Metaspace::tracer()->report_gc_threshold(capacity_until_GC,
+                                             new_capacity_until_GC,
+                                             MetaspaceGCThresholdUpdater::ComputeNewSize);
+  	}
+}
+```
+
+由场景一可知：
+
+- 为了避免弹性伸缩带来的额外 GC 消耗，会将 `-XX:MetaSpaceSize` 和 `-XX:MaxMetaSpaceSize`  设置为固定，但会导致在空间不够时无法扩容，然后频繁触发 GC，最终 OOM。
+
+- 关键原因：ClassLoader 不停在内存中 load 新的 Class ，一般这种问题都发生在动态类加载等情况上
+
+#### 3. 策略
+
+- 方式一：dump 快照后通过 JProfiler 或 MAT 观察 Classes 的 Histogram(直方图)
+- 方式二：直接通过命令即可定位 jcmd 打几次 Histogram 图，看一下具体是哪个包下的 Class 增加较多可以定位
+
+有时也要结合 `InstBytes、KlassBytes、Bytecodes、MethodAll` 等几项指标综合来看，下图是使用 jcmd 排查到一个 Orika 问题：
+
+`jcmd <PID> GC.class_stats|awk '{print$13}'|sed  's/\(.*\)\.\(.*\)/\1/g'|sort |uniq -c|sort -nrk1`：
+
+<img src="../../pics/java/jvm_116.png" align=left>
+
+> 若无法从整体的角度定位，可以添加 `-XX:+TraceClassLoading` 和 `-XX:+TraceClassUnLoading` 观察详细的类加载和卸载信息
+
+### (4) 场景四：过早晋升
+
+#### 1. 现象
+
+> 主要发生在分代收集器上，称为 `Premature Promotion`
+
+- 场景：90% 的对象朝生夕死，只有在 Young 区经历过几次 GC 的洗礼后才会晋升到 Old 区，每经历一次 GC 对象的 GC Age 就会增长 1，最大通过 -XX:MaxTenuringThreshold 来控制
+
+- 过早晋升一般不会直接影响 GC，总会伴随着浮动垃圾、大对象担保失败等问题
+
+    观察以下几种现象来判断是否发生了过早晋升：
+
+    - **分配速率接近于晋升速率，**对象晋升年龄较小
+
+        > GC 日志中出现 `Desired survivor size 107347968 bytes, new threshold 1(max 6)`等信息，说明此时经历过一次 GC 就会放到 Old 区
+
+    - **Full GC 比较频繁**，且经历过一次 GC 之后 Old 区的变化比例非常大
+
+        > 如：Old 区触发的回收阈值是 80%，经历过一次 GC 之后下降到了 10%，这说明 Old 区的 70% 的对象存活时间其实很短
+
+- **过早晋升的危害**：
+    - Young GC 频繁，总的吞吐量下降
+    - Full GC 频繁，可能会有较大停顿
+
+#### 2. 原因
+
+主要的原因有以下两点：
+
+- **Young/Eden 区过小**：即 Eden 被装满的时间变短，本应回收的对象参与了 GC 并晋升
+
+    > Young GC 采用复制算法(copying 耗时远大于 mark)，没及时回收的对象增大了回收代价，所以 Young GC  时间增加，同时又无法快速释放空间，Young GC 次数也跟着增加
+
+- **分配速率过大**：可以观察出问题前后 Mutator 的分配速率，若有明显波动可以尝试观察网卡流量、存储类中间件慢查询日志等信息，看是否有大量数据被加载到内存中
+
+---
+
+无法 GC 的对象还会带来另外一个问题，**引发动态年龄计算**：
+
+- JVM 通过 `-XX:MaxTenuringThreshold` 参数来控制晋升年龄，每经过一次 GC，年龄就会加一，达到最大年龄就可以进入 Old 区
+
+    > 最大值为 15(JVM 使用 4bit 来表示对象年龄)。并行(吞吐量)收集器的默认值为 15，CMS 收集器的默认值为 6
+
+    设定固定的 `MaxTenuringThreshold` 值作为晋升条件：
+
+    - 若设置得过大，原本应该晋升的对象一直停留在 Survivor 区，直到 Survivor 区溢出
+
+        > 一旦溢出发生，Eden + Survivor 中对象将不再依据年龄全部提升到 Old 区，这样对象老化的机制就失效
+
+    - 若设置得过小，过早晋升即对象不能在 Young 区充分被回收，大量短期对象被晋升到 Old 区，Old 区空间迅速增长，引起频繁的 Major GC，分代回收失去了意义，严重影响 GC 性能
+
+---
+
+动态计算源码：/src/hotspot/share/gc/shared/ageTable.cpp 的 compute_tenuring_threshold 方法中
+
+```cpp
+uint ageTable::compute_tenuring_threshold(size_t survivor_capacity) {
+  	//TargetSurvivorRatio默认50，意思是：在回收之后希望survivor区的占用率达到这个比例
+  	size_t desired_survivor_size = (size_t)((((double) survivor_capacity)*TargetSurvivorRatio)/100);
+  	size_t total = 0;
+  	uint age = 1;
+  	assert(sizes[0] == 0, "no objects with age zero should be recorded");
+  	while (age < table_size) {//table_size=16
+    	total += sizes[age];
+    	//如果加上这个年龄的所有对象的大小之后，占用量>期望的大小，就设置age为新的晋升阈值
+    	if (total > desired_survivor_size) break;
+    	age++;
+  	}
+
+  	uint result = age < MaxTenuringThreshold ? age : MaxTenuringThreshold;
+  	if (PrintTenuringDistribution || UsePerfData) {
+    	//打印期望的survivor的大小以及新计算出来的阈值，和设置的最大阈值
+    	if (PrintTenuringDistribution) {
+      		gclog_or_tty->cr();
+      		gclog_or_tty->print_cr("Desired survivor size " SIZE_FORMAT " bytes, new threshold %u (max %u)",
+        				desired_survivor_size*oopSize, result, (int) MaxTenuringThreshold);
+    	}
+    	total = 0;
+    	age = 1;
+    	while (age < table_size) {
+      		total += sizes[age];
+      		if (sizes[age] > 0) {
+        		if (PrintTenuringDistribution) {
+          			gclog_or_tty -> print_cr("- age %3u: " SIZE_FORMAT_W(10) " bytes, " SIZE_FORMAT_W(10) 
+                                             " total", age, sizes[age]*oopSize, total*oopSize);
+        		}
+      		}
+      		if (UsePerfData) {
+        		_perf_sizes[age]->set_value(sizes[age]*oopSize);
+      		}
+      		age++;
+    	}
+    	if (UsePerfData) {
+      		SharedHeap* sh = SharedHeap::heap();
+      		CollectorPolicy* policy = sh->collector_policy();
+      		GCPolicyCounters* gc_counters = policy->counters();
+      		gc_counters->tenuring_threshold()->set_value(result);
+      		gc_counters->desired_survivor_size()->set_value(desired_survivor_size*oopSize);
+    	}
+  	}
+  	return result;
+}
+```
+
+#### 3. 策略
+
+若**Young/Eden 区过小**，可以在总 Heap 内存不变的情况下**适当增大 Young 区**：一般 Old 大小为活跃对象的 2~3 倍，考虑到浮动垃圾问题最好在 3 倍左右，剩下的都可以分给 Young 区
+
+> 活跃对象：每次 Full GC 后 Old 大小
+
+#### 4. NewRatio 计算公式
+
+关于调整 Young 与 Old 的比例时，如何选取具体的 NewRatio 值，可将问题抽象成为一个蓄水池模型，找到以下关键衡量指标：
+
+<img src="../../pics/java/jvm_117.png" align=left>
+$$
+r = f(v_a,v_p,v_{gc},v_{oc},r_s)
+$$
+
+$$
+T_{stw} = T_{yc} + T_{oc} = \int^t_0g(v_{yc}, v_p)dt + \int^t_0g(v_{oc})dt, \ \ t \in (0,+\infty)
+$$
+
+$$
+f(t) = \lim_{\bar{T}_{yg}\rightarrow 0,T_{oc}\rightarrow 0} \frac{\sum^n_{k=1}(t_{ak} - t_{bk} + \bar{T}_yg) + T_{oc}}{n} \Rightarrow f(t) = \frac{T_n}{n} < t_0
+$$
+
+> $\bar{T_{yg}}$ 为平均一次 Young GC 时间，$t_{ak}$ 为第 k 次 Young GC 结束时间，$t_{bk}$ 为第 k 次 Young GC 开始时间，$T_n$ 为总运行时间
+
+- NewRatio 的值 r 与 $v_a、v_p、v_{yc}、v_{oc}、r_s$ 等值存在一定函数相关性($r_s$ 越小 $r$ 越大，$r$ 越小 $v_p$ 越大，...)
+
+- 总停顿时间 $T_{stw}$ 为 Young GC 总时间 $T_{yc}$ 和 Old GC 总时间 $T_{oc}$ 之和，其中 $T_{yc}$ 与 $v_{yc}、v_{p}$ 相关、$T_{oc}$ 与 $v_{oc}$ 相关、
+- 忽略 GC 时间后，两次 Young GC 的时间**间隔要大于 TP9999 时间**，这样尽量让对象在 Eden 区就被回收，可以减少很多停顿
+
+### (5) 场景五：CMS Old GC 频繁
+
+#### 1. 现象
+
+Old 区频繁的 CMS GC，但是每次耗时不是特别长，整体最大 STW 也在可接受范围内，但由于 GC 太频繁导致吞吐下降比较多
+
+#### 2. 原因
+
+- 基本都是一次 Young GC 完成后，负责处理 CMS GC 的一个后台线程 `concurrentMarkSweepThread` 会不断轮询，使用 `shouldConcurrentCollect()` 方法做一次检测，判断是否达到了回收条件
+- 若达到条件，使用 `collect_in_background()` 启动一次 Background 模式 GC
+- 轮询的判断是使用 `sleepBeforeNextCycle()` 方法，间隔周期为 ``-XX:CMSWaitDuration` 决定，默认 `2s`
+
+具体代码在 src/hotspot/share/gc/cms/concurrentMarkSweepThread.cpp：
+
+```cpp
+void ConcurrentMarkSweepThread::run_service() {
+  	assert(this == cmst(), "just checking");
+
+  	if (BindCMSThreadToCPU && !os::bind_to_processor(CPUForCMSThread)) {
+    	log_warning(gc)("Couldn't bind CMS thread to processor " UINTX_FORMAT, CPUForCMSThread);
+  	}
+
+  	while (!should_terminate()) {
+    	sleepBeforeNextCycle();
+    	if (should_terminate()) break;
+    	GCIdMark gc_id_mark;
+    	GCCause::Cause cause = _collector->_full_gc_requested 
+            ? _collector->_full_gc_cause 
+            : GCCause::_cms_concurrent_mark;
+    	_collector->collect_in_background(cause);
+  	}
+  	verify_ok_to_terminate();
+}
+
+void ConcurrentMarkSweepThread::sleepBeforeNextCycle() {
+  	while (!should_terminate()) {
+    	if(CMSWaitDuration >= 0) {
+      		// Wait until the next synchronous GC, a concurrent full gc
+      		// request or a timeout, whichever is earlier.
+      		wait_on_cms_lock_for_scavenge(CMSWaitDuration);
+    	} else {
+      		// Wait until any cms_lock event or check interval not to call shouldConcurrentCollect permanently
+      		wait_on_cms_lock(CMSCheckInterval);
+    	}
+    	// Check if we should start a CMS collection cycle
+    	if (_collector->shouldConcurrentCollect()) {
+      		return;
+    	}
+    	// .. collection criterion not yet met, let's go back
+    	// and wait some more
+  	}
+}
+```
+
+判断是否进行回收的代码在：/src/hotspot/share/gc/cms/concurrentMarkSweepGeneration.cpp
+
+```cpp
+bool CMSCollector::shouldConcurrentCollect() {
+  	LogTarget(Trace, gc) log;
+
+  	if (_full_gc_requested) {
+    	log.print("CMSCollector: collect because of explicit  gc request (or GCLocker)");
+    	return true;
+  	}
+
+  	FreelistLocker x(this);
+  	// ------------------------------------------------------------------
+  	// Print out lots of information which affects the initiation of
+  	// a collection.
+  	if (log.is_enabled() && stats().valid()) {
+    	log.print("CMSCollector shouldConcurrentCollect: ");
+
+    	LogStream out(log);
+    	stats().print_on(&out);
+
+    	log.print("time_until_cms_gen_full %3.7f", stats().time_until_cms_gen_full());
+    	log.print("free=" SIZE_FORMAT, _cmsGen->free());
+    	log.print("contiguous_available=" SIZE_FORMAT, _cmsGen->contiguous_available());
+    	log.print("promotion_rate=%g", stats().promotion_rate());
+    	log.print("cms_allocation_rate=%g", stats().cms_allocation_rate());
+    	log.print("occupancy=%3.7f", _cmsGen->occupancy());
+    	log.print("initiatingOccupancy=%3.7f", _cmsGen->initiating_occupancy());
+    	log.print("cms_time_since_begin=%3.7f", stats().cms_time_since_begin());
+    	log.print("cms_time_since_end=%3.7f", stats().cms_time_since_end());
+    	log.print("metadata initialized %d", MetaspaceGC::should_concurrent_collect());
+  	}
+  	// ------------------------------------------------------------------
+  	if (!UseCMSInitiatingOccupancyOnly) {
+    	if (stats().valid()) {
+      		if (stats().time_until_cms_start() == 0.0) {
+        		return true;
+      		}
+    	} else {
+      		if (_cmsGen->occupancy() >= _bootstrap_occupancy) {
+        		log.print(" CMSCollector: collect for bootstrapping statistics: occupancy = %f, boot occupancy = %f",
+                          _cmsGen->occupancy(), _bootstrap_occupancy);
+        		return true;
+      		}
+    	}
+  	}
+
+  	if (_cmsGen->should_concurrent_collect()) {
+    	log.print("CMS old gen initiated");
+    	return true;
+  	}
+
+  	// We start a collection if we believe an incremental collection may fail;
+  	// this is not likely to be productive in practice because it's probably too
+  	// late anyway.
+  	CMSHeap* heap = CMSHeap::heap();
+  	if (heap->incremental_collection_will_fail(true /* consult_young */)) {
+    	log.print("CMSCollector: collect because incremental collection will fail ");
+    	return true;
+  	}
+
+  	if (MetaspaceGC::should_concurrent_collect()) {
+    	log.print("CMSCollector: collect for metadata allocation ");
+    	return true;
+  	}
+
+  	// CMSTriggerInterval starts a CMS cycle if enough time has passed.
+  	if (CMSTriggerInterval >= 0) {
+    	if (CMSTriggerInterval == 0) {
+      		// Trigger always
+      		return true;
+    	}
+    	// Check the CMS time since begin (we do not check the stats validity
+    	// as we want to be able to trigger the first CMS cycle as well)
+    	if (stats().cms_time_since_begin() >= (CMSTriggerInterval / ((double) MILLIUNITS))) {
+      		if (stats().valid()) {
+        		log.print("CMSCollector: collect because of trigger interval (time since last begin %3.7f secs)",
+                  stats().cms_time_since_begin());
+      		} else {
+        		log.print("CMSCollector: collect because of trigger interval (first collection)");
+      		}
+      		return true;
+    	}
+  	}
+  	return false;
+}
+```
+
+分析其中逻辑判断是否触发 GC，分为以下几种情况：
+
+- **触发 CMS GC**：通过调用 `_collector->collect_in_background()` 进行触发 Background GC
+
+    - CMS 默认采用 JVM 运行时的统计数据判断是否需要触发 CMS GC
+
+        > 若需要根据 `-XX:CMSInitiatingOccupancyFraction` 值进行判断，需设置 `-XX:+UseCMSInitiatingOccupancyOnly`
+
+    - 若开启了 `-XX:UseCMSInitiatingOccupancyOnly`，判断当前 Old 区使用率是否大于阈值，则触发 CMS GC，该阈值可以通过参数 `-XX:CMSInitiatingOccupancyFraction` 进行设置，若没有设置，默认为92%
+
+    - 若之前的 Young GC 失败过或下次 Young 区执行 Young GC 可能失败，这两种情况下都需要触发 CMS GC
+
+    - CMS 默认不对 MetaSpace 或 Perm 进行垃圾收集，若想对这些区域进行垃圾收集，需设置 `-XX:+CMSClassUnloadingEnabled`
+
+- **触发Full GC**：直接进行Full GC，这种情况到场景七中展开说明
+
+    - 若 `_full_gc_requested` 为真，说明有明确的需求要进行 GC，比如调用 System.gc
+    - 在 Eden 区为对象或 TLAB 分配内存失败，导致一次 Young GC，在 GenCollectorPolicy 类的 satisfy_failed_allocation() 方法中进行判断
+
+#### 3. 策略
+
+处理这种常规内存泄漏问题基本是一个思路，主要步骤如下：
+
+<img src="../../pics/java/jvm_118.png" align=left>
+
+Dump Diff 和 Leak Suspects 比较直观就不介绍了，这里说下其它几个关键点：
+
+- **内存 Dump**：使用 jmap、arthas 等 dump 堆进行快照时记得摘掉流量，同时分别在 **CMS GC 的发生前后分别 dump 一次**
+- **分析 Top Component**：记得按照对象、类、类加载器、包等多个维度观察 Histogram，同时使用 outgoing 和 incoming 分析关联的对象，另外就是 Soft Reference 和 Weak Reference、Finalizer 等也要看一下
+- **分析 Unreachable**：关注下 Shallow 和 Retained 的大小
+
+### (6) 场景六：单次 CMS Old GC 耗时长
+
+#### 1. 现象
+
+- CMS GC 单次 STW 最大超过 1000ms，不会频繁发生
+
+#### 2. 原因
+
+- 原因一(主要原因)：CMS 回收过程中，STW 的阶段主要是 Init Mark 和 Final Remark 两个阶段，也是导致 CMS Old GC 最多的原因
+
+- 原因二(情况较少)：在 STW 前等待 Mutator 的线程到达 SafePoint 也会导致时间过长
+
+---
+
+核心代码在 /src/hotspot/share/gc/cms/concurrentMarkSweepGeneration.cpp 中：
+
+- 内部有个线程 `ConcurrentMarkSweepThread` 轮询来校验，Old 区的垃圾回收相关细节被完全封装在 CMSCollector 中，调用入口就是 `ConcurrentMarkSweepThread` 调用的 `CMSCollector::collect_in_background` 和 `ConcurrentMarkSweepGeneration` 调用的 `CMSCollector::collect` 方法
+
+    > 此处讨论大多数场景的 `collect_in_background`
+
+- 整个过程中会 STW 的主要是 initial Mark 和 Final Remark，核心代码在 `VM_CMS_Initial_Mark /  VM_CMS_Final_Remark` 中，执行时需要将执行权交由 VMThread 来执行
+
+---
+
+- **CMS Init Mark 执行步骤**：实现在 `CMSCollector::checkpointRootsInitialWork()` 和 `CMSParInitialMarkTask::work` 中，整体步骤和代码如下：
+
+    ```cpp
+    void CMSCollector::checkpointRootsInitialWork() {
+      	assert(SafepointSynchronize::is_at_safepoint(), "world should be stopped");
+      	assert(_collectorState == InitialMarking, "just checking");
+      	// Already have locks.
+      	assert_lock_strong(bitMapLock());
+      	assert(_markBitMap.isAllClear(), "was reset at end of previous cycle");
+    
+      	// Setup the verification and class unloading state for this
+      	// CMS collection cycle.
+      	setup_cms_unloading_and_verification_state();
+    
+      	GCTraceTime(Trace, gc, phases) ts("checkpointRootsInitialWork", _gc_timer_cm);
+    
+      	// Reset all the PLAB chunk arrays if necessary.
+      	if (_survivor_plab_array != NULL && !CMSPLABRecordAlways) {
+        	reset_survivor_plab_arrays();
+      	}
+    
+      	ResourceMark rm;
+      	HandleMark  hm;
+    
+      	MarkRefsIntoClosure notOlder(_span, &_markBitMap);
+      	CMSHeap* heap = CMSHeap::heap();
+    
+      	verify_work_stacks_empty();
+      	verify_overflow_empty();
+    
+      	heap->ensure_parsability(false);  // fill TLABs, but no need to retire them
+      	// Update the saved marks which may affect the root scans.
+      	heap->save_marks();
+    
+      	// weak reference processing has not started yet.
+      	ref_processor()->set_enqueuing_is_done(false);
+    
+      	// Need to remember all newly created CLDs,
+      	// so that we can guarantee that the remark finds them.
+      	ClassLoaderDataGraph::remember_new_clds(true);
+    
+      	// Whenever a CLD is found, it will be claimed before proceeding to mark
+      	// the klasses. The claimed marks need to be cleared before marking starts.
+      	ClassLoaderDataGraph::clear_claimed_marks();
+    
+      	print_eden_and_survivor_chunk_arrays();
+    
+      	{
+        	if (CMSParallelInitialMarkEnabled) {
+          		// The parallel version.
+          		WorkGang* workers = heap->workers();
+          		assert(workers != NULL, "Need parallel worker threads.");
+          		uint n_workers = workers->active_workers();
+    
+          		StrongRootsScope srs(n_workers);
+    
+          		CMSParInitialMarkTask tsk(this, &srs, n_workers);
+          		initialize_sequential_subtasks_for_young_gen_rescan(n_workers);
+          		// If the total workers is greater than 1, then multiple workers
+          		// may be used at some time and the initialization has been set
+          		// such that the single threaded path cannot be used.
+          		if (workers->total_workers() > 1) {
+            		workers->run_task(&tsk);
+          		} else {
+            		tsk.work(0);
+          		}
+        	} else {
+          		// The serial version.
+          		CLDToOopClosure cld_closure(&notOlder, true);
+          		heap->rem_set()->prepare_for_younger_refs_iterate(false); // Not parallel.
+          		StrongRootsScope srs(1);
+          		heap->cms_process_roots(&srs,
+                                 true,   // young gen as roots
+                                 GenCollectedHeap::ScanningOption(roots_scanning_options()),
+                                 should_unload_classes(),
+                                 &notOlder,
+                                 &cld_closure);
+        	}
+      	}
+    
+      	// Clear mod-union table; it will be dirtied in the prologue of
+      	// CMS generation per each young generation collection.
+      	assert(_modUnionTable.isAllClear(),
+           "Was cleared in most recent final checkpoint phase"
+           " or no bits are set in the gc_prologue before the start of the next "
+           "subsequent marking phase.");
+    
+      	assert(_ct->cld_rem_set()->mod_union_is_clear(), "Must be");
+      	// Save the end of the used_region of the constituent generations
+      	// to be used to limit the extent of sweep in each generation.
+      	save_sweep_limits();
+      	verify_overflow_empty();
+    }
+    ```
+
+    ```cpp
+    void CMSParInitialMarkTask::work(uint worker_id) {
+      	elapsedTimer _timer;
+      	ResourceMark rm;
+      	HandleMark   hm;
+    
+      	// ---------- scan from roots --------------
+      	_timer.start();
+      	CMSHeap* heap = CMSHeap::heap();
+      	ParMarkRefsIntoClosure par_mri_cl(_collector->_span, &(_collector->_markBitMap));
+    
+      	// ---------- young gen roots --------------
+      	{
+        	work_on_young_gen_roots(&par_mri_cl);
+        	_timer.stop();
+        	log_trace(gc, task)("Finished young gen initial mark scan work in %dth thread: %3.3f sec", 
+                                worker_id, _timer.seconds());
+      	}
+    
+      	// ---------- remaining roots --------------
+      	_timer.reset();
+      	_timer.start();
+    
+      	CLDToOopClosure cld_closure(&par_mri_cl, true);
+    
+      	heap->cms_process_roots(_strong_roots_scope,
+                              false,     // yg was scanned above
+                              GenCollectedHeap::ScanningOption(
+                                  	_collector->CMSCollector::roots_scanning_options()),
+                              _collector->should_unload_classes(),
+                              &par_mri_cl,
+                              &cld_closure,
+                              &_par_state_string);
+    
+      	assert(_collector->should_unload_classes()
+            || (_collector->CMSCollector::roots_scanning_options() & GenCollectedHeap::SO_AllCodeCache),  
+           "if we didn't scan the code cache, we have to be ready to drop nmethods with expired weak oops");
+      	_timer.stop();
+      	log_trace(gc, task)("Finished remaining root initial mark scan work in %dth thread: %3.3f sec", 
+                            worker_id, _timer.seconds());
+    }
+    ```
+
+    > <img src="../../pics/java/jvm_119.png" align=left>
+    >
+    > 整个过程比较简单，从 GC Root 出发标记 Old 中的对象，处理完成后借助 BitMap 处理下 Young 区对 Old 区的引用，整个过程基本都比较快，很少会有较大的停顿
+
+- **CMS Final Remark 执行步骤**：实现在 CMSCollector::checkpointRootsFinalWork() 中，整体代码和步骤如下：
+
+    ```cpp
+    void CMSCollector::checkpointRootsFinalWork() {
+      	GCTraceTime(Trace, gc, phases) tm("checkpointRootsFinalWork", _gc_timer_cm);
+    
+      	assert(haveFreelistLocks(), "must have free list locks");
+      	assert_lock_strong(bitMapLock());
+    
+      	ResourceMark rm;
+      	HandleMark   hm;
+    
+      	CMSHeap* heap = CMSHeap::heap();
+    
+      	if (should_unload_classes()) {
+        	CodeCache::gc_prologue();
+      	}
+      	assert(haveFreelistLocks(), "must have free list locks");
+      	assert_lock_strong(bitMapLock());
+    
+      	heap->ensure_parsability(false);  // fill TLAB's, but no need to retire them
+      	// Update the saved marks which may affect the root scans.
+      	heap->save_marks();
+    
+      	print_eden_and_survivor_chunk_arrays();
+    
+      	{
+        	if (CMSParallelRemarkEnabled) {
+          		GCTraceTime(Debug, gc, phases) t("Rescan (parallel)", _gc_timer_cm);
+          		do_remark_parallel();
+        	} else {
+          		GCTraceTime(Debug, gc, phases) t("Rescan (non-parallel)", _gc_timer_cm);
+          		do_remark_non_parallel();
+        	}
+      	}
+      	verify_work_stacks_empty();
+      	verify_overflow_empty();
+    
+      	{
+        	GCTraceTime(Trace, gc, phases) ts("refProcessingWork", _gc_timer_cm);
+        	refProcessingWork();
+      	}
+      	verify_work_stacks_empty();
+      	verify_overflow_empty();
+    
+      	if (should_unload_classes()) {
+        	CodeCache::gc_epilogue();
+      	}
+      	JvmtiExport::gc_epilogue();
+      	assert(_markStack.isEmpty(), "No grey objects");
+      	size_t ser_ovflw = _ser_pmc_remark_ovflw + _ser_pmc_preclean_ovflw + _ser_kac_ovflw 
+            					+ _ser_kac_preclean_ovflw;
+      	if (ser_ovflw > 0) {
+        	log_trace(gc)("Marking stack overflow (benign) (pmc_pc=" SIZE_FORMAT ", pmc_rm=" SIZE_FORMAT 
+                          	", kac=" SIZE_FORMAT ", kac_preclean=" SIZE_FORMAT ")",
+                             _ser_pmc_preclean_ovflw, _ser_pmc_remark_ovflw, _ser_kac_ovflw, 	
+                          	_ser_kac_preclean_ovflw);
+        	_markStack.expand();
+        	_ser_pmc_remark_ovflw = 0;
+        	_ser_pmc_preclean_ovflw = 0;
+        	_ser_kac_preclean_ovflw = 0;
+        	_ser_kac_ovflw = 0;
+      	}
+      	if (_par_pmc_remark_ovflw > 0 || _par_kac_ovflw > 0) {
+         	log_trace(gc)("Work queue overflow (benign) (pmc_rm=" SIZE_FORMAT ", kac=" SIZE_FORMAT ")",
+                              _par_pmc_remark_ovflw, _par_kac_ovflw);
+         	_par_pmc_remark_ovflw = 0;
+        	_par_kac_ovflw = 0;
+      	}
+       	if (_markStack._hit_limit > 0) {
+         	log_trace(gc)(" (benign) Hit max stack size limit (" SIZE_FORMAT ")", _markStack._hit_limit);
+       }
+       if (_markStack._failed_double > 0) {
+         log_trace(gc)(" (benign) Failed stack doubling (" SIZE_FORMAT "), current capacity " SIZE_FORMAT,
+                              _markStack._failed_double, _markStack.capacity());
+       }
+      	_markStack._hit_limit = 0;
+      	_markStack._failed_double = 0;
+    
+      	if ((VerifyAfterGC || VerifyDuringGC) && CMSHeap::heap()->total_collections() >= VerifyGCStartAt) {
+        	verify_after_remark();
+      	}
+    
+      	_gc_tracer_cm->report_object_count_after_gc(&_is_alive_closure);
+    
+      	// Change under the freelistLocks.
+      	_collectorState = Sweeping;
+      	// Call isAllClear() under bitMapLock
+      	assert(_modUnionTable.isAllClear(), "Should be clear by end of the final marking");
+      	assert(_ct->cld_rem_set()->mod_union_is_clear(), "Should be clear by end of the final marking");
+    }
+    ```
+
+    > <img src="../../pics/java/jvm_120.png" align=left>
+    >
+    > - Final Remark 是最终的第二次标记，只在 Background GC 执行了 InitialMarking 步骤的情形下才会执行
+    >
+    > - 若是 Foreground GC 执行的 InitialMarking 步骤则不需要再次执行 FinalRemark
+    >
+    > - Final Remark 的开始阶段与 Init Mark 处理的流程相同，但后续多了 Card Table 遍历、Reference 实例的清理并将其加入到 Reference 维护的 pend_list 中
+    >
+    >     > 若要收集元数据信息，还要清理 SystemDictionary、CodeCache、SymbolTable、StringTable 等组件中不再使用的资源
+
+#### 3. 策略
+
+由于大部分问题都出在 Final Remark 过程，也拿这个场景来举例，主要步骤：
+
+- 【方向】观察详细 GC 日志，找到出问题时 Final Remark 日志，分析下 Reference 处理和元数据处理 real 耗时是否正常，详细信息需要通过 `-XX:+PrintReferenceGC` 参数开启
+
+    > 基本在日志里面就能定位到大概是哪个方向出了问题，耗时超过 10% 的就需要关注
+
+- 【根因】最易出问题的地方是 Reference 中的 FinalReference 和元数据信息处理中的 scrub symbol table 两个阶段
+
+    > - 想找到具体问题代码就需要内存分析工具 MAT 或 JProfiler
+    >
+    > 注意：要 dump 即将开始 CMS GC 的堆，在用 MAT 等工具前也可以先用命令行看下对象 Histogram，有可能直接定位问题
+
+    - 对 FinalReference 的分析主要观察 java.lang.ref.Finalizer 对象的 dominator tree，找到泄漏的来源
+
+        > 经常会出现问题的地方：Socket 的 SocksSocketImpl 、Jersey 的 ClientRuntime、Mysql 的 ConnectionImpl 等
+
+    - scrub symbol table 表示清理元数据符号引用耗时，当 ``_should_unload_classes` 被设置为 true 时在 `CMSCollector::refProcessingWork()` 中与 Class Unload、String Table 一起被处理
+
+        > 符号引用是 Java 代码被编译成字节码时，方法在 JVM 中的表现形式，生命周期一般与 Class 一致
+
+    ```cpp
+    //CMSCollector::refProcessingWork()
+    if (should_unload_classes()) {
+        {
+          	GCTraceTime(Debug, gc, phases) t("Class Unloading", _gc_timer_cm);
+          	// Unload classes and purge the SystemDictionary.
+          	bool purged_class = SystemDictionary::do_unloading(_gc_timer_cm);
+          	// Unload nmethods.
+          	CodeCache::do_unloading(&_is_alive_closure, purged_class);
+          	// Prune dead klasses from subklass/sibling/implementor lists.
+          	Klass::clean_weak_klass_links(purged_class);
+        }
+    
+        {
+          	GCTraceTime(Debug, gc, phases) t("Scrub Symbol Table", _gc_timer_cm);
+          	// Clean up unreferenced symbols in symbol table.
+          	SymbolTable::unlink();
+        }
+    
+        {
+          	GCTraceTime(Debug, gc, phases) t("Scrub String Table", _gc_timer_cm);
+          	// Delete entries for dead interned strings.
+          	StringTable::unlink(&_is_alive_closure);
+        }
+    }
+    ```
+
+- **【策略】**知道 GC 耗时的根因，这种问题不会大面积同时爆发，不过有很多时候单台 STW 的时间会比较长，如果业务影响比较大，及时摘掉流量，具体后续优化策略如下：
+
+    - `FinalReference`：找到内存来源后通过优化代码解决，若短时间无法定位可以增加 `-XX:+ParallelRefProcEnabled` 对 Reference 进行并行处理
+
+    - `symbol table`：观察 MetaSpace 区的历史使用峰值，以及每次 GC 前后的回收情况
+
+        > - 一般没有使用动态类加载或 DSL 处理等，MetaSpace 的使用率上不会有什么变化，这种情况可以通过 -XX:-CMSClassUnloadingEnabled 来避免 MetaSpace 的处理，
+        >
+        > - JDK8 会默认开启 CMSClassUnloadingEnabled，会使得 CMS 在 CMS-Remark 阶段尝试进行类的卸载
+
+### (7) 场景七：内存碎片&收集器退化
+
+#### 1. 现象
+
+并发的 CMS GC 算法，退化为 Foreground 单线程串行 GC 模式，STW 时间超长，有时会长达十几秒
+
+其中 CMS 收集器退化后单线程串行 GC 算法有两种：
+
+- 带压缩动作的算法`MSC`：使用标记-清理-压缩，单线程全暂停的方式，对整个堆进行垃圾收集，即 Full GC，暂停时间长于普通 CMS
+- 不带压缩动作的算法：收集 Old 区，和普通的 CMS 算法比较相似，暂停时间相对 MSC 算法短一些
+
+#### 2. 原因
+
+CMS 发生收集器退化主要有以下几种情况：
+
+- **晋升失败**：指在进行 Young GC 时，Survivor 放不下，对象只能放入 Old，但此时 Old 也放不下
+
+    > 因为有 concurrentMarkSweepThread 和担保机制的存在，发生条件很苛刻，出现的情况：
+    >
+    > - 情况一：短时间将 Old 区的剩余空间迅速填满，如：上文中说的动态年龄判断导致的过早晋升(见下文的增量收集担保失败)
+    >
+    > - 情况二：内存碎片导致的 Promotion Failed，Young GC 以为 Old 有足够的空间，结果到分配时，晋级的大对象找不到连续的空间存放
+    >
+    > 使用 CMS 作为 GC 收集器时，运行过一段时间的 Old 区如下图所示，清除算法导致出现大量的内存碎片：
+    >
+    > <img src="../../pics/java/jvm_121.png" align=left>
+    >
+    > 碎片的两个问题：
+    >
+    > - **空间分配效率较低**：若连续的空间 JVM 可以通过使用 bump pointer 的方式来分配，而对于这种有大量碎片的空闲链表则需要逐个访问 freelist 中的项来访问，查找可以存放新建对象的地址
+    >
+    > - **空间利用效率变低**：Young 区晋升的对象大小大于连续空间的大小，则会触发 Promotion Failed ，即使整个 Old 区的容量足够，但由于其不连续，也无法存放新对象
+
+- **增量收集担保失败**：分配内存失败后，会判断统计得到的 Young GC 晋升到 Old 的平均大小，以及当前 Young 区已使用的大小也就是最大可能晋升的对象大小，是否大于 Old 区的剩余空间
+
+    > 只要 CMS 的剩余空间比前两者的任意一者大，CMS 就认为晋升安全，反之不安全，不进行 Young GC，直接触发 Full GC
+
+- **显式 GC**：参见场景二
+
+- **并发模式失败**(概率较高)：GC 日志经常看到 Concurrent Mode Failure，这是由于并发 Background CMS GC 正在执行，同时又有 Young GC 晋升的对象要放入 Old 区中，而此时 Old 区空间不足造成
+
+    > CMS GC 正在执行还会导致收集器退化的原因：CMS 无法处理浮动垃圾引起
+    >
+    > - CMS 的并发清理阶段，Mutator 还在运行，因此不断有新的垃圾产生，而这些垃圾不在这次清理标记的范畴里，无法在本次 GC 被清除掉，这些就是浮动垃圾
+    > - 除此之外在 Remark 之前那些断开引用脱离了读写屏障控制的对象也算浮动垃圾
+    >
+    > 因此 Old 区回收的阈值不能太高，否则预留的内存空间很可能不够，从而导致 Concurrent Mode Failure 发生
+
+#### 3. 策略
+
+具体解决策略：
+
+- **内存碎片**：配置 `-XX:UseCMSCompactAtFullCollection=true` 来控制 Full GC 过程中是否进行空间的整理(默认开启，注意是Full GC)，以及 `-XX: CMSFullGCsBeforeCompaction=n` 来控制多少次 Full GC 后进行一次压缩
+- **增量收集**：降低触发 CMS GC 的阈值，即参数 `-XX:CMSInitiatingOccupancyFraction` 的值，让 CMS GC 尽早执行，以保证有足够的连续空间，也减少 Old 区空间的使用大小，另外使用 `-XX:+UseCMSInitiatingOccupancyOnly` 配合，不然 JVM 仅在第一次使用设定值，后续则自动调整
+- **浮动垃圾**：视情况控制每次晋升对象的大小或缩短每次 CMS GC 的时间，必要时可调节 NewRatio 的值，另外就是使用 `-XX:+CMSScavengeBeforeRemark` 在过程中提前触发一次 Young GC，防止后续晋升过多对象
+
+#### 4. 小结
+
+- 正常情况下，并发模式的 CMS GC，停顿非常短，对业务影响很小，但 CMS GC 退化后，影响会非常大，建议发现一次后就彻底根治
+- 要定位到内存碎片、浮动垃圾、增量收集相关等具体产生原因
+- 关于内存碎片，若 `-XX:CMSFullGCsBeforeCompaction` 不好选取，使用 `-XX:PrintFLSStatistics` 观察内存碎片率(frag)情况，然后再设置具体的值
+
+- 最后，编码时要避免需要连续地址空间的大对象的产生，如：过长的字符串，用于存放附件、序列化或反序列化的 byte 数组等
+
+    还有就是过早晋升问题尽量在爆发问题前就避免掉
+
+### (8) 场景八：堆外内存 OOM
+
+#### 1. 现象
+
+- **堆外内存泄漏**：内存使用率不断上升，甚至开始使用 SWAP 内存，同时可能出现 GC 时间飙升，线程被 Block 等现象，通过 top 命令发现 Java 进程的 RES 甚至超过了 -Xmx 的大小
+
+#### 2. 原因
+
+JVM 的堆外内存泄漏，主要有两种原因：
+
+- 通过 `UnSafe#allocateMemory、ByteBuffer#allocateDirect` 主动申请堆外内存而没有释放，常见于 NIO、Netty 等相关组件
+- 代码中有通过 JNI 调用 Native Code 申请的内存没有释放
+
+#### 3. 策略
+
+**使用 NMT([NativeMemoryTracking](https://docs.oracle.com/javase/8/docs/technotes/guides/troubleshoot/tooldescr007.html)) 进行内存分析**：
+
+- 在项目中添加 `-XX:NativeMemoryTracking=detail` JVM 参数后重启项目(注意：打开 NMT 会带来 5%-10% 的性能损耗)
+
+- 使用命令 `jcmd pid VM.native_memory detail` 查看内存分布
+
+    > 重点观察 total 中的 committed，因为 jcmd 命令显示的内存包含堆内内存、Code 区域、通过 Unsafe.allocateMemory 和 DirectByteBuffer 申请的内存，但不包含其他 Native Code(C 代码)申请的堆外内存
+
+- 若 total 中的 committed 和 top 中的 RES 相差不大，则为主动申请的堆外内存未释放造成，若相差较大，则是 JNI 调用造成
+
+---
+
+**造成堆外内存泄漏的原因**：
+
+- **原因一：主动申请未释放**
+
+    > JVM 使用 `-XX:MaxDirectMemorySize=size` 控制可申请的堆外内存的最大值，Java8 中若未配置该参数，默认和 -Xmx 相等
+    >
+    > - NIO 和 Netty 都取 `-XX:MaxDirectMemorySize` 的值，来限制申请的堆外内存大小
+    > - NIO 和 Netty 中还有一个计数器字段，用来计算当前已申请的堆外内存大小
+    >     - NIO 为 `java.nio.Bits#totalCapacity` 
+    >     - Netty 为 `io.netty.util.internal.PlatformDependent#DIRECT_MEMORY_COUNTER` 
+    >
+    > - 申请堆外内存时，NIO 和 Netty 会比较计数器字段和最大值的大小，若计数器的值超过最大值的限制，会抛出 OOM 异常
+    >     - NIO 为：`OutOfMemoryError: Direct buffer memory`
+    >     - Netty 为：`OutOfDirectMemoryError: failed to allocate  capacity  byte(s) of direct memory (used: usedMemory, max: DIRECT_MEMORY_LIMIT)` 
+    >
+    > ---
+    >
+    > **检查代码如何使用堆外内存**：通过反射，获取到对应组件中的计数器字段，并在项目中对该字段的数值进行打点，即可准确地监控到这部分堆外内存的使用情况
+    >
+    > - 可通过 Debug 方式确定使用堆外内存的地方是否正确执行了释放内存的代码
+    > - 另外，需要检查 JVM 的参数是否有 `-XX:+DisableExplicitGC `选项，若有则去掉，因为该参数会使 System.gc 失效
+
+- **原因二：通过 JNI 调用的 Native Code 申请的内存未释放**
+
+    > 可通过 Google perftools + Btrace 等工具，帮助分析并定位问题代码，`gperftools` 是 Google 开发的一款非常实用的工具集
+    >
+    > - `gperftools` 原理：在 Java 应用程序运行时，使用 `libtcmalloc.so` 替换 `malloc`，这样能对内存分配情况做统计
+    >
+    >     > 使用 gperftools 来追踪分配内存的命令
+
+#### 4. 小结
+
+- 首先可以使用 NMT + jcmd 分析泄漏的堆外内存是哪里申请，确定原因后，使用不同的手段，进行原因定位
+
+<img src="../../pics/java/jvm_122.png" align=left>
+
+### (9) 场景九：JNI 引发的 GC 问题
+
+#### 1. 现象
+
+- 在 GC 日志中，出现 GC Cause 为 `GCLocker Initiated GC` 
+
+#### 2. 原因
+
+> Java 本地调用 `JNI`：允许 Java 代码和其他语言的 Native 代码进行交互
+
+`JNI` 若需要获取 JVM 中的 String 或者数组，有两种方式：
+
+- 拷贝传递
+- 共享引用(指针)，性能更高
+
+---
+
+- 由于 Native 代码直接使用了 JVM 堆区的指针，若这时发生 GC，就会导致数据错误
+
+- 因此，在发生此类 JNI 调用时，禁止 GC，同时阻止其他线程进入 JNI 临界区，直到最后一个线程退出临界区时触发一次 GC
+
+#### 3. 策略
+
+- 添加 `-XX+PrintJNIGCStalls` 参数，可以打印出发生 JNI 调用时的线程，进一步分析，找到引发问题的 JNI 调用
+- JNI 调用需要谨慎，不一定可以提升性能，反而可能造成 GC 问题
+
+## 3、总结
+
+### (1) 处理流程(SOP)
+
+<img src="../../pics/java/jvm_123.png" align=left>
+
+- **制定标准**：需要结合应用系统的 TP9999 时间和延迟、吞吐量等设定具体的指标，而不是被问题驱动
+- **保留现场**：目前线上服务基本都是分布式服务，某个节点发生问题后，若条件允许一定不要直接操作重启、回滚等动作恢复，优先通过摘掉流量的方式来恢复
+- **因果分析**：判断 GC 异常与其他系统指标异常的因果关系，可以参考上文中介绍的时序分析、概率分析、实验分析、反证分析等 4 种因果分析法，避免在排查过程中走入误区
+- **根因分析**：确实是 GC 的问题后，可以借助上文提到的工具并通过 5 why 根因分析法以及跟第三节中的九种常见的场景进行逐一匹配，或直接参考下文的根因鱼骨图，找出问题发生根因，最后再选择优化手段
+
+### (2) 根因鱼骨图
+
+<img src="../../pics/java/jvm_124.png" align=left>
+
+### (3) 调优建议
+
+- **Trade Off**：GC 优化要在延迟、吞吐量、容量三者之间进行权衡
+
+- **最终手段**：GC 问题不一定要对 JVM 的 GC 参数进行调优，大部分情况可通过 GC 情况找出业务问题
+
+    > 切记上来就对 GC 参数进行调整，当然有明确配置错误的场景除外
+
+- **控制变量**：每次调优过程尽可能只调整一个变量
+
+- **善用搜索**：理论上 99.99% 的 GC 问题基本都被遇到，要学会使用搜索引擎的高级技巧
+
+- **调优重点**：总体上来讲，开发的过程中遇到的问题类型基本符合正态分布，太简单或太复杂的基本遇到的概率很低
+
+- **GC 参数**：若堆、栈无法第一时间保留，一定要保留 GC 日志，这样最起码可以看到 GC Cause，有一个大概的排查方向
+
+| 分类     | 参数                                                         | 作用                                                 |
+| :------- | :----------------------------------------------------------- | :--------------------------------------------------- |
+| 基本参数 | `-XX:+PrintGCDetails`<br/>`-XX:+PrintGCDateStamps`<br/>`-XX:+PrintGCTimeStamps` | GC 日志的基本参数                                    |
+| 时间相关 | `-XX:+PrintGCApplicationConcurrentTime`<br/>`-XX:+PrintGCApplicationStoppedTime` | 详细步骤的并行时间，STW 时间等等                     |
+| 年龄相关 | `-XX:+PrintTenuringDistribution`                             | 可以观察 GC 前后的对象年龄分布，方便发现过早晋升问题 |
+| 空间变化 | `-XX:+PrintHeapAtGC`                                         | 各个空间在 GC 前后的回收情况，非常详细               |
+| 引用相关 | `-XX:+PrintReferenceGC`                                      | 观察系统的软引用，弱引用，虚引用等回收情况           |
+
+**其他建议**：
+
+- **主动式 GC**：通过监控手段监控观测 Old 区的使用情况，即将到达阈值时将应用服务摘掉流量，手动触发一次 Major GC，减少 CMS GC 带来的停顿，但随之系统的健壮性也会减少，如非必要不建议引入
+
+- **禁用偏向锁**：偏向锁在只有一个线程使用时效率很高，但在竞争激烈情况会升级成轻量级锁，此时**先消除偏向锁，该过程是 STW **
+
+    > 若每个同步都走升级过程，开销非常大，所以已知并发激烈的前提下，一般禁用偏向锁 `-XX:-UseBiasedLocking` 来提高性能
+
+- **虚拟内存**：启动初期有些操作系统(如 Linux)并没有真正分配物理内存给 JVM ，而是在虚拟内存中分配，使用时才会在物理内存中分配内存页，这样也会导致 GC 时间较长
+
+    > - 这种情况可以添加 `-XX:+AlwaysPreTouch` 参数，让 VM 在 commit 内存时跑个循环来强制保证申请的内存真的 commit，避免运行时触发缺页异常
+    >
+    > - 在一些大内存场景下，有时能将前几次的 GC 时间降一个数量级，但是添加这个参数后，启动过程可能会变慢
