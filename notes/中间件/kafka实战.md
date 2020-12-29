@@ -2623,205 +2623,596 @@ LEO 的两种更新机制：
 
 #### 1. Kafka 日志
 
+- kafka 日志只能按照时间顺序再日志尾部追加写入记录
 
+- kafka 会将消息和一些必要的元数据信息打包在一起封装成一个 record 写入日志
 
+    > 即不是直接将原生消息写入日志文件
 
+<img src="../../pics/kafka/kafka_42.png" align=left width=550>
 
+- **结构化 record**：日志记录按照被写入的顺序保存，读取日志以从左到右的方式进行
+- 每条记录都会被分配一个唯一的且顺序增加的记录号作为定位该消息的唯一标识
+- kafka 自定义了消息格式且在写入日志前序列化成紧凑的二进制字节数组来保存日志
 
+<img src="../../pics/kafka/kafka_43.png" align=left width=550>
 
+- **分区日志**：kafka 日志设计以分区为单位，即每个分区都有自己的日志
 
+- producer 生产 kafka 消息时需要确定该消息被发送到的分区，然后 kafka broker 把该消息写入该分区对应的日志中
+
+- 具体对每个日志而言，kafka 又将其进一步细分成日志段文件及日志段索引文件
+
+    > 即每个分区日志由若干日志段文件 + 索引文件构成
 
 #### 2. 底层文件系统
 
+创建 topic 时，kafka 为该 topic 的每个分区在文件系统中创建了一个对应的子目录，名为 `<topic>-<分区号>`
 
+- 每个 `.log` 文件都包含了一段位移范围的 Kafka 记录，Kafka 使用该文件第一条记录对应的 offset 来命名此 `.log` 文件
 
+    > 因此，每个新创建的 topic 分区一定有 offset 是 0 的 `.log` 文件
 
+- kafka 只使用 20 位数字来标识 offset
 
-
-
-
+    > 虽然 kafka 内部 offset 使用 64 位来保存
 
 #### 3. 索引文件
 
+稀疏索引文件：每个索引文件都由若干条索引项组成
 
+> - Kafka 不会为每条消息记录都保存对应的索引项，而是待写入若干条记录后，才增加一个索引项
+> - broker 端的 `log.index.interval.bytes` 设置该间隔多大，默认值为 4KB，即 Kafka 分区至少写入了 4KB 数据后才会在索引文件中增加一个索引项，故本质上是稀疏的
 
+- `.index`：位移索引文件，可以帮助 broker 更快的定位记录所在的物理文件位置，按照位移顺序保存
 
+    > 每个索引项固定占用 8 字节的物理空间，同时 Kafka 强制要求索引文件为不大于 `log.index.size.max.bytes` 的 8 的整数倍
+    >
+    > <img src="../../pics/kafka/kafka_44.png" align=left width=550>
+    >
+    > - 相对位移：保存与索引文件起始位移的差值，索引文件名中的位移就是该索引文件的起始位移
+    >
+    > - 位移索引文件会强制保证索引项中的位移都是升序排列，因此提升了查找的性能
+    >
+    >     > broker 可根据指定位移快速定位到记录的物理文件位置，或至少定位出离目标记录最近的低位文件位置
+    >
+    > 若用户想要增加索引项的密度，可以减少 broker 端参数 `log.index.interval.bytes` 的值
 
+- `.timeindex`：时间戳索引文件，根据给定的时间戳查找对应的位移信息，按照时间戳顺序保存
 
+    > 每个索引项固定占用 12 字节的物理空间，同时 Kafka 要求索引文件为不大于 `log.index.size.max.bytes` 的 12 的整数倍
+    >
+    > <img src="../../pics/kafka/kafka_45.png" align=left width=550>
+    >
+    > 时间戳索引项保存的是时间戳与位移的映射关系，给定时间戳后可根据此索引文件找到不大于该时间戳的最大位移
 
+Kafka 可以利用二分查找来搜寻目标索引项，从而降低整体时间复杂度到 `O(logN)`，因此引入索引文件可以极大减少查找时间
 
+---
+
+索引文件支持两种打开方式：只读模式和读/写模式
+
+- 对于非当前日志段而言，其对应的索引文件通常以只读方式打开，即只能读取索引文件中的内容而不能修改
+- 反之，当前日志段的索引文件必须要能被修改，因此总是以读/写模式打开
+
+> 当日志进行切分时，索引文件也要进行切分，此时 Kafka 会关闭当前正在写入的索引文件，同时以读/写模式创建一个新的索引文件
+>
+> broker 端参数 `log.index.size.max.bytes` 设置了索引文件的最大文件大小
 
 #### 4. 日志留存
 
+> kafka 会定期清除日志，且清除的单位是日志段文件，即删除符合清除策略的日志段文件和对应的两个索引文件
 
+当前的两种留存策略：
 
+- 基于时间的留存策略：Kafka 默认会清除 7 天前的日志段数据
 
+    > `log.retention.{hours|minutes|ms}` 用于配置清除日志的时间间隔，`ms` 优先级最高，`minutes` 次之，`hours` 最低
 
+- 基于大小的留存策略：Kafka 默认只会为每个 log 保存 `log.retention.bytes` 参数值大小的字节数，默认 `-1`，表示没有大小限制
 
+---
 
+注意：
 
+- 日志清除是一个异步过程，broker 启动后会创建单独的线程处理日志清除事宜
+
+- 日志清除对于当前日志段不生效
+
+- 时间戳策略会计算当前时间戳与日志段首条消息的时间戳之差作为衡量日志段是否留存的依据
+
+    > 若第一条消息没有时间戳信息，Kafka 才会使用最近修改时间的属性
 
 #### 5. 日志 compaction
 
+> - `log compaction` 确保 topic 分区下的每条具有相同 key 的消息都至少保存最新 value 的消息，提供了更细粒度化的留存策略
+> - `log compaction` 是 topic 级别的设置，一旦为某个 topic 启用了 `log compaction`，Kafka 会将该 topic 的日志在逻辑上划分i为“已清理”部分和“未清理”部分，后者又可进一步划分为“可清理”部分和“不可清理”部分
+>
+> 注：无 key 消息无法为其进行压实操作
 
+典型的 log compaction 使用场景：
 
+- 数据库变更订阅：用于通常在多个数据系统存有数据，对数据库的所有变更都需要同步到其他数据系统中；在同步过程中用户没必要同步所有数据，只需要同步最近的变更或增量变更
+- 事件溯源：编织查询处理逻辑到应用设计中并使用变更日志保存应用状态
+- 高可用日志化：将本地计算进程的变更实时记录到本地状态中，以便出现崩溃时其他进程可以加载该状态，从而实现整体上的高可用
 
+<img src="../../pics/kafka/kafka_46.png" align=left width=800>
 
+- Kafka 在逻辑上将每个 log 划分成 `log tail` 和 `log head` 
 
+- 组件 `Cleaner`：负责从 log 中移除已废弃的消息
 
+    > 若消息一的 key 为 K，位移为 O，消息二的 key 也为 K，而位移为 $O^{'}$ 且 $O < O^{'}$，则认为消息一已被废弃
 
+---
+
+Kafka 会在内部构造一个哈希表来保存 key 与最新位移的映射关系，当执行 compaction 时，Cleaner 不断拷贝日志段中的数据，只不过会无视那些 key 存在于哈希表中但具有较大位移值的消息
+
+<img src="../../pics/kafka/kafka_47.png" align=left width=600>
+
+如上图，key 为 K1 的消息总共有 3 条，经过 compaction 后 log 只保存了 value=V4 的那条消息，其他消息被视为“可清理”
+
+---
+
+与 compaction 相关的 Kafka 参数如下：
+
+- `log.cleanup.policy`：是否启用 log compaction
+
+    > 取值：可同时指定两种策略
+    >
+    > - `delete`：默认值，表示采用之前所说的留存策略
+    > - `compact`：表示启用 log compaction
+
+- `log.cleaner.enable`：是否启用 log Cleaner，默认值为 true
+
+    > 若使用 `log.cleanup.policy=compact`，则必须设置为 true，否则 Kafka 不会执行清理任务
+
+- `log.cleaner.min.compaction.lag.ms`：默认值为 0，表示除了当前日志段，理论上所有的日志段都属于“可清理”部分
 
 ### (6) 通信协议
 
 #### 1. 协议设计
 
+> 通信协议：实现 client-server 间或 server-server 间数据传输的一套规范
 
+Kafka 通信协议是基于 TCP 之上的二进制协议：
 
+- Kafka 客户端与 broker 传输数据时，首先要创建一个连向特定 broker 的 Socket 连接
+- 然后按照待发送请求类型要求的结构构造响应的请求二进制字节数组
+- 之后，发送给 broker 并等待从 broker 处接收响应
 
+> 若是类似发送和消费消息的请求，clients 会一直维持与某些 broker 的长连接，降低 TCP 连接的开销
 
+---
 
+实际使用中：
 
+- 单个 Kafka clients 同时连接多个 broker 服务器进行数据交互，但在每个 broker 上只需维护一个 Socket 连接用于数据传输
 
+- clients 会创建额外的 Socket 连接用于其他任务，如：元数据获取及组 rebalance 等
+
+- Kafka 自带的 java clients 使用了类似 epoll 的方式在单个连接上不停的轮询以传输数据
+
+- broker 端需要确保在单个 Socket 连接上按照发送顺序对请求进行一一处理，然后依次返回对应的响应结果
+
+    > 单个 TCP 连接上某一时刻只能处理一条请求的做法是为了保证不会出现请求乱序
+
+- clients 端在实现时需要自行保证请求发送顺序
 
 #### 2. 请求/响应结构
 
+Kafka 提供的所有请求及其响应的结构体都由固定格式组成，统一构建于多种初始类型上：
 
+- 固定长度初始类型：包括 `int8、int16、int32、int64`，分别表示有符号的单字节整数、双字节整数、4 字节整数、8字节整数
 
+- 可变长度初始类型：包括 `bytes` 和 `string`，由一个有符号整数 N + 后续的 N 字节组成，N 表示内容，若为 -1，则代表内容为空
 
+    > 其中，`string` 类型使用 `int16` 来保存 N，`bytes` 使用 `int32` 来保存 N
 
+- 数组：用于处理结构体之类重复性数据结构，编码成一个 `int32` 类型的整数 N + 后续的 N 字节，N 表示该数组的长度信息
 
+---
 
+所有的请求和响应都具有统一格式：`Size + Request/Response`，其中 Size 是 `int32` 整数，表征了该请求或响应的长度信息
 
+- **请求**可划分为请求头部和请求体
+    - 请求头部结构固定：
+        - `api_key`：请求类型，以 `int16` 整数表示
+        - `api_version`：请求版本号，以 `int16` 整数表示
+        - `correlation_id`：`int32` 整数，与对应响应的关联号，实际中用于关联 response 与 request，方便用户调试和排错
+        - `client_id`：非空字符串，表示发出此请求的 client ID，实际中用于区分集群上不同 clients 发送的请求
+    - 请求体的格式因请求类型不同而变化
+
+- **响应**也可划分为响应头部和响应体
+    - 响应头部格式固定：`correlation_id` 对应请求头部的 `correlation_id`，用于区分请求
+    - 响应体的格式因请求类型不同而变化
 
 #### 3. 常见请求类型
 
+- **`PRODUCE` 请求**：`api_key=0`，clients 向 broker 发送 PRODUCE 请求并期待 broker 端返回响应表明消息生产是否成功
 
+    > 此处讨论 V6(`api_version=5`)版本：事务 Id + acks + timeout + [topic 数据]
+    >
+    > - 事务 Id：`string` 类型，为 null 表示不使用事务
+    >
+    > - acks：`int16` 类型，表明 PRODUCE 请求从 broker 返回前必须被应答的 broker 数，当前只取 `0、1、-1(all)`
+    >
+    > - timeout：请求超时时间(单位：ms)，默认 30s，表示若 broker 端 30s 内未发送响应给 clients，则 clients 端视该请求超时
+    >
+    > - topic 数据：PRODUCE 请求主要的数据载体，封装了要发送到 broker 端的消息数据
+    >
+    >     该字段可进一步划分成：topic + [partition + 消息集合]
+    >
+    >     - topic：表征该 PRODUCE 请求要发送到哪些 topic
+    >
+    >         > 注：topic 数据是数组类型，故单个 PRODUCE 请求可同时生产多个 topic 消息
+    >
+    >     - partition：表征 PRODUCE 请求要发送消息到 topic 的哪些分区
+    >
+    >     - 消息集合：封装了真正的消息数据
+    >
+    > ---
+    >
+    > PRODUCE 响应结构：[response] + throttle_time_ms
+    >
+    > - `throttle_time_ms`：表示因超过了配额限制而延迟该请求处理的时间，以毫秒计
+    >
+    >     > 若没有配置任何配额设置，则该字段恒为 0
+    >
+    > - `[responses]`：每个 topic 都有对应的返回数据，即 response，结构如下：
+    >
+    >     - `partition`：表示该 topic 分区号
+    >     - `error_code`：该请求是否成功
+    >     - `base_offset`：该消息集合的起始位移
+    >     - `log_append_time`：broker 端写入消息的时间
+    >     - `log_start_offset`：response 被创建时该分区日志总的起始位移
 
+- **`FETCH` 请求**：`api_key=1`，服务于消费消息，即包括 clients 向 broker 发送的 FETCH 消息，也包括分区 follower 副本发送给 leader 副本的 FETCH 请求
 
+    > 此处讨论 V7`api_verion=6` 版本，格式为：
+    >
+    > - `replica_id`：`int32` 类型表征的副本 ID，该字段服务于 follower 给 leader 发送的 FETCH 请求
+    >
+    >     > 若是正常的 clients 端 consumer 程序，则该字段是 -1
+    >
+    > - `max_wait_time`：`int32` 类型整数，表示等待响应返回的最大时间
+    >
+    > - `min_bytes`：`int32` 类型整数，响应中包含数据的最小字节数，默认 1，即 broker 积累了超过 1 字节数据就返回响应
+    >
+    > - `max_bytes`：`int32` 类型整数，响应中包含数据的最大字节数，不能突破该“硬界限”
+    >
+    >     > 若 FETCH 请求中要获取的第一个 topic 分区的单条消息大小已超过该阈值，则 Kafka 允许 broker 返还该消息给 clients
+    >
+    > - `isolation_level`：`int8` 类型整数，表示 FETCH 请求的隔离级别
+    >
+    >     > 两种隔离级别：`READ_UNCOMMITTED(isolation_level=0)` 和 `READ_COMMITED(isolation_level=1)` 
+    >     >
+    >     > 对于非事务型的 consumer，该字段固定为 0
+    >
+    > - `[topics]`：数组类型，表征了要请求的 topic 数据
+    >
+    >     元素结构如下：
+    >
+    >     - topic
+    >
+    >     - 若干分区信息：每个分区信息由 `partition、fetch_offset、log_start_offset、max_bytes` 构成
+    >
+    >         - `fetch_offset` 表明 broker 需要从指定分区的哪个位移开始读取消息
+    >
+    >         - `log_start_offset` 则是为 follower 发送的 FETCH 请求专用，表明 follower 副本最早可用的分区
+    >
+    >         - `max_bytes`：限定整个 FETCH 请求能获取到的最大字节数
+    >
+    >             > 外层的 `max_bytes` 限定单个分区所能获取到的最大字节数
+    >
+    > ---
+    >
+    > FETCH 请求对应的响应结构格式：`throttle_time_ms[responses]`
+    >
+    > - `throttle_time_ms`：和 PRODUCE 响应结构中的 throttle_time_ms 含义相同，同做节流之用
+    > - `[responses]`：返回的消息数据，是一个数组类型，每个元素结构如下：
+    >     - topic：消息数据所属 topic
+    >     - partition_header：可进一步细分为分区号、error_code、高水印值等字段
+    >     - 消息集合：真实的数据
 
+- **`METADATA` 请求**：clients 向 broker 发送 MATADATA 请求以获取指定 topic 的元数据信息，格式为：`[topics]+allow_auto_topic_creation`
 
+    > - `allow_auto_topic_creation`：布尔类型，指定了当 topic 不存在时是否允许自动创建该 topic
+    > - `[topics]`：数组类型，每个元素指定了 METADATA 请求想要获取元数据的 topic 名称
+    >
+    > ---
+    >
+    > METADATA 响应格式：
+    >
+    > - `throttle_time_ms`：含义同前
+    > - `[brokers]`：集群 broker 列表，每个 broker 信息包括 `node_id、host、port、rack`，即节点 ID、主机名或 IP 地址、端口、机架信息
+    > - `cluster_id`：该请求被发送的集群 ID
+    > - `controller_id`：该集群 controller 所在的 broker ID
+    > - `[topic_metadata]`：topic 元数据数组，每个元素表征了一个 topic 的所有元数据信息，如下：
+    >     - `topic_error_code`：topic 错误码，表征该元数据是否有问题
+    >     - `topic`：topic 名
+    >     - `is_internal`：是否属于内部 topic
+    >     - `[partition_metadata]`：topic 下所有分区的元数据，包括每个分区的错误码、leader 信息、副本信息、ISR 信息等
 
 #### 4. 请求处理流程
 
+**(1) clients 端**请求处理流程
 
+<img src="../../pics/kafka/kafka_48.png" align=left width=600>
 
+---
 
+**(2) broker 端**：
 
-
-
-
-
-#### 5. 版本与兼容性
-
-
-
-
-
-
-
-
-
-#### 6. Java API 构造请求实例
-
-
-
-
-
-
-
-
+<img src="../../pics/kafka/kafka_49.png" align=left width=400>
 
 ### (7) controller 设计
 
 #### 1. controller 概览
 
+> controller 用来管理和协调 Kafka 集群，即管理集群中所有分区的状态并执行相应的管理操作
 
+- 每个 Kafka 集群只能有一个 controller，当集群启动时，所有 broker 都会参与 controller 的竞选，但只能有一个 broker 胜出
+- 一旦 controller 在某个时刻崩溃，集群中剩余的 broker 会开启新一轮的 controller 选举
 
-
-
-
-
-
+<img src="../../pics/kafka/kafka_50.png" align=left width=800>
 
 #### 2. controller 管理状态
 
+controller 维护的状态分为两类：
 
+- **副本状态**：每台 broker 上的分区副本，由“**副本状态机**”维护
+- **分区状态**：每个分区的 leader 副本信息，由“**分区状态机**”维护
 
+---
 
+(1) **副本状态机**：Kafka 为副本定义了 7 中状态及每个状态间的流转规则，这些状态如下：
 
+- `NewReplica`：controller 创建副本时的最初状态，该状态的副本只能成为 follower 副本
+- `OnlineReplica`：启动副本后的状态，该状态的副本既可以成为 follower 副本也可以成为 leader 副本
+- `OfflineReplica`：副本所在 broker 崩溃后所处的状态
+- `ReplicaDeletionStarted`：若开启了 topic 删除操作，topic 下所有分区的所有副本都会被删除，此时副本进入该状态
+- `ReplicaDeletionSuccessful`：副本成功响应删除副本请求后进入的状态
+- `ReplicaDeletionIneligible`：副本删除失败进入的状态
+- `NonExistentReplica`：副本成功删除所处的状态
 
+<img src="../../pics/kafka/kafka_51.png" align=left width=400>
+
+(2) **分区状态机**：副本集群下所有分区的状态管理，分区状态机只定义了 4 个分区状态：
+
+- `NonExistent`：表明不存在的分区或已删除的分区
+
+- `NewPartition`：一旦被创建，分区便处于该状态
+
+    > 此时，Kafka 已为分区确定了副本列表，但尚未选举出 leader 和 ISR
+
+- `OnlinePartition`：一旦该分区的 leader 被选出，则进入此状态，也是分区正常工作的状态
+
+- `OfflinePartition`：若 leader 所在的 broker 宕机，则分区进入该状态，表明无法正常工作
+
+<img src="../../pics/kafka/kafka_52.png" align=left width=400>
 
 #### 3. controller 职责
 
+controller 完整职责如下：
 
+- **更新集群元数据信息**：用于随时把变更后的分区信息广播出去，同步给集群上所有的 broker
 
+    > 具体做法：
+    >
+    > - 当有分区信息发生变更时，controller 将变更后的信息封装进 UpdateMetadataRequests 请求中
+    >
+    > - 然后发送给集群中的每个 broker
+    >
+    > - 这样，clients 在请求数据时总是能获取最新、最及时的分区信息
+    >
+    >     > 一个 clients 能向集群中任意一台 broker 发送 METADATA 请求来查询 topic 分区信息
 
+- **创建 topic**：controller 启动时会创建一个 ZooKeeper 监听器，监控 ZooKeeper 节点 `/brokers/topics` 下子节点的变更情况
 
+    > 一个 clients 或 admin 创建 topic 的方式主要有 3 种：
+    >
+    > - 方式一：通过 kafka-topics 脚本的 --create 创建
+    > - 方式二：构造 CreateTopicsRequest 请求创建
+    > - 方式三：配置 broker 端参数 `auto.create.topics.enable=true`，然后发送 MetadataRequest 请求
+    >
+    > 原理：
+    >
+    > - 在 ZooKeeper 的 `/brokers/topics` 创建一个 znode，然后把这个 topic 的分区及对应的副本列表写入该 znode 中
+    > - controller 监听器一旦监控到该目录下有新增的 znode，就立即触发 topic 创建逻辑，即 controller 会为新建 topic 的每个分区确定 leader 和 ISR，然后更新集群的元数据信息
+    > - 随后，controller 还会创建一个新的监听器用于监听 ZooKeeper 的 `/brokers/topics/<新增 topic>` 节点内容变更
 
+- **删除 topic**：
 
+    > 删除 topics 的两种方法：
+    >
+    > - 方式一：通过 kafka-topics 脚本的 --delete 来删除 topic
+    > - 构造 DeleteTopicsRequest
+    >
+    > 原理：
+    >
+    > - 向 ZooKeeper 的 `/admin/delete_topics` 下新建一个 znode
+    > - controller 启动时会创建一个监听器专门监听该路径下的子节点变更情况
+    > - 一旦发现有新节点，则 controller 立即开启删除 topic 的逻辑
+    >
+    > 删除 topic 的两个阶段：
+    >
+    > - 阶段一：停止所有副本运行
+    > - 阶段二：删除所有副本的日志数据
+    >
+    > 一旦完整删除两个阶段，controller 会移除 `/admin/delete_topics/<待删除 topic>` 节点，即 topic 删除操作完成
 
+- **分区重分配**：由 Kafka 集群管理员发起，旨在对 topic 的所有分区重新分配副本所在 broker 的位置，以期望实现更均匀的分配效果
+
+    > - 该操作需要手动制定分配方案并按照指定的格式写入 ZooKeeper 的 `/admin/reassign_partitions` 节点下
+    >
+    > 分区副本重分配过程：实际是先扩展再收缩
+    >
+    > - controller 先将分区副本集合进行扩展
+    > - 等扩展的副本全部与 leader 保持同步后将 leader 设置为新分配方案中的副本
+    > - 最后执行收缩阶段，将分区副本集合缩减成分配方案中的副本集合
+
+- **preferred leader 副本选举**：preferred leader 位于副本列表的第一位
+
+    > 当 leader 发生变更导致不再是 preferred leader，则用户可以发起命令将分区的  leader 重新调整为 preferred leader：
+    >
+    > - 方式一：设置 broker 端参数 `auto.leader.rebalance.enable=true`，这样 controller 会定时自动调整 preferred leader
+    > - 方式二：通过 kafka-preferred-replica-election 脚本手动触发
+    >
+    > 原理：
+    >
+    > - 向 ZooKeeper 的 `/admin/preferred_replica_election` 节点写入数据
+    > - 随后，触发监听器，controller 会将对应分区的 leader 调整回副本列表中的第一个副本，之后将此变更广播出去
+
+- **topic 分区扩展**：使用 kafka-topics 脚本的 `--alter` 完成，向 ZooKeeper 的 `/brokers/topics/<topic>` 节点写入新的分区目录
+
+- **broker 加入集群**：每个 broker 成功启动后，会在 ZooKeeper 的 `/broker/ids` 下创建一个 znode，并写入 broker 信息
+
+    > - 若让 Kafka 动态维护 broker 列表，则必须注册一个 ZooKeeper 监听器时刻监控该目录下的数据变化
+    > - 每当有新的 broker 加入集群时，该监听器会感知变化，执行对应的 broker 启动任务，之后更新集群元数据信息并广而告之
+
+- **broker 崩溃**：由于当前 broker 在 ZooKeeper 中注册时 znode 时临时节点，因此一旦 broker 崩溃，broker 与 ZooKeeper 的会话会失效并导致临时节点被删除
+
+    > 若发现有 broker 子目录“消失”，controller 开启 broker 退出逻辑，最后更新集群元数据并同步到其他 broker 上
+
+- **受控关闭**：由即将关闭的 broker 向 controller 发送 `ControlledShutdownRequest` 请求
+
+    > - 一旦发生完 `ControlledShutdownRequest`，待关闭 broker 将一直处于阻塞状态
+    > - 直到接收到 broker 端发送的 `ControlledShutdownResponse`，表示关闭成功，或用完所有重试机会后强行退出
+
+- **controller leader 选举**：
+
+    > Kafka 集群中发生 controller leader 选举的 4 种场景：
+    >
+    > - 场景一：关闭 controller 所在 broker
+    > - 场景二：当前 controller 所在 broker 宕机或崩溃
+    > - 场景三：手动删除 ZooKeeper 的 `/controller` 节点
+    > - 场景四：手动向 ZooKeeper 的 `/controller` 节点写入新的 broker id
 
 #### 4. controller 与 broker 间的通信
 
+> controller 启动时会为集群中所有 broker 创建一个专属的 Socket 连接或一个专属的 RequestSenThread 线程
 
+controller 只能给 broker 发送 3 种请求：
 
-
-
-
-
-
+- `UpdateMetadataRequest`：该请求携带了集群当前最新的元数据信息，接收该请求后，broker 会更新本地内存中的缓存信息，从而保证返还给 clients 的信息总是最新、最及时的
+- `LeaderAndIsrRequest`：用于创建分区、副本，同时完成作为 leader 和作为 follower 角色各自的逻辑
+- `StopReplicaRequest`：停止指定副本的数据请求操作，另外还负责删除副本数据的功能
 
 #### 5. controller 组件
 
+<img src="../../pics/kafka/kafka_53.png" align=left width=800>
 
+**(1) 数据类组件：ControllerContext** 
 
+<img src="../../pics/kafka/kafka_54.png" align=left width=800>
 
+**(2) 基础功能类**
 
+- `ZkClient`：封装与 ZooKeeper 的各种交互 API，controller 与 ZooKeeper 的所有操作都交由该组件完成
+- `ControllerChannelManager`：该通道管理器负责 controller 向其他 broker 发送请求
+- `ControllerBrokerRequestBatch`：用来管理请求 batch，即 controller 将发往同一 broker 的各种请求按照类型分组，稍后统一发送以提升效率
+- `RequestSendThread`：负责给其他 broker 发送请求的 I/O 线程
+- `ZooKeeperLeaderElector`：结合 ZooKeeper 负责 controller 的 leader 选举
 
+**(3) 状态机**
 
+- `ReplicaStateMachine`：副本状态机，负责定义副本状态及合法的副本状态流转
+- `PartitionStateMachine`：分区状态机，负责定义分区状态及合法的分区状态流转
+- `TopicDeletionManager`：topic 删除状态机，处理删除 topic 的各种状态流转及相应的状态变更
 
+**(4) 选举器类** 
 
-#### 6. 老版本 controller 设计缺陷
+此处为分区 leader 选举：
 
+- `OfflinePartitionLeaderSelector`：负责常规性的分区 leader 选举
+- `ReassignPartitionLeaderSelector`：负责用户发起分区重分配时的 leader 选举
+- `PreferredReplicaPartitionLeaderSelector`：负责用户发起 preferred leader 选举时的 leader 选举
+- `ControlledShutdownLeaderSelector`：负责 broker 在受控关闭后的 leader 选举
 
+**(5) ZooKeeper 监听器** 
 
+controller 自己维护的监听器实际只有 3 个：
 
-
-
-
-
-
-
-
-#### 7. 新版本 controller
-
-
-
-
-
-
-
-
+- `PartitionReassignedListener`：监听 ZooKeeper 下分区重分配路径的数据变更情况
+- `PreferredReplicaElectionListener`：监听 ZooKeeper 下 preferred leader 选举路径的数据变更
+- `IsrChangeNotificationListener`：监听 ZooKeeper 下 ISR 列表变更通知路径下的数据变化
 
 ### (8) broker 请求处理
 
 #### 1. Reactor 模式
 
+- Reactor 设计模式时一种事件处理模式，旨在处理多个输入源同时发送过来的请求
 
+- Reactor 模式中的服务处理器或分发器将入站请求按照多路复用的方法分发到对应的请求处理器中
 
+<img src="../../pics/kafka/kafka_55.png" align=left width=800>
 
+Reactor 模式中的两个重要组件：
 
-
+- **acceptor 线程**：实时监听外部数据源发送过来的事件，并执行分发任务
+- **processor 线程**：执行事件处理逻辑并将处理结果发送给 client
 
 #### 2. Kafka broker 请求处理
 
+kafka broker 请求处理实现了上面的 Reactor 模式：
 
+- 每个 broker 都有一个 acceptor 线程和若干个 processor 线程 (`num.network.threads` 参数控制，默认值为 3)
+- broker 会为用户配置的每组 listener 创建一组 processor 线程
 
+<img src="../../pics/kafka/kafka_56.png" align=left width=300>
 
+- **acceptor 线程**：clients 端会保存与 broker 的长连接，不需要频繁重建 Socket 连接，故 broker 端固定使用一个 acceptor 线程来唯一监听入站连接
 
+- **processor 线程**：接收 acceptor 线程分配的新 Socket 连接通道，然后开始监听该通道上的数据传输
 
+    > broker 以线程数组方式来实现这组 processor，之后使用简单的数组索引轮询方式依次给每个 processor 线程分配任务，实现最均匀化的负载均衡
+    >
+    > - Kafka 创建了 `KafkaRequestHandler` 线程池专门处理真正的请求，大小由 broker 端的 `num.io.threads` 控制，默认 8
+    >
+    > - processor 线程任务：
+    >
+    >     - 任务一：负责将 Socket 连接上接收到的请求放入请求队列中
+    >
+    >         > 每个 broker 启动时会创建一个全局唯一的请求队列，大小由 broker 端的 `queued.max.requests` 控制，默认 500
+    >
+    >     - 任务二：实时处理各自响应队列中的响应结果
+    >
+    >         > 每个 broker 还会创建于 processor 线程数等量的响应队列，即为每个 processor 线程都创建一个对应的响应队列
 
+---
 
+broker 端请求处理的全流程案例：假设 broker id 为 B1，client id 为 C1，其他为默认配置
+
+1. 启动 B1
+
+    > - 启动 acceptor 线程 A
+    > - 启动 3 个 processor 线程 P1、P2、P3
+    > - 创建 KafkaRequestHandler 线程池和 8 个请求处理线程 H1～H8
+
+2. B1 启动后，线程 A 不断轮询是否存在连向该 broker 的新连接
+
+    P1～P3 实时轮询线程 A 是否发送新的 Socket 连接通道以及请求队列和响应队列是否需要处理
+
+    H1～H8 实时监控请求队列中的新请求
+
+3. 此时，C1 开始向 B1 发送数据，首先 C1 会创建与该 broker 的 Socket 连接
+
+4. 线程 A 监听到该 Socket 连接并接收之，然后将该连接发送给 P1～P3中的一个，假设发送给 P2
+
+5. P2 下一次轮询开始时发现有 A 线程传过来的新连接，将其注册到 Selector 上并开始监听其上的入站请求
+
+6. 现在 C1 开始给 B1 发送 PRODUCE 请求
+
+7. P2 监听到有新的请求到来并获取，然后发送到请求队列中
+
+8. 由于 H1～H8 实时监听请求队列，故必然有一个线程最早发现该 PRODUCE 请求，假设 H5 发现，则 H5 将该请求从请求队列中取出并开始处理
+
+9. H5 线程处理请求完成，将处理结果以响应的方式放入 P2 的响应队列
+
+10. P2 监听到响应队列有新的响应到来，因而将响应从该队列中取出并通过对应的 Socket 连接通道发送给 C1
+
+11. C1 接收到响应，标记本次 PRODUCE 请求处理过程结束
 
 ## 2、producer 端设计
 
@@ -2829,87 +3220,256 @@ LEO 的两种更新机制：
 
 #### 1. ProducerRecord
 
+> 一个 ProducerRecord 封装了一条待发送的消息(或记录)
 
+ProducerRecord 由 5 个字段构成：
 
+- `topic`：该消息所属的 topic
+- `partition`：该消息所属的分区
+- `key`：消息 key
+- `value`：消息体
+- `timestamp`：消息时间戳
 
-
-
+> ProducerRecord 允许用户在创建消息对象时，直接指定要发送的分区，而不用先通过 Partition 计算目标分区
 
 #### 2. RecordMetadata
 
+RecordMetadata 数据结构表示 Kafka 服务器端返回给客户端的消息元数据信息：
 
-
-
-
-
+- `offset`：消息在分区日志中的位移信息
+- `timestamp`：消息时间戳
+- `topic/partition`：所属 topic 的分区
+- `checksum`：消息 CRC32 码
+- `serializedKeySize`：序列化后的消息 key 字节数
+- `serializedValueSize`：序列化后的消息 value 字节数
 
 ### (2) 工作流程
 
+- 用户首先构建待发送的消息对象 ProducerRecord，然后调用 KafkaProducer#send 方法进行发送
+- KafkaProducer 接收到消息后，首先对其进行序列化，然后结合本地缓存的元数据信息一起发送给 partitioner 去确定目标分区，最后追加写入内存中的消息缓冲池
+- 此时，KafkaProducer#send 方法成功返回
 
+> KafkaProducer 中有一个专门的 Sender I/O 线程负责将缓冲池中的消息分批次发送给对应的 broker，完成真正的消息发送逻辑
 
+<img src="../../pics/kafka/kafka_57.png" align=left width=800>
 
+当用户调用 `KafkaProducer.send(ProducerRecord,Callback)` 时，Kafka 内部的逻辑：
 
+- **第一步：序列化 + 计算目标分区**，即为待发送消息进行序列化并计算目标分区
 
+    > <img src="../../pics/kafka/kafka_58.png" align=left width=800>
+
+- **第二步：追加写入消息缓冲区 `accumulator`**，专门保存待发送的消息，大小由 `buffer.memory` 指定，默认 32MB
+
+    > - 该数据结构包含“消息批次信息`batches`”，本质上一个 HashMap，里面分别保存了每个 topic 分区下的 batch 队列
+    > - 单个 topic 分区下的 batch 队列中保存的是若干个消息批次，每个 batch 中最重要的 3 个组件：
+    >     - `compressor`：负责执行追加写入操作
+    >     - `batch` 缓冲区：由 `batch.size` 参数控制，消息被真正追加写入的地方
+    >     - `thunks`：保存消息回调逻辑的集合
+    >
+    > 这一步的目的就是将待发送的消息写入消息缓冲池中
+    >
+    > 这一步的结果：KafkaProducer.send 方法执行完毕，用户主线程只需等待 Sender 线程发送消息并执行返回结果
+    >
+    > <img src="../../pics/kafka/kafka_59.png" align=left width=800>
+
+- **第三步：Sender 线程预处理及消息发送** 
+
+    > Sender 线程的工作流程如下：
+    >
+    > 1. 不断轮询缓冲区寻找已做好发送准备的分区
+    > 2. 将轮询获得的各个 batch 按照目标分区所在的 leader broker 进行分组
+    > 3. 将分组后的 batch 通过底层创建的 Socket 连接发送给各个 broker
+    > 4. 等待服务器端发送 response 回来
+    >
+    > <img src="../../pics/kafka/kafka_60.png" align=left width=800>
+
+- **第四步：Sender 线程处理 response**
+
+    > - Sender 线程会发送 PRODUCE 请求给对应的 broker，broker 处理完毕后发送对应的 PRODUCE response
+    > - 一旦 Sender 线程接收到 response，将依次(按照消息发送顺序)调用 batch 中的回调方法
+    >
+    > <img src="../../pics/kafka/kafka_61.png" align=left width=800>
 
 ## 3、consumer 端设计
 
 ### (1) consumer group 状态机
 
+- consumer 依赖 broker 端的组协调者 `coordinator` 来管理组内的所有 consumer 实例并负责把分配方案下发到每个 consumer 上
 
+    > - 分配方案由组内的 leader consumer 根据指定的分区分配策略指定
+    > - 该分配策略必须上组内所有 consumer 都支持
+    > - 若所有 consumer 协调在一起无法选出共同的分区策略，则 coordinator 会抛出异常
+    >
+    > 这种设计确保每个 consumer group 总有一个一致性的分配策略，同时还能确保每个 consumer 只能为其拥有的分区提交位移
 
+- consumer 对 group 下所有成员的分区分配工作由 consumer 代码实现，好处：
 
+    - 便于维护与升级：若在 broker 端实现，则分配策略的变动势必要重启整个 Kafka 集群，生产环境重启服务器的代价很高
+    - 便于实现自定义策略：coordinator 端代码不易实现灵活可定制的分配策略
+    - 解耦了组管理与分区分配，coordinator 负责组管理工作，而 consumer 负责分区分配
 
+---
 
+Kafka 为每个 consumer group 定义的 5 个状态：
+
+- `Empty`：该状态表明 group 下没有任何 active consumer，但可能包含位移信息
+
+    > - 每个 group 创建时便处于 Empty 状态
+    > - 若 group 工作了一段时间后，所有 consumer 都离开组，则 group 也会处于该状态
+    >
+    > 由于可能包含位移信息，则处于此状态的 group 仍可以响应 OffsetFetch 请求，即返回 clients 端对应的位移信息
+
+- `PreparingRebalance`：该状态表明 group 正在准备进行 group rebalance，仍可能包含位移信息
+
+    > - group 已“受理”部分成员的 JoinGroup 请求，同时等待其他成员发送 JoinGroup 请求，直到所有成员都成功加入组或超时
+    > - 由于可能包含位移信息，因此 clients 仍可以发起 OffsetFetch 请求去获取位移，甚至发起 OffsetCommit 请求去提交位移
+
+- `AwaitingSync`：该状态表明所有成员都已经加入组并等待 leader consumer 发送分区分配方案，仍可能获取位移
+
+    > 若提交位移，coordinator 会抛出 `REBALANCE_IN_PROGRESS` 异常来表明该 group 正在进行 rebalance
+
+- `Stable`：该状态表明 group 开始正常消费，此时 group 必须响应 clients 发送过来的任何请求，比如：位移提交请求、位移获取请求、心跳请求等
+
+- `Dead`：该状态表明 group 已经彻底废弃，group 内没有任何 active 成员且 group 的所有元数据信息都已被删除
+
+    > 处于此状态的 group 不会响应任何请求，即 coordiantor 会返回 `UNKNOWN_MEMBER_ID` 异常
+
+<img src="../../pics/kafka/kafka_62.png" align=left width=800>
+
+- 当 group 首次创建时，coordinator 会设置该 group 状态为 Empty
+- 当有新的成员加入组时，组状态变更为 PreparingRebalance，此时 group 会等待一段时间让更多的组成员加入
+- 若所有成员都及时加入了组，则组状态变更为 AwaitingSync，此时 leader consumer 开始分配消费方案
+- 在分配方案确定后，leader consumer 将分配方案以 SyncGroup 请求的方式发送给 coordiantor，然后 coordinator 把方案发给下面的所有组成员，此时组状态进入 Stable，表明 group 开始正常消费数据
+- 当 group 处于 Stable 时，若所有成员都离组，则此时 group 状态会首先调整为 PreparingRebalance，然后变更为 Empty，最后等待元数据过期被移除后 group 变更为 Dead
+
+**根据每个状态详细讨论状态流转的条件**：
+
+- `Empty` 与 `PreparingRebalance`：
+    - Empty 状态的 group 下没有任何 active consumer
+    - 当有一个 consumer 加入时，Empty 变为 PreparingRebalance
+    - 反之，处于 PreparingRebalance 状态的 group 中，当所有成员都离开组时，PreparingRebalance 变为 Empty
+- `Empty` 与 `Dead`：
+    - Empty 状态下的 group 仍可能保存 group 元数据信息甚至位移信息
+    - Kafka 默认 1 天(broker 端 `offset.retention.minutes` 配置)后删除这些数据，则 group 进入 Dead 状态
+- `PreparingRebalance` 与 `AwaitingSync`：
+    - 在 PreparingRebalance 状态时，若成员在规定时间`max.poll.interval.ms` 完成加组操作，则 group 进入 AwaitingSync 状态
+    - 若有的组没能在规定时间加入组，则 group 又会重新变更为 PreparingRebalance
+    - 对于 AwaitingSync 状态的 group。当已加入成员崩溃、主动离组、元数据信息发生变更时，group 会变为 PreparingRebalance
+- `AwaitingSync` 与 `Stable`：在 coordinator 成功下发 leader consumer 所做的分配方案后，group 进入到 Stable 状态开始工作
+- `Stable` 与 `PreparingRebalance`：group 正常工作时，当有成员发送崩溃或主动离组，抑或 leader group 重新加入组，再或有成员元数据发送变更，则 group 会直接进入 PreparingRebalance 开启新一轮 rebalance
+- 其他状态与 `Dead`： 当分区所在 broker 崩溃，则必须对该分区进行迁移，从而导致 coordinator 变更，此时 group 变为 Dead 状态
 
 ### (2) group 管理协议
 
+coordinator 的组管理协议由两个阶段构成：
 
+> 阶段一是收集所有 consumer 的 topic 订阅信息，而阶段二则利用这些信息给每个 consumer 分配要消费的分区
+>
+> 注：每个 group 下的 leader consumer 通常都是第一个加入 group 的 consumer
 
+- **阶段一：加入组**，为 group 指定 active 成员并从中选出 leader consumer
 
+    > - 当确定该 group 对应的 coordinator 后，每个成员都要显式发送 JoinGroup 请求给 coordinator
+    >
+    > - coordinator 会持有这些 JoinGroup 请求一段时间，直到所有组成员都发送了 JoinGroup 请求
+    >
+    >     > 该请求封装了 consumer 各自的订阅信息、成员 id 等元数据
+    >
+    > - 此时，coordinator 选择其中一个 consumer 作为 leader，然后给所有组成员发送对应的 response
+    >
+    > - coordinator 拿到所有成员的 JoinGroup 请求后会去获取所有成员都支持的协议类型
+    >
+    >     > 若有成员指定了一个与其他成员都不兼容的协议类型，则该成员将被拒绝加入组
+    >
+    > - coordinator 处理 JoinGroup 请求后会把所有 consumer 成员的元数据信息封装进一个数组，然后以 JoinGroup response 的方式发给 group 的 leader consumer
+    >
+    >     > 注：只会给 leader consumer 发送这样的信息，给其他成员只会发送一个空数组
+    >     >
+    >     > 好处：
+    >     >
+    >     > - 非 leader consumer 本来不需要知晓这部分信息
+    >     > - 极大减少网络 I/O 传输的开销
 
+- **阶段二：同步组状态信息**，让 leader consumer 根据指定的分配策略进行分区的分配
 
-
-
+    > - group 所有成员都需显式的给 coordinator 发送 SyncGroup 请求
+    >
+    >     > 注：只有 leader consumer 的 SyncGroup 请求中会包含分配方案
+    >
+    > - coordinator 接收到 leader 的 SyncGroup 请求后取出分配方案并单独抽取出每个 consumer 对应的分区，然后把分区封装进 SyncGroup 的 response，发送给各个 consumer
+    >
+    > - 在所有 consumer 成员都收到 SyncGroup response 后，coordinator 将 group 状态设置为 Stable，此时组开始正常工作，每个成员按照 coordinator 发过来的方案开始消费指定的分区
 
 ### (3) rebalance 场景剖析
 
+- 场景一：新成员加入组
 
+    <img src="../../pics/kafka/kafka_63.png" align=left width=800>
 
+- 场景二：成员发生崩溃
 
+    <img src="../../pics/kafka/kafka_64.png" align=left width=800>
 
+- 场景三：成员主动离组
 
+    <img src="../../pics/kafka/kafka_65.png" align=left width=800>
 
+- 场景四：成员提交位移
 
-
-
+    <img src="../../pics/kafka/kafka_66.png" align=left width=800>
 
 ## 4、实现精确一次处理语义
 
 ### (1) 消息交付语义
 
+clients 端常见的 3 种消息交付语义：
 
+- **最多一次**：消息可能丢失也可能被处理，但最多只会被处理一次
+- **至少一次**：消息不会丢失，但可能被处理多次
+- **精确一次**：消息被处理且只会被处理一次
 
+---
 
+**(1) producer 角度**：默认提供 `at least once` 语义
 
+**(2) consumer 角度**：
 
+- `at most once`：consumer 先获取若干消息，然后提交位移，之后再开始处理消息
+
+- `at least once`：consumer 获取若干消息，处理到最后提交位移
 
 ### (2) 幂等性 producer
 
+> 设置 producer 端 `enable.idempotence=true` 来启用幂等性
 
+幂等性 producer 的设计思路：类似 TCP 的工作方式
 
+- 发送到 broker 端的每批消息都会被赋予一个序列号用于消息去重
 
+    > 该序列号不回被丢弃，Kafka 会把它们保存在底层日志中
 
+- Kafka 还会为每个 producer 实例分配一个 producer id(即 PID)
 
+    > 若发送消息的序列号小于等于 broker 端保存的序列号，则 broker 会拒绝这条消息的写入操作
+
+<img src="../../pics/kafka/kafka_67.png" align=left width=800>
 
 ### (3) 事务
 
+> 事务可使 clients 端(producer 和 consumer)程序能够将一组消息放入一个原子性单元中统一处理
 
+**事务 id 或 TransactionalId**：用于表征事务的唯一 id，由用户显式提供
 
+- **producer 方面**：
+    - 跨应用程序会话间的幂等发送语义：使用具有版本含义的 generation 来隔离旧事务操作
+    - 支持会话间的事务恢复：若某个 producer 实例挂掉，则 Kafka 能保证下个实例先完成之前未完成的事务，从而保证状态一致性
 
-
-
-
-
+- **consumer 方面**：事务支持要弱一些
+    - 对于 compacted 的 topic 而言，事务中的消息可能已经被删除
+    - 事务可能跨多个日志段，因此若老的日志段被删除，用户将丢失事务中的部分消息
+    - consumer 程序可能使用 seek 方法定位事务中的任意位置，也可能造成部分消息的丢失
+    - consumer 可能选择不消费事务中的所有消息，即无法保证读取事务的全部消息
 
 # 六、管理 kafka 集群
 
@@ -2917,155 +3477,222 @@ LEO 的两种更新机制：
 
 ### (1) 启动 broker
 
+- **方式一**：`bin/kafka-server-start.sh -daemon <path>/server.properties`
+- **方式二**：`nohup bin/kafka-server-start.sh <path>/server.properties &` 
 
-
-
-
-
+> 查询保存在 Kafka 安装目录的 logs 子目录下，名字是 `server.log`
 
 ### (2) 关闭 broker
 
+正确关闭 broker 的两种情况：
 
+- 情况一：前台方式启动 broker 进程时，即不加 `nohup、&、-daemon` 参数启动 broker
 
+    > 关闭方式：Ctrl + C 即可
 
+- 情况二：后台方式启动 broker 进程时，即使用 `nohup、-daemon` 参数启动 broker
 
+    > 关闭方式：使用 Kafka 自带的位于 `bin` 子目录下的 `kafka-server-stop.sh` 脚本，即运行 `bin/kafka-server-stop.sh` 命令
+    >
+    > 注：该脚本会搜寻当前机器中所有的 Kafka broker 进程，然后关闭它们
 
+---
+
+若用户安装路径过长，则可能令该脚本失效从而无法正确获取 broker 的 PID，此时解决方案：
+
+(1) 若机器上安装了 JDK，可运行 `jps` 命令直接获取 Kafka 的 PID，否则转到下一步
+
+(2) 运行 `ps ax | grep -i 'kafka\.Kafka' | grep java | grep -v grep | awk '{print $1}'` 命令自行寻找 Kafka 的 PID
+
+(3) 运行 `kill -s TERM $PID` 关闭 broker
 
 ### (3) 设置 JMX 端口
 
+用户在启动 broker 前需先设置 JMX 端口，两种情况：
 
+- 情况一：以前台方式运行 broker
 
+    > 设置 JMX 端口为 9997：`JMX_PORT=9997 bin/kafka-server-start.sh <path>/server.properties`
 
+- 情况二：以后台方式运行 broker
 
-
-
-
+    > 同上：`export JMX_PORT=9997 bin/kafka-server-start.sh -daemon <path>/server.properties` 
 
 ### (4) 增加 broker
 
+- **增加**：用户只需为新增 broker 设置一个唯一的 `broker.id`，然后启动即可
 
+    > Kafka 集群能自动发现新启动的 broker 并同步所有的元数据信息，主要包括：当前集群有哪些 topic，topic 都有哪些分区
 
-
-
-
-
-
-
-### (5) 升级 broker 版本
-
-
-
-
-
-
-
-
+- **缺憾**：新增的 broker 不会自动被分配任何已有的 topic 分区
 
 ## 2、topic 管理
 
 ### (1) 创建 topic
 
+Kafka 创建 topic 的四种方式：
 
+- 方式一(推荐)：通过执行 `kafka-topics.sh(bat)` 命令行工具创建
+- 方式二(推荐)：通过显示发送 `CreateTopicsRequest` 请求创建 topic
+- 方式三：通过发送 `MetadataRequest` 请求且 broker 端设置了 `auto.create.topics.enable=true`
+- 方式四：通过向 ZooKeeper 的 `/brokers/topics` 路径下写入以 topics 名称命名的子节点
 
+---
 
+`kafka-topics` 脚本命令行参数列表：
 
+- `--alter`：用于修改 topic 信息，如：分区数、副本因子
 
+- `--config<key=value`：设置 topic 级别的参数，如：cleanup.policy 等
+
+- `--create`：创建 topic
+
+- `--delete`：删除 topic
+
+- `--delete-config <name>`：删除 topic 级别的参数
+
+- `--describe`：列出 topic 详情
+
+- `--disable-rack-aware`：创建 topic 时不考虑机架信息
+
+- `--force`：无效参数，当前未使用
+
+- `--help`：打印帮助信息
+
+- `--if-exists`：若设置，脚本只会对已存在的 topic 执行操作
+
+- `--if-not-exists`：若设置，当创建已存在的同名 topic 时不会抛出错误
+
+- `--partitions <分区数>`：创建或修改 topic 时指定分区数
+
+- `--replica-assignment`：手动指定分区分配 CSV 方案，副本之间使用冒号分割
+
+    > `0:1:2,3:4:5` 表示分区 1 的 3 个副本在 broker 0、1、2 上，分区 2 在 broker 3、4、5 上
+
+- `--replication-factor`：指定副本因子
+
+- `--topic`：指定 topic 名称
+
+- `--topics-with-overrides`：展示 topic 详情时不显示具体的分区信息
+
+- `--unavailable-partitions`：只显示 topic 不可用的分区(即没有 leader 的分区)
+
+- `--under-replicated-partitions`：只显示副本数不足的分区信息
+
+- `--zookeeper`：(必填项)指定连接的 ZooKeeper 信息
 
 ### (2) 删除 topic
 
+删除 topic 的 3 种方式：
 
+- 方式一(推荐)：使用 `kafka-topics` 脚本
+- 方式二：构造 `DeleteTopicsRequest` 请求
+- 方式三(不推荐)：直接向 ZooKeeper 的 `/admin/delete_topics` 下写入子节点
 
-
-
-
+> 注：执行删除操作前，要确保 broker 端参数 `delete.topic.enable=true`
 
 ### (3) 查询 topic 列表
 
-
-
-
-
-
-
-
+`bin/kafka-topics.sh --zookeeper localhost:2181 --list` 
 
 ### (4) 查询 topic 详情
 
-
-
-
-
-
+- 查询 test-topic2 详情：`bin/kafka-topics.sh --zookeeper localhost:2181 --describe --topic test-topic2`
+- 查询集群上所有 topic 详情：`bin/kafka-topics.sh --zookeeper localhost:2181 --describe` 
 
 ### (5) 修改 topic
 
+topic 被创建后，允许对 topic 的分区数、副本因子、topic 级别参数等进行修改
 
+- 案例一：增加分区数至 10：`bin/kafka-topics.sh --alter --zookeeper localhost:2181 --partitions 10 --topic test_topics2` 
 
+    > 注：Kafka 不支持减少分区数
 
+- 案例二：增加一个 topic 级别参数：`bin/kafka-configs.sh --zookeeper localhost:2181 --alter --entity-type  topics --entity-name test-topics2 --add-config cleanup.policy=compact`
 
+    > 确认参数是否增加成功：`bin/kafka-configs.sh --zookeeper localhost:2181 --describe --entity-type topics --entity-name test-topics2` 
 
+<img src="../../pics/kafka/kafka_68.png" align=left>
 
-
+<img src="../../pics/kafka/kafka_69.png" align=left>
 
 ## 3、topic 动态配置管理
 
 ### (1) 增加 topic 配置
 
+> topic 级别参数可以动态修改而无须重启 broker
 
+<img src="../../pics/kafka/kafka_70.png" align=left>
 
+<img src="../../pics/kafka/kafka_71.png" align=left>
 
+---
 
+案例：为一个 broker 动态增加若干个参数设置
 
+- 首先创建一个测试单元分区且副本因子是 1 的测试 topic
+
+    `bin/kafka-topics.sh --create --zookeeper localhost:2181 --partitions 1 --replication-factor 1 --topic test`
+
+- 然后为其动态增加 preallocate 和 segment.bytes 两个参数设置
+
+    `bin/kafka-configs.sh --zookeeper localhost:2181 --alter --entity-type topics --entity-name test --add-config preallocate=true,segment.bytes=104857600`
+
+- 最后验证结果
+
+    `bin/kafka-topics.sh --describe --zookeeper localhost:2181 --topic test` 
 
 ### (2) 查看 topic 配置
 
+两种方式：
 
-
-
-
-
+- `kafka-topics` 脚本方式：`bin/kafka-topics.sh --describe --zookeeper localhost:2181 --topic test`
+- `kafka-configs` 脚本方式：`bin/kafka-configs.sh --describe --zookeeper localhost:2181 --entity-type topics --entity-name test` 
 
 ### (3) 删除 topic 配置
 
+`kafka-configs` 脚本删除：`bin/kafka-configs.sh --zookeeper localhost:2181 --alter --entity-type topics --entity-name test --delete-config preallocate`
 
-
-
-
-
-
-
+验证：`bin/kafka-configs.sh --describe --zookeeper localhost:2181 --entity-type topics --entity-name test` 
 
 ## 4、consumer 相关管理
 
 ### (1) 查询消费者组
 
-
-
-
+<img src="../../pics/kafka/kafka_72.png" align=left>
 
 ### (2) 重设消费者组位移
 
+**为 consumer group(非运行状态)重新设置位移**：
 
+- 第一步：确定消费者组下 topic 的作用域
 
+    > 当前支持 3 种作用域：
+    >
+    > - `--all-topics`：为消费者组下所有 topic 的所有分区调整位移
+    > - `--topic t1,--topic t2`：为指定的若干个 topic 的所有分区调整位移
+    > - `--topic t1:0,1,2`：为 topic 的指定分区调整位移
 
+- 第二步：确定位移重设策略
 
+    > 当前支持 8 种设置规则：
+    >
+    > - `--to-earliest`：把位移调整到分区当前最早位移处
+    > - `--to-latest`：把位移调整到分区当前最新位移处
+    > - `--to-current`：把位移调整到分区当前位移处
+    > - `--to-offset <offset>`：把位移调整到指定位移处
+    > - `--shift-by N`：把位移调整到当前位移 +N 处，N 可以是负值
+    > - `--to-datetime <datetime>`：把位移调整到大于给定时间的最早位移处，格式为 `yyyy-MM-ddTHH:mm:ss.xxx`
+    > - `--by-duration <duration>`：把位移调整到距离当前时间指定间隔的位移处，格式为 `PnDTnHnMnS`
+    > - `--from-file <file>`：从 CSV 文件中读取位移调整策略
 
+- 第三步：确定执行方案
 
-### (3) 删除消费者组
-
-
-
-
-
-
-
-### (4) kafka-consumer-offset-checker
-
-
-
-
-
-
+    > 当前支持 3 种方案：
+    >
+    > - 不加任何参数：只是打印位移调整方案，不实际执行
+    > - `--execute`：执行真正的位移调整
+    > - `--export`：把位移调整方案保存成 CSV 格式并输出到控制台，方便用于保存成 CSV 文件，供后续结合 `--from-file` 使用
 
 ## 5、topic 分区管理
 
