@@ -100,18 +100,69 @@
 
 ## 1. 迭代器模式
 
+> 迭代器是一种设计模式：
+>
+> - 可以使得对于序列类型的数据结构的遍历行为与被遍历的对象分离，即无需关心该序列的底层结构
+> - 只要拿到这个对象，使用迭代器就可以遍历这个对象的内部
+>
+> 当需要访问一个聚合对象，且不管这些对象是什么都需要遍历候，就应该考虑使用迭代器模式
+
 ![](../../pics/collection/collection_17.png)
 
-- 使用 `foreach` 方法来遍历实现了 Iterable 接口的聚合对象
+**快速失败**：使用迭代器循环遍历时，调用集合自己的 remove() 方法会导致循环出错，因为循环过程中 list.size() 大小变化导致了错误
 
-  ```java
-  List<String> list = new ArrayList<>();
-  list.add("a");
-  list.add("b");
-  for (String item : list) {
-      System.out.println(item);
-  }
-  ```
+> 若想在循环语句中删除集合中的某个元素，就要用迭代器 iterator 提供的 remove() 方法，因为它的 remove() 方法不仅会删除元素，还会维护一个标志，用来记录目前是不是可删除状态
+>
+> 同理，使用迭代器循环遍历的过程中也不能调用集合自己的add()方法
+
+---
+
+注：
+
+- 在集合中进行 remove 操作时，不要在 foreach 循环里进行元素的 remove/add 操作
+- 若需要进行 remove 操作，则使用迭代器的 remove
+- remove 元素请使用 Iterator方式，如果并发操作，需要对 Iterator 对象加锁
+
+```java
+public interface Iterable<T> {
+    Iterator<T> iterator();
+
+    default void forEach(Consumer<? super T> var1) {
+        Objects.requireNonNull(var1);
+        Iterator var2 = this.iterator();
+
+        while(var2.hasNext()) {
+            Object var3 = var2.next();
+            var1.accept(var3);
+        }
+
+    }
+
+    default Spliterator<T> spliterator() {
+        return Spliterators.spliteratorUnknownSize(this.iterator(), 0);
+    }
+}
+
+//-------------------------------
+public interface Iterator<E> {
+    boolean hasNext();
+
+    E next();
+
+    default void remove() {
+        throw new UnsupportedOperationException("remove");
+    }
+
+    default void forEachRemaining(Consumer<? super E> var1) {
+        Objects.requireNonNull(var1);
+
+        while(this.hasNext()) {
+            var1.accept(this.next());
+        }
+
+    }
+}
+```
 
 ## 2. 适配器模式
 
@@ -126,9 +177,9 @@
 
 # 三、源码分析
 
-## 1. List
+## 1、List
 
-### 1. ArrayList
+### (1) ArrayList
 
 #### 1. 概览
 
@@ -143,6 +194,7 @@ public class ArrayList<E> extends AbstractList<E>
 
 ```java
 private static final int DEFAULT_CAPACITY = 10;//默认初始容量为 10
+transient Object[] elementData; //该属性不会被序列化
 ```
 
 #### 2. 构造函数
@@ -431,7 +483,224 @@ private void writeObject(java.io.ObjectOutputStream s)
   oos.writeObject(list);
   ```
 
-### 2. Vector
+### (2) LinkedList
+
+#### 1. 概览
+
+- 基于双向链表实现，使用 Node 存储链表节点信息，**限定插入和删除操作在表的两端进行**
+
+    ```java
+    transient int size = 0;
+    transient Node<E> first; //链表的头指针
+    transient Node<E> last; //尾指针
+    
+    //存储对象的结构 Node, LinkedList的内部类
+    private static class Node<E> {
+        E item;
+        Node<E> next; // 指向下一个节点
+        Node<E> prev; //指向上一个节点
+    
+        Node(Node<E> prev, E element, Node<E> next) {
+            this.item = element;
+            this.next = next;
+            this.prev = prev;
+        }
+    }
+    ```
+
+- 每个链表存储了 first 和 last 指针：
+
+    ![](../../pics/collection/collection_18.png)
+
+#### 2. add
+
+- `add(E e)`： 在链表的末尾添加元素
+
+    linkLast(E e)将last的Node引用指向了一个新的Node(l)，然后根据l新建了一个newNode，其中的元素就为要添加的e，而后，我们让 last 指向了 newNode。简单的说就是
+
+    ```java
+    public boolean add(E e) {
+        linkLast(e);
+        return true;
+    }
+    //双向链表的添加操作
+    void linkLast(E e) {
+        final Node<E> l = last;
+        final Node<E> newNode = new Node<>(l, e, null);//新建 newNode 节点
+        last = newNode; //让 last 指向 newNode，即让 newNode 为尾节点
+        if (l == null)
+            first = newNode;
+        else
+            l.next = newNode;
+        size++;
+        modCount++;
+    }
+    ```
+
+- `add(int index, E element)`： 在指定 index 位置插入元素
+
+    ```java
+    public void add(int index, E element) {
+        checkPositionIndex(index);
+        if (index == size) //若 index 正好等于 size，则调用linkLast(element)将其插入末尾
+            linkLast(element);
+        else
+            linkBefore(element, node(index));
+    }
+    //检测索引是否越界
+    private void checkPositionIndex(int index) {
+        if (!isPositionIndex(index))
+            throw new IndexOutOfBoundsException(outOfBoundsMsg(index));
+    }
+    
+    private boolean isPositionIndex(int index) {
+        return index >= 0 && index <= size;
+    }
+    
+    //插入指定索引位置
+    void linkBefore(E e, Node<E> succ) {
+        final Node<E> pred = succ.prev;
+        final Node<E> newNode = new Node<>(pred, e, succ);//创建新的节点
+        succ.prev = newNode; //
+        if (pred == null)
+            first = newNode;
+        else
+            pred.next = newNode;
+        size++;
+        modCount++;
+    }
+    
+    //确定 newNode 的位置
+    Node<E> node(int index) {
+        if (index < (size >> 1)) {//index 位于前半部分，从前往后找
+            Node<E> x = first;
+            for (int i = 0; i < index; i++)
+                x = x.next;
+            return x;
+        } else {//index 位于后半部分，从后往前找
+            Node<E> x = last;
+            for (int i = size - 1; i > index; i--)
+                x = x.prev;
+            return x;
+        }
+    }
+    ```
+
+#### 3. get
+
+```java
+public E get(int index) {
+    checkElementIndex(index);//检查元素索引是否越界
+    return node(index).item;//遍历链表，返回指定索引位置的元素，效率低于可变数组的查询
+}
+
+private void checkElementIndex(int index) {
+    if (!isElementIndex(index))
+        throw new IndexOutOfBoundsException(outOfBoundsMsg(index));
+}
+```
+
+#### 4. 使用迭代器(foreach 或 iterator)遍历
+
+> 禁止使用 `for` 循环遍历 LinkedList
+
+- `foreach`：底层是迭代器实现
+
+    ```java
+    for (Integer integ:list){
+        //...
+    }
+    ```
+
+- `iterator`：remove 操作时不使用原始数组 list 的 remove，而是迭代器的 remove，否则 modCound != exceptedModeCount，进而抛出异常
+
+    ```java
+    for(Iterator iter = list.iterator(); iter.hasNext();)  
+        iter.next();  
+    ```
+
+---
+
+**附加遍历方式**：
+
+- `pollFirst`
+
+    ```java
+    while(list.pollFirst() != null) {
+        //...
+    }
+    ```
+
+- `pollLast` 
+
+    ```java
+    while(list.pollLast() != null) {
+        //...
+    }
+    ```
+
+- `removeFirst` 
+
+    ```java
+    try {  
+        while(list.removeFirst() != null) {
+            //...
+        } 
+    } catch (NoSuchElementException e) {  
+    }  
+    ```
+
+- `removeLast`
+
+    ```java
+    try {  
+        while(list.removeLast() != null) {
+            //...
+        }
+    } catch (NoSuchElementException e) {  
+    } 
+    ```
+
+---
+
+案例：
+
+```java
+public void test5() {
+    List<String> list = Lists.newArrayList("1", "2", "3", "4", "5", "6", "7", "8", "9");
+    Iterator it = list.iterator();
+    while (it.hasNext()) {
+        String str = (String) it.next();
+        System.out.println(str);
+        if (str.equals("2")) {
+            it.remove();
+        }
+    }
+    System.out.println(list.toString());
+}
+
+//结果：
+1
+2
+3
+4
+5
+6
+7
+8
+9
+[1, 3, 4, 5, 6, 7, 8, 9]
+```
+
+#### 5. 与 ArrayList 比较
+
+|          LinkedList          |         ArrayList          |
+| :--------------------------: | :------------------------: |
+|        底层是双向链表        |       底层是可变数组       |
+| 不允许随机访问，即查询效率低 | 允许随机访问，即查询效率高 |
+|       插入和删除效率快       |      插入和删除效率低      |
+
+### (3) Vector
 
 #### 1. 同步
 
@@ -478,9 +747,9 @@ List<String> synList = Collections.synchronizedList(list);
 List<String> list = new CopyOnWriteArrayList<>();
 ```
 
-#### 4. CopyOnWriteArrayList
+### (4) CopyOnWriteArrayList
 
-##### 1. 构造器
+#### 1. 构造器
 
 - 基本参数
 
@@ -530,7 +799,7 @@ List<String> list = new CopyOnWriteArrayList<>();
   }
   ```
 
-##### 2. 读写分离
+#### 2. 读写分离
 
 - 写操作在一个复制的数组上进行，读操作在原始数组中进行，读写分离，互不影响
 
@@ -562,7 +831,9 @@ private E get(Object[] a, int index) {
 }
 ```
 
-##### 3. 适用场景
+![](../../pics/collection/collection_29.jpg)
+
+#### 3. 适用场景
 
 - 优势：在写操作时允许读操作，大大提高读操作的性能，因此适合读多写少的应用场景
 
@@ -571,131 +842,6 @@ private E get(Object[] a, int index) {
   - 数据不一致：读操作不能读取实时性的数据，因为部分写操作的数据还未同步到读数组中
 
 所以 **CopyOnWriteArrayList 不适合内存敏感以及对实时性要求很高的场景** 
-
-### 3. LinkedList
-
-#### 1. 概览
-
-- 基于双向链表实现，使用 Node 存储链表节点信息，**限定插入和删除操作在表的两端进行**
-
-  ```java
-  transient int size = 0;
-  transient Node<E> first; //链表的头指针
-  transient Node<E> last; //尾指针
-  
-  //存储对象的结构 Node, LinkedList的内部类
-  private static class Node<E> {
-      E item;
-      Node<E> next; // 指向下一个节点
-      Node<E> prev; //指向上一个节点
-  
-      Node(Node<E> prev, E element, Node<E> next) {
-          this.item = element;
-          this.next = next;
-          this.prev = prev;
-      }
-  }
-  ```
-
-- 每个链表存储了 first 和 last 指针：
-
-  ![](../../pics/collection/collection_18.png)
-
-#### 2. add
-
-- `add(E e)`： 在链表的末尾添加元素
-
-  linkLast(E e)将last的Node引用指向了一个新的Node(l)，然后根据l新建了一个newNode，其中的元素就为要添加的e，而后，我们让 last 指向了 newNode。简单的说就是
-
-  ```java
-  public boolean add(E e) {
-      linkLast(e);
-      return true;
-  }
-  //双向链表的添加操作
-  void linkLast(E e) {
-      final Node<E> l = last;
-      final Node<E> newNode = new Node<>(l, e, null);//新建 newNode 节点
-      last = newNode; //让 last 指向 newNode，即让 newNode 为尾节点
-      if (l == null)
-          first = newNode;
-      else
-          l.next = newNode;
-      size++;
-      modCount++;
-  }
-  ```
-
-- `add(int index, E element)`： 在指定 index 位置插入元素
-
-  ```java
-  public void add(int index, E element) {
-      checkPositionIndex(index);
-      if (index == size) //若 index 正好等于 size，则调用linkLast(element)将其插入末尾
-          linkLast(element);
-      else
-          linkBefore(element, node(index));
-  }
-  //检测索引是否越界
-  private void checkPositionIndex(int index) {
-      if (!isPositionIndex(index))
-          throw new IndexOutOfBoundsException(outOfBoundsMsg(index));
-  }
-  
-  private boolean isPositionIndex(int index) {
-      return index >= 0 && index <= size;
-  }
-  
-  //插入指定索引位置
-  void linkBefore(E e, Node<E> succ) {
-      final Node<E> pred = succ.prev;
-      final Node<E> newNode = new Node<>(pred, e, succ);//创建新的节点
-      succ.prev = newNode; //
-      if (pred == null)
-          first = newNode;
-      else
-          pred.next = newNode;
-      size++;
-      modCount++;
-  }
-  
-  //确定 newNode 的位置
-  Node<E> node(int index) {
-      if (index < (size >> 1)) {//index 位于前半部分，从前往后找
-          Node<E> x = first;
-          for (int i = 0; i < index; i++)
-              x = x.next;
-          return x;
-      } else {//index 位于后半部分，从后往前找
-          Node<E> x = last;
-          for (int i = size - 1; i > index; i--)
-              x = x.prev;
-          return x;
-      }
-  }
-  ```
-
-#### 3. get
-
-```java
-public E get(int index) {
-    checkElementIndex(index);//检查元素索引是否越界
-    return node(index).item;//遍历链表，返回指定索引位置的元素，效率低于可变数组的查询
-}
-
-private void checkElementIndex(int index) {
-    if (!isElementIndex(index))
-        throw new IndexOutOfBoundsException(outOfBoundsMsg(index));
-}
-```
-
-#### 4. 与 ArrayList 比较
-
-|          LinkedList          |         ArrayList          |
-| :--------------------------: | :------------------------: |
-|        底层是双向链表        |       底层是可变数组       |
-| 不允许随机访问，即查询效率低 | 允许随机访问，即查询效率高 |
-|       插入和删除效率快       |      插入和删除效率低      |
 
 ## 2. Map
 
@@ -931,6 +1077,8 @@ static class Node<K,V> implements Map.Entry<K,V> {
    遍历过程中若发现 key 已存在，直接覆盖value，如果调用putIfAbsent方法插入，则只更新值为 null 的元素
 
 6. 插入成功后，判断实际存在的键值对数量 size 是否超过最大容量 threshold，如果超过，进行扩容
+
+![](../../pics/collection/collection_28.jpg)
 
 ```java
 public V put(K key, V value) {

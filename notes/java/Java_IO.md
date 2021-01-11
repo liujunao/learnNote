@@ -43,6 +43,8 @@ public static void listAllFiles(File dir) {
 
 # 三、节点流(文件流)
 
+![](../../pics/io/io_16.jpg)
+
 ## 1. 字节操作
 
 - `FileInputStream `
@@ -143,6 +145,8 @@ public static void listAllFiles(File dir) {
   ```
 
 ## 2. 字符操作 
+
+![](../../pics/io/io_16.jpg)
 
 - `FileReader` 操作： 
 
@@ -709,136 +713,223 @@ public class TestRandomAccessFile {
 }
 ```
 
-# 六、对象操作
+# 六、传统 I/O 优化
 
-## 1. 序列化
+I/O 操作分为：
 
-- **序列化**： 把 Java 对象转换成平台无关的二进制流，从而持久地保存在磁盘上或通过网络传输
+- **磁盘 I/O 操作**：从磁盘中读取数据源输入到内存中，之后将读取的信息持久化输出在物理磁盘上
+- **网络 I/O 操作**：从网络中读取信息输入到内存，最终将信息输出到网络中
 
-- **好处**： 可将任何实现了 `Serializable` 接口的对象转化为字节数据，使其在保存和传输时可被还原
+不管是磁盘 I/O 还是网络 I/O，在传统 I/O 中都存在严重的性能问题
 
-- **实现**： 继承 `Serializable 或 Externalizable` 接口
+## 1、传统 I/O 性能问题
 
-  > 实现 Serializable 接口的类，需设置 `serialVersionUID` 用来表明类的不同版本间的兼容性
+### (1) 多次内存复制
 
-- **方式**： 
-  - 序列化：`ObjectOutputStream.writeObject()`
-  - 反序列化：`ObjectInputStream.readObject()`
+传统 I/O 通过 InputStream 从源数据中读取数据流输入到缓冲区里，通过 OutputStream 将数据输出到外部设备：
 
-## 2. Serializable 
+![](../../pics/io/io_18.jpg)
 
-- 实现 Serializable 接口来序列化类
-- 若不实现它的话而进行序列化，会抛出异常
+- JVM 会发出 read() 系统调用，并通过 read 系统调用向内核发起读请求
+- 内核向硬件发送读指令，并等待读就绪
+- 内核把将要读取的数据复制到指向的内核缓存中
+- 操作系统内核将数据复制到用户空间缓冲区，然后 read 系统调用返回
 
-```java
-public static void main(String[] args) throws IOException, ClassNotFoundException {
-    A a1 = new A(123, "abc");
-    String objectFile = "file/a1";
+在这个过程中，数据先从外部设备复制到内核空间，再从内核空间复制到用户空间，这就发生了两次内存复制操作。这种操作会导致不必要的数据拷贝和上下文切换，从而降低 I/O 的性能
 
-    ObjectOutputStream objectOutputStream = new ObjectOutputStream(new FileOutputStream(objectFile));
-    objectOutputStream.writeObject(a1);
-    objectOutputStream.close();
+### (2) 阻塞
 
-    ObjectInputStream objectInputStream = new ObjectInputStream(new FileInputStream(objectFile));
-    A a2 = (A) objectInputStream.readObject();
-    objectInputStream.close();
-    System.out.println(a2);
-}
+- 传统 I/O 的 InputStream 的 read() 是一个 while 循环操作，会一直等待数据读取，直到数据就绪才会返回
 
-private static class A implements Serializable {
-    private int x;
-    private String y;
+    > 若没有数据就绪，读取操作将一直被挂起，用户线程将会处于阻塞状态
 
-    A(int x, String y) {
-        this.x = x;
-        this.y = y;
+- 在少量连接请求的情况下，使用这种方式没有问题，响应速度也很高。但在发生大量连接请求时，就需要创建大量监听线程，这时如果线程没有数据就绪就会被挂起，然后进入阻塞状态。一旦发生线程阻塞，这些线程将会不断地抢夺 CPU 资源，从而导致大量的 CPU 上下文切换，增加系统的性能开销
+
+## 2、优化
+
+> NIO 优化了内存复制以及阻塞导致的严重性能问题，且 NIO2 提出了从操作系统层面实现的异步 I/O
+
+### (1) 使用缓冲区优化读写流操作
+
+- 传统 I/O 提供了基于流的 I/O 实现，即 InputStream 和 OutputStream，这种基于流的实现以字节为单位处理数据
+
+- NIO 以块为基本单位处理数据。在 NIO 中，最为重要的两个组件是缓冲区(Buffer)和通道(Channel)
+
+    > Buffer 是一块连续的内存块，是 NIO 读写数据的中转地
+    >
+    > Channel 表示缓冲数据的源头或者目的地，用于读取缓冲或者写入数据，是访问缓冲的接口
+
+传统 I/O 和 NIO 的最大区别：传统 I/O 是面向流，NIO 是面向 Buffer
+
+- Buffer 可以将文件一次性读入内存再做后续处理
+- 而传统的方式是边读文件边处理数据
+
+### (2) 使用 DirectBuffer 减少内存复制
+
+- NIO 的 Buffer 除了做了缓冲块优化之外，还提供了一个可以直接访问物理内存的类 DirectBuffer
+
+- 普通的 Buffer 分配的是 JVM 堆内存，而 DirectBuffer 是直接分配物理内存 (非堆内存)
+
+    > 数据要输出到外部设备，必须先从用户空间复制到内核空间，再复制到输出设备，而在 Java 中，在用户空间中又存在一个拷贝，那就是从 Java 堆内存中拷贝到临时的直接内存中，通过临时的直接内存拷贝到内存空间中去。此时的直接内存和堆内存都是属于用户空间
+
+![](../../pics/io/io_19.jpg)
+
+DirectBuffer 则是直接将步骤简化为数据直接保存到非堆内存，从而减少了一次数据拷贝
+
+- 由于 DirectBuffer 申请的是非 JVM 的物理内存，所以创建和销毁的代价很高
+
+    > DirectBuffer 申请的内存并不是直接由 JVM 负责垃圾回收，但在 DirectBuffer 包装类被回收时，会通过 Java Reference 机制来释放该内存块
+
+- DirectBuffer 只优化了用户空间内部的拷贝，但能做到减少用户空间和内核空间的拷贝优化
+
+    > - DirectBuffer 通过 unsafe.allocateMemory(size) 方法分配内存，即基于本地类 Unsafe 类调用 native 方法进行内存分配
+    >
+    > - MappedByteBuffer 通过本地类调用 mmap 进行文件内存映射，map() 系统调用方法会直接将文件从硬盘拷贝到用户空间，只进行一次数据拷贝，从而减少了传统的 read() 方法从硬盘拷贝到内核空间这一步
+
+### (3) 避免阻塞
+
+- 通道 `channel` 
+- 多路复用器 `selector` 
+
+# 七、BIO(Blocking I/O)
+
+> 同步阻塞 I/O 模式，数据的读取写入必须阻塞在一个线程内等待其完成
+
+## 1. 传统 BIO
+
+- **BIO 通信模型服务端**： 由一个独立的 Acceptor 线程负责监听客户端的连接
+
+    > - 通过在 `while(true)`  循环中，调用 `accept()` 方法等待接收客户端的连接的方式监听请求
+    > - 一旦接收到一个连接请求，就可以建立通信套接字进行读写操作
+    > - 此时不能再接收其他客户端连接请求，只能等待同当前连接的客户端的操作执行完成，
+    >
+    > 不过可以通过多线程来支持多个客户端的连接：`socket.accept()`、`socket.read()`、`socket.write()` 三个主要函数都是同步阻塞
+
+- **使用 BIO 处理多个客户端请求**： 使用多线程，即在接收到客户端连接请求后，为每个客户端创建一个新的线程进行链路处理，处理完成之后，通过输出流返回应答给客户端，线程销毁，即： **请求--应答通信模型** 
+
+![](/Users/yinren/allText/learnNote/pics/io/io_1.png)
+
+## 2. 伪异步 IO
+
+- 解决同步阻塞 I/O 多请求的线程问题：后端通过一个线程池来处理多个客户端的请求接入
+
+    > 通过线程池可以灵活地调配线程资源，设置线程的最大值，防止由于海量并发接入导致线程耗尽
+
+- 采用线程池和任务队列可以实现一种**伪异步的 I/O 通信框架**
+
+    - 当有新的客户端接入时，将客户端的 Socket 封装成一个 Task 投递到后端的线程池中进行处理
+    - JDK 的线程池维护一个消息队列和 N 个活跃线程，对消息队列中的任务进行处理
+
+> 伪异步 I/O 通信框架采用了线程池实现，避免了为每个请求都创建一个独立线程造成的线程资源耗尽问题
+
+![](/Users/yinren/allText/learnNote/pics/io/io_2.png)
+
+## 3. 代码示例
+
+- **客户端**： 
+
+    ```java
+    public class IOClient {
+        public static void main(String[] args) {
+            // TODO 创建多个线程，模拟多个客户端连接服务端
+            new Thread(() -> {
+                try {
+                    Socket socket = new Socket("127.0.0.1", 3333);
+                    while (true) {
+                        try {
+                        	socket.getOutputStream().write((new Date() 
+                                                        + ": hello world").getBytes());
+                        	Thread.sleep(2000);
+                        } catch (Exception e) { }
+                    }
+                } catch (IOException e) { }
+            }).start();
+        }
     }
+    ```
 
-    @Override
-    public String toString() {
-        return "x = " + x + "  " + "y = " + y;
+- **服务端**： 
+
+    ```java
+    public class IOServer {
+        public static void main(String[] args) throws IOException {
+            // TODO 服务端处理客户端连接请求
+            ServerSocket serverSocket = new ServerSocket(3333);
+            // 接收到客户端连接请求之后为每个客户端创建一个新的线程进行链路处理
+            new Thread(() -> {
+                while (true) {
+                    try {
+                        // 阻塞方法获取新的连接
+                        Socket socket = serverSocket.accept();
+                        // 每一个新的连接都创建一个线程，负责读取数据
+                        new Thread(() -> {
+                            try {
+                                int len;
+                                byte[] data = new byte[1024];
+                                InputStream inputStream = socket.getInputStream();
+                                // 按字节流方式读取数据
+                                while ((len = inputStream.read(data)) != -1) {
+                                    System.out.println(new String(data, 0, len));
+                                }
+                            } catch (IOException e) { }
+                        }).start();
+                    } catch (IOException e) { }
+                }
+            }).start();
+        }
     }
-}
-```
-
-## 3. transient 
-
-transient 关键字可以使属性不被序列化
-
-```java
-private transient Object[] elementData;
-```
-
-# 七、网络操作
-
-Java 中的网络支持：
-
-- `InetAddress`：用于表示网络上的硬件资源，即 IP 地址
-- `URL`：统一资源定位符
-- `Sockets`：使用 TCP 协议实现网络通信
-- `Datagram`：使用 UDP 协议实现网络通信
-
-## 1. InetAddress
-
-没有公有的构造函数，只能**通过静态方法来创建实例**
-
-```java
-InetAddress.getByName(String host);
-InetAddress.getByAddress(byte[] address);
-```
-
-## 2. URL
-
-可以直接从 URL 中读取字节流数据
-
-```java
-public static void main(String[] args) throws IOException {
-    URL url = new URL("http://www.baidu.com");
-    /* 字节流 */
-    InputStream is = url.openStream();
-    /* 字符流 */
-    InputStreamReader isr = new InputStreamReader(is, "utf-8");
-    /* 提供缓存功能 */
-    BufferedReader br = new BufferedReader(isr);
-
-    String line;
-    while ((line = br.readLine()) != null) {
-        System.out.println(line);
-    }
-    br.close();
-}
-```
-
-## 3. Sockets
-
-- `ServerSocket`：服务器端类
-- `Socket`：客户端类
-
-服务器和客户端通过 InputStream 和 OutputStream 进行输入输出
-
-![](../../pics/io/io_7.png)
-
-## 4. Datagram
-
-- `DatagramSocket`：通信类
-- `DatagramPacket`：数据包类
+    ```
 
 # 八、NIO
 
 - [Java NIO 浅析](https://tech.meituan.com/nio.html)
 - [IBM: NIO 入门](https://www.ibm.com/developerworks/cn/education/java/j-nio/j-nio.html) 
 
-## 1. 流与块
+## 1、NIO 简介
 
-- I/O 与 NIO 区别： 数据打包和传输的方式，**I/O 以流的方式处理数据，而 NIO 以块的方式处理数据**
+- NIO 是一种同步非阻塞的 I/O 模型，提供了 Channel , Selector，Buffer 等抽象
 
-  - 面向流的 I/O 一次处理一个字节数据：一个输入流产生一个字节数据，一个输出流消费一个字节数据
+- NIO 支持面向缓冲的，基于通道的 I/O 操作方法。
 
-  - 面向块的 I/O 一次处理一个数据块： 按块处理数据比按流处理数据要快得多
+- NIO 提供了与传统 BIO 的 `Socket` 和 `ServerSocket` 对应的 `SocketChannel` 和 `ServerSocketChannel` 
 
-## 2. 通道与缓冲区
+    > 两种通道都支持阻塞和非阻塞两种模式： 
+    >
+    > 阻塞模式使用与传统的支持一样，比较简单，但是性能和可靠性都不好，非阻塞模式正好与之相反
+    >
+    > - 对于低负载、低并发的应用程序，可以使用同步阻塞 I/O 来提升开发速率和更好的维护性
+    > - 对于高负载、高并发的（网络）应用，应使用 NIO 的非阻塞模式来开发
 
-### 1. 缓冲区(Buffer)
+## 2、NIO 特性
+
+- `Non-blocking IO`： 单线程从通道读取数据到 buffer，线程再继续处理数据，写数据也一样
+
+- `buffer`： 包含一些要写入或读出的数据，所有的读写操作都在 buffer 中进行
+
+    > 在面向流 I/O 中，可以将数据直接写入或读到 Stream 对象中
+    >
+    > - Stream 只是流的包装类，还是从流读到缓冲区
+    > - NIO 直接读到 Buffer 中进行操作
+
+- `channel`： NIO 通过 Channel(通道)进行读写
+
+    > - 通道是双向的，可读也可写，而流的读写是单向的
+    >
+    > - 无论读写，通道只能和 Buffer 交互，因为 Buffer 可使通道异步读写
+    >
+    > NIO 中的所有读写都是从 Channel(通道)开始：
+    >
+    > - 从通道进行数据读取 ：创建一个缓冲区，然后请求通道读取数据
+    >
+    > - 从通道进行数据写入 ：创建一个缓冲区，填充数据，并要求通道写入数据
+
+- `selectors`： 选择器用于使单个线程处理多个通道
+
+![](../../pics/io/io_3.png)
+
+## 3、通道与缓冲区
+
+### (1) 缓冲区(Buffer)
 
 > Buffer 负责存储
 
@@ -990,9 +1081,9 @@ public void test1(){
 - **非直接缓冲区**：通过 allocate() 方法分配缓冲区，将缓冲区建立在 JVM 的内存中
 - **直接缓冲区**：通过 allocateDirect() 方法分配直接缓冲区，将缓冲区建立在物理内存中，可以提高效率
 
-![](../../pics/io/nio_13.png) 
+![](../../pics/io/io_13.png) 
 
-![](../../pics/io/nio_14.png)
+![](../../pics/io/io_14.png)
 
 ```java
 public void test3(){
@@ -1002,7 +1093,7 @@ public void test3(){
 }
 ```
 
-### 2. 通道(Channel)
+### (2) 通道(Channel)
 
 >  Channel 负责传输
 
@@ -1209,7 +1300,292 @@ public void test6() throws IOException{
 }
 ```
 
-## 3. 文件 NIO 实例
+### (3) 选择器
+
+- **选择器(Selector)**： 是 SelectableChannle 对象的多路复用器，Selector 可以同时监控多个SelectableChannel 的 IO 状况，即利用 Selector 可使一个单独的线程管理多个Channel，Selector 是非阻塞IO 的核心
+
+- **NIO 实现了 IO 多路复用中的 Reactor 模型**：
+
+    - 一个线程 Thread 使用一个选择器 Selector 通过轮询的方式去监听多个通道 Channel 上的事件，从而让一个线程处理多个事件
+
+    - 通过配置监听的通道 Channel 为非阻塞，则当 Channel 上的 IO 事件还未到达时，不会一直等待，而是继续轮询其它 Channel，找到 IO 事件已经到达的 Channel 执行
+
+    - 因为创建和切换线程的开销很大，因此使用一个线程来处理多个事件，可以提高 IO 密集型应用的性能
+
+    > 只有套接字 Channel 才能配置为非阻塞，而 FileChannel 不能，为 FileChannel 配置非阻塞也没有意义
+
+![](../../pics/io/io_15.png)
+
+#### 1. 创建选择器
+
+```java
+Selector selector = Selector.open();
+```
+
+#### 2. 将通道注册到选择器上
+
+```java
+ServerSocketChannel ssChannel = ServerSocketChannel.open();
+ssChannel.configureBlocking(false);//通道必须配置为非阻塞模式
+ssChannel.register(selector, SelectionKey.OP_ACCEPT);
+```
+
+将通道注册到选择器上时，需要指定注册的具体事件：
+
+- SelectionKey.OP_CONNECT：连接
+- SelectionKey.OP_ACCEPT：接收
+- SelectionKey.OP_READ：读
+- SelectionKey.OP_WRITE：写
+
+```java
+//SelectionKey 的定义
+public static final int OP_READ = 1 << 0;
+public static final int OP_WRITE = 1 << 2;
+public static final int OP_CONNECT = 1 << 3;
+public static final int OP_ACCEPT = 1 << 4;
+```
+
+可以看出每个事件可以被当成一个位域，从而组成事件集整数。例如：
+
+```java
+int interestSet = SelectionKey.OP_READ | SelectionKey.OP_WRITE;
+```
+
+- `SelectionKey`：表示 SelectableChannel 和 Selector 间的注册关系，每次向选择器注册通道时会选择一个事件(选择键)，选择键包含两个表示为整数值的操作集，操作集的每一位都表示该键的通道所支持的一类可选择操作
+
+#### 3. 监听事件
+
+使用 select() 来监听到达的事件，它会一直阻塞到有至少一个事件到达
+
+```java
+int num = selector.select();
+```
+
+#### 4. 获取到达的事件
+
+```java
+Set<SelectionKey> keys = selector.selectedKeys();
+Iterator<SelectionKey> keyIterator = keys.iterator();
+while (keyIterator.hasNext()) {
+    SelectionKey key = keyIterator.next();
+    if (key.isAcceptable()) {
+        // ...
+    } else if (key.isReadable()) {
+        // ...
+    }
+    keyIterator.remove();
+}
+```
+
+#### 5. 事件循环
+
+因为一次 select() 调用不能处理完所有事件，且服务器端可能需要一直监听事件，因此服务器端处理事件的代码一般会放在一个死循环内
+
+```java
+while (true) {
+    int num = selector.select();
+    Set<SelectionKey> keys = selector.selectedKeys();
+    Iterator<SelectionKey> keyIterator = keys.iterator();
+    while (keyIterator.hasNext()) {
+        SelectionKey key = keyIterator.next();
+        if (key.isAcceptable()) {
+            // ...
+        } else if (key.isReadable()) {
+            // ...
+        }
+        keyIterator.remove();
+    }
+}
+```
+
+#### 6. Selector 的常用方法
+
+- `Set<SelectionKey> keys()`： 所有的 SelectionKey 集合，代表注册在该 Selector上的 Channel
+- `selectedKeys()`：被选择的 SelectionKey 集合，返回此 Selector 的已选择键集
+- `intselect()`：监控所有注册的 Channel，当有需要处理的 IO 操作时，该方法返回，并将对应的SelectionKey 加入被选择的 SelectionKey 集合中，该方法返回这些 Channel 的数量
+- `int select(long timeout)`：可以设置超时时长的 select() 操作
+- `intselectNow()`：执行一个立即返回的 select() 操作，该方法不会阻塞线程
+- `Selectorwakeup()`：使一个还未返回的 select() 方法立即返回
+- `void close()`：关闭该选择器
+
+### (4) 代码示例
+
+- 客户端： 
+
+    ```java
+    public class IOClient {
+        public static void main(String[] args) {
+            // TODO 创建多个线程，模拟多个客户端连接服务端
+            new Thread(() -> {
+                try {
+                    Socket socket = new Socket("127.0.0.1", 3333);
+                    while (true) {
+                        try {
+                        	socket.getOutputStream().write((new Date() 
+                                                        + ": hello world").getBytes());
+                        	Thread.sleep(2000);
+                        } catch (Exception e) { }
+                    }
+                } catch (IOException e) { }
+            }).start();
+        }
+    }
+    ```
+
+- 服务端： 
+
+    ```java
+    public class NIOServer {
+        public static void main(String[] args) throws IOException {
+            //1.serverSelector 轮询是否有新连接: 
+            //监测到新连接后，不再创建新线程，而是直接将新连接绑定到 clientSelector 上
+            Selector serverSelector = Selector.open();
+            // 2. clientSelector 轮询连接是否有数据可读
+            Selector clientSelector = Selector.open();
+            new Thread(() -> {
+                try {
+                    // 对应IO编程中服务端启动
+                    ServerSocketChannel listenerChannel = ServerSocketChannel.open();
+                    listenerChannel.socket().bind(new InetSocketAddress(3333));
+                    listenerChannel.configureBlocking(false);
+                    listenerChannel.register(serverSelector, SelectionKey.OP_ACCEPT);
+                    while (true) {
+                        // 监测是否有新的连接，这里的1指的是阻塞的时间为 1ms
+                        if (serverSelector.select(1) > 0) {
+                            Set<SelectionKey> set = serverSelector.selectedKeys();
+                            Iterator<SelectionKey> keyIterator = set.iterator();
+                            while (keyIterator.hasNext()) {
+                            SelectionKey key = keyIterator.next();
+                                if (key.isAcceptable()) {
+                                    try {
+                                    // 每个新连接，不需要创建新线程，而直接注册到clientSelector
+                                    SocketChannel clientChannel = 
+                                        ((ServerSocketChannel) key.channel()).accept();
+                                    clientChannel.configureBlocking(false);
+                                    clientChannel.register(clientSelector, 
+                                                           SelectionKey.OP_READ);
+                                    } finally {
+                                    	keyIterator.remove();
+                                    }
+                                }
+                            }
+                        }
+                    }
+                } catch (IOException ignored) { }
+            }).start();
+            
+            new Thread(() -> {
+                try {
+                    while (true) {
+                        // 批量轮询是否有哪些连接有数据可读，这里的1指的是阻塞的时间为 1ms
+                        if (clientSelector.select(1) > 0) {
+                            Set<SelectionKey> set = clientSelector.selectedKeys();
+                            Iterator<SelectionKey> keyIterator = set.iterator();
+                            while (keyIterator.hasNext()) {
+                                SelectionKey key = keyIterator.next();
+                                if (key.isReadable()) {
+                                    try {
+                                        SocketChannel clientChannel = 
+                                            (SocketChannel) key.channel();
+                                        ByteBuffer byteBuffer = ByteBuffer.allocate(1024);
+                                        // 面向 Buffer
+                                        clientChannel.read(byteBuffer);
+                                        byteBuffer.flip();
+                                        System.out.println(
+                                            Charset.defaultCharset()
+                                            .newDecoder()
+                                            .decode(byteBuffer)
+                                            .toString());
+                                    } finally {
+                                        keyIterator.remove();
+                                        key.interestOps(SelectionKey.OP_READ);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                } catch (IOException ignored) { }
+            }).start();
+        }
+    }
+    ```
+
+## 4、NIO.2 
+
+> 增强了对文件处理和文件系统特性的支持
+
+### 1. 自动资源管理
+
+- **自动资源管理(Automatic Resource Management, ARM)**：
+  - 以 try 语句的扩展版为基础，当 try 代码块结束时，**自动释放资源**
+  - 当不再需要文件(或其他资源)时，可以防止无意中忘记释放它们
+  - 需要关闭的资源，必须实现 AutoCloseable 接口或其子接口 Closeable
+
+```java
+//自动资源管理：自动关闭实现 AutoCloseable 接口的资源
+public void test8(){
+    try(
+        FileChannel inChannel = FileChannel.open(Paths.get("1.jpg"), StandardOpenOption.READ);
+        FileChannel outChannel = FileChannel.open(Paths.get("2.jpg"), 								
+                                                  StandardOpenOption.WRITE, StandardOpenOption.CREATE)){
+        		ByteBuffer buf = ByteBuffer.allocate(1024);
+        		inChannel.read(buf);
+    }catch(IOException e){
+
+    }
+}
+```
+
+### 2. Path 与Paths
+
+- `Path`： 代表一个平台无关的平台路径，描述了目录结构中文件的位置
+
+- Paths 提供的 get() 方法用来获取 Path 对象：
+  - `Path get(String first, String … more)`： 用于将多个字符串串连成路径
+- Path常用方法：
+  - boolean endsWith(String path) : 判断是否以path 路径结束
+  - boolean startsWith(String path) : 判断是否以path 路径开始
+  - boolean isAbsolute() : 判断是否是绝对路径
+  - Path getFileName() : 返回与调用Path 对象关联的文件名
+  - Path getName(int idx) : 返回的指定索引位置idx 的路径名称
+  - int getNameCount() : 返回Path 根目录后面元素的数量
+  - Path getParent() ：返回Path对象包含整个路径，不包含Path 对象指定的文件路径
+  - Path getRoot() ：返回调用Path 对象的根路径
+  - Path resolve(Path p) :将相对路径解析为绝对路径
+  - Path toAbsolutePath() : 作为绝对路径返回调用Path 对象
+  - String toString() ：返回调用Path 对象的字符串表示形式
+
+### 3. Files 类
+
+- `Files`： 用于操作文件或目录的工具类
+
+1. Files常用方法：
+   - Path copy(Path src, Path dest, CopyOption … how) : 文件的复制
+   - Path createDirectory(Path path, FileAttribute<?> … attr) : 创建一个目录
+   - Path createFile(Path path, FileAttribute<?> … arr) : 创建一个文件
+   - void delete(Path path) : 删除一个文件
+   - Path move(Path src, Path dest, CopyOption…how) : 将src 移动到dest 位置
+   - long size(Path path) : 返回path 指定文件的大小
+
+
+2. Files常用方法：用于判断
+   - boolean exists(Path path, LinkOption … opts) : 判断文件是否存在
+   - boolean isDirectory(Path path, LinkOption … opts) : 判断是否是目录
+   - boolean isExecutable(Path path) : 判断是否是可执行文件
+   - boolean isHidden(Path path) : 判断是否是隐藏文件
+   - boolean isReadable(Path path) : 判断文件是否可读
+   - boolean isWritable(Path path) : 判断文件是否可写
+   - boolean notExists(Path path, LinkOption … opts) : 判断文件是否不存在
+   - public static \<A extends BasicFileAttributes> A readAttributes(Path path,Class\<A> type,LinkOption... options) : 获取与path 指定的文件相关联的属性。
+3. Files常用方法：用于操作内容
+   - SeekableByteChannel newByteChannel(Path path, OpenOption…how) : 获取与指定文件的连接，how 指定打开方式
+   - DirectoryStream newDirectoryStream(Path path) : 打开path 指定的目录
+   - InputStream newInputStream(Path path, OpenOption…how): 获取InputStream 对象
+   - OutputStream newOutputStream(Path path, OpenOption…how) : 获取OutputStream 对象
+
+## 5、实例
+
+### (1) 文件 NIO 实例
 
 以下展示了使用 NIO 快速复制文件的实例：
 
@@ -1242,7 +1618,7 @@ public static void fastCopy(String src, String dist) throws IOException {
 }
 ```
 
-## 4. 阻塞与非阻塞
+### (2) 阻塞与非阻塞实例
 
 - **传统 IO 流是阻塞式的**： 当一个线程调用 read() 或write() 时，该线程被阻塞，直到有数据被读取或写入
 - **Java NIO 是非阻塞模式的**： 当线程从某通道进行读写数据时，若没有数据可用，该线程可以进行其他任务
@@ -1250,11 +1626,11 @@ public static void fastCopy(String src, String dist) throws IOException {
 #### 1. 使用 NIO 完成网络通信的三个核心
 
 1. 通道(Channel)：负责连接，java.nio.channels.Channel 接口之 `SelectableChannel`：
-   - SocketChannel
-   - ServerSocketChannel
-   - DatagramChannel
-   - Pipe.SinkChannel
-   - Pipe.SourceChannel
+    - SocketChannel
+    - ServerSocketChannel
+    - DatagramChannel
+    - Pipe.SinkChannel
+    - Pipe.SourceChannel
 
 
 2. 缓冲区(Buffer)：负责数据的存取
@@ -1507,188 +1883,7 @@ public class TestPipe {
 }
 ```
 
-## 5. NIO.2 
-
-- 增强了对文件处理和文件系统特性的支持
-
-### 1. 自动资源管理
-
-- **自动资源管理(Automatic Resource Management, ARM)**：
-  - 以 try 语句的扩展版为基础，当 try 代码块结束时，**自动释放资源**
-  - 当不再需要文件(或其他资源)时，可以防止无意中忘记释放它们
-  - 需要关闭的资源，必须实现 AutoCloseable 接口或其子接口 Closeable
-
-```java
-//自动资源管理：自动关闭实现 AutoCloseable 接口的资源
-public void test8(){
-    try(
-        FileChannel inChannel = FileChannel.open(Paths.get("1.jpg"), StandardOpenOption.READ);
-        FileChannel outChannel = FileChannel.open(Paths.get("2.jpg"), 								
-                                                  StandardOpenOption.WRITE, StandardOpenOption.CREATE)){
-        		ByteBuffer buf = ByteBuffer.allocate(1024);
-        		inChannel.read(buf);
-    }catch(IOException e){
-
-    }
-}
-```
-
-### 2. Path 与Paths
-
-- `Path`： 代表一个平台无关的平台路径，描述了目录结构中文件的位置
-
-- Paths 提供的 get() 方法用来获取 Path 对象：
-  - `Path get(String first, String … more)`： 用于将多个字符串串连成路径
-- Path常用方法：
-  - boolean endsWith(String path) : 判断是否以path 路径结束
-  - boolean startsWith(String path) : 判断是否以path 路径开始
-  - boolean isAbsolute() : 判断是否是绝对路径
-  - Path getFileName() : 返回与调用Path 对象关联的文件名
-  - Path getName(int idx) : 返回的指定索引位置idx 的路径名称
-  - int getNameCount() : 返回Path 根目录后面元素的数量
-  - Path getParent() ：返回Path对象包含整个路径，不包含Path 对象指定的文件路径
-  - Path getRoot() ：返回调用Path 对象的根路径
-  - Path resolve(Path p) :将相对路径解析为绝对路径
-  - Path toAbsolutePath() : 作为绝对路径返回调用Path 对象
-  - String toString() ：返回调用Path 对象的字符串表示形式
-
-### 3. Files 类
-
-- `Files`： 用于操作文件或目录的工具类
-
-1. Files常用方法：
-   - Path copy(Path src, Path dest, CopyOption … how) : 文件的复制
-   - Path createDirectory(Path path, FileAttribute<?> … attr) : 创建一个目录
-   - Path createFile(Path path, FileAttribute<?> … arr) : 创建一个文件
-   - void delete(Path path) : 删除一个文件
-   - Path move(Path src, Path dest, CopyOption…how) : 将src 移动到dest 位置
-   - long size(Path path) : 返回path 指定文件的大小
-
-
-2. Files常用方法：用于判断
-   - boolean exists(Path path, LinkOption … opts) : 判断文件是否存在
-   - boolean isDirectory(Path path, LinkOption … opts) : 判断是否是目录
-   - boolean isExecutable(Path path) : 判断是否是可执行文件
-   - boolean isHidden(Path path) : 判断是否是隐藏文件
-   - boolean isReadable(Path path) : 判断文件是否可读
-   - boolean isWritable(Path path) : 判断文件是否可写
-   - boolean notExists(Path path, LinkOption … opts) : 判断文件是否不存在
-   - public static \<A extends BasicFileAttributes> A readAttributes(Path path,Class\<A> type,LinkOption... options) : 获取与path 指定的文件相关联的属性。
-3. Files常用方法：用于操作内容
-   - SeekableByteChannel newByteChannel(Path path, OpenOption…how) : 获取与指定文件的连接，how 指定打开方式
-   - DirectoryStream newDirectoryStream(Path path) : 打开path 指定的目录
-   - InputStream newInputStream(Path path, OpenOption…how): 获取InputStream 对象
-   - OutputStream newOutputStream(Path path, OpenOption…how) : 获取OutputStream 对象
-
-## 6. 选择器
-
-- **选择器(Selector)**： 是 SelectableChannle 对象的多路复用器，Selector 可以同时监控多个SelectableChannel 的 IO 状况，即利用 Selector 可使一个单独的线程管理多个Channel，Selector 是非阻塞IO 的核心
-
-- **NIO 实现了 IO 多路复用中的 Reactor 模型**：
-
-  - 一个线程 Thread 使用一个选择器 Selector 通过轮询的方式去监听多个通道 Channel 上的事件，从而让一个线程处理多个事件
-
-  - 通过配置监听的通道 Channel 为非阻塞，则当 Channel 上的 IO 事件还未到达时，不会一直等待，而是继续轮询其它 Channel，找到 IO 事件已经到达的 Channel 执行
-
-  - 因为创建和切换线程的开销很大，因此使用一个线程来处理多个事件，可以提高 IO 密集型应用的性能
-
-  > 只有套接字 Channel 才能配置为非阻塞，而 FileChannel 不能，为 FileChannel 配置非阻塞也没有意义
-
-![](../../pics/io/io_15.png)
-
-### 1. 创建选择器
-
-```java
-Selector selector = Selector.open();
-```
-
-### 2. 将通道注册到选择器上
-
-```java
-ServerSocketChannel ssChannel = ServerSocketChannel.open();
-ssChannel.configureBlocking(false);//通道必须配置为非阻塞模式
-ssChannel.register(selector, SelectionKey.OP_ACCEPT);
-```
-
-将通道注册到选择器上时，需要指定注册的具体事件：
-
-- SelectionKey.OP_CONNECT：连接
-- SelectionKey.OP_ACCEPT：接收
-- SelectionKey.OP_READ：读
-- SelectionKey.OP_WRITE：写
-
-```java
-//SelectionKey 的定义
-public static final int OP_READ = 1 << 0;
-public static final int OP_WRITE = 1 << 2;
-public static final int OP_CONNECT = 1 << 3;
-public static final int OP_ACCEPT = 1 << 4;
-```
-
-可以看出每个事件可以被当成一个位域，从而组成事件集整数。例如：
-
-```java
-int interestSet = SelectionKey.OP_READ | SelectionKey.OP_WRITE;
-```
-
-- `SelectionKey`：表示 SelectableChannel 和 Selector 间的注册关系，每次向选择器注册通道时会选择一个事件(选择键)，选择键包含两个表示为整数值的操作集，操作集的每一位都表示该键的通道所支持的一类可选择操作
-
-### 3. 监听事件
-
-使用 select() 来监听到达的事件，它会一直阻塞到有至少一个事件到达
-
-```java
-int num = selector.select();
-```
-
-### 4. 获取到达的事件
-
-```java
-Set<SelectionKey> keys = selector.selectedKeys();
-Iterator<SelectionKey> keyIterator = keys.iterator();
-while (keyIterator.hasNext()) {
-    SelectionKey key = keyIterator.next();
-    if (key.isAcceptable()) {
-        // ...
-    } else if (key.isReadable()) {
-        // ...
-    }
-    keyIterator.remove();
-}
-```
-
-### 5. 事件循环
-
-因为一次 select() 调用不能处理完所有事件，且服务器端可能需要一直监听事件，因此服务器端处理事件的代码一般会放在一个死循环内
-
-```java
-while (true) {
-    int num = selector.select();
-    Set<SelectionKey> keys = selector.selectedKeys();
-    Iterator<SelectionKey> keyIterator = keys.iterator();
-    while (keyIterator.hasNext()) {
-        SelectionKey key = keyIterator.next();
-        if (key.isAcceptable()) {
-            // ...
-        } else if (key.isReadable()) {
-            // ...
-        }
-        keyIterator.remove();
-    }
-}
-```
-
-### 6. Selector 的常用方法
-
-- `Set<SelectionKey> keys()`： 所有的 SelectionKey 集合，代表注册在该 Selector上的 Channel
-- `selectedKeys()`：被选择的 SelectionKey 集合，返回此 Selector 的已选择键集
-- `intselect()`：监控所有注册的 Channel，当有需要处理的 IO 操作时，该方法返回，并将对应的SelectionKey 加入被选择的 SelectionKey 集合中，该方法返回这些 Channel 的数量
-- `int select(long timeout)`：可以设置超时时长的 select() 操作
-- `intselectNow()`：执行一个立即返回的 select() 操作，该方法不会阻塞线程
-- `Selectorwakeup()`：使一个还未返回的 select() 方法立即返回
-- `void close()`：关闭该选择器
-
-## 7. 套接字 NIO 实例
+### (3) 套接字 NIO 实例
 
 ```java
 public class NIOServer {
@@ -1759,13 +1954,10 @@ public class NIOClient {
 }
 ```
 
-## 8. 内存映射文件
+# 九、AIO(Asynchronous I/O)
 
-- **内存映射文件 I/O**： 是一种读/写文件数据的方法，比常规的基于流或者基于通道的 I/O 快得多
+- 异步 IO 基于事件和回调机制实现，即应用操作之后会直接返回，不会堵塞，当后台处理完成，操作系统会通知相应的线程进行后续的操作
 
-## 9. 对比
+---
 
-NIO 与普通 I/O 的区别主要有以下两点：
-
-- NIO 是非阻塞的
-- NIO 面向块，I/O 面向流
+> 注：可参考《netty权威指南》

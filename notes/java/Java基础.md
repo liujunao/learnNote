@@ -210,6 +210,8 @@ public final class String
 
 - 每次对 String 类型进行改变的时候，都会生成一个新的 String 对象，然后将指针指向新的 String 对象
 
+![](../../pics/java/java_15.jpg)
+
 ## 2、不可变的好处
 
 **1. 可以缓存 hash 值** 
@@ -307,6 +309,180 @@ System.out.println(str5.intern() == str4); //false
 
 - [String中intern的方法](https://www.cnblogs.com/wanlipeng/archive/2010/10/21/1857513.html) 
 - [深入解析 String#intern](https://tech.meituan.com/in_depth_understanding_string_intern.html) 
+
+## 5、intern 优化
+
+- 操作：每次赋值时使用 String 的 intern 方法，若常量池中有相同值，就会重复使用该对象，返回对象引用
+
+    > 这种方式可以使重复性非常高的地址信息存储大小从 20G 降到几百兆
+
+```java
+SharedLocation sharedLocation = new SharedLocation();
+
+//下面三个字段的值可共用
+sharedLocation.setCity(messageInfo.getCity().intern());    
+sharedLocation.setCountryCode(messageInfo.getRegion().intern());
+sharedLocation.setRegion(messageInfo.getCountryCode().intern());
+
+Location location = new Location();
+location.set(sharedLocation);
+location.set(messageInfo.getLongitude());
+location.set(messageInfo.getLatitude());
+```
+
+![](../../pics/java/java_16.jpg)
+
+> 慎用 `split`，尽量使用 `indexOf` 代替
+
+## 6、慎用 split(正则)
+
+### (1) 正则表达式
+
+![](../../pics/java/java_17.jpg)
+
+**正则表达式引擎**：构造 DFA 自动机的代价远大于 NFA 自动机，但 DFA 自动机的执行效率高于 NFA 自动机
+
+> 假设一个字符串的长度是 n：
+>
+> - 若用 DFA 自动机作为正则表达式引擎，则匹配的时间复杂度为 $O(n)$
+> - 若用 NFA 自动机作为正则表达式引擎，由于 NFA 自动机在匹配过程中存在大量的分支和回溯，假设 NFA 的状态数为 s，则该匹配算法的时间复杂度为 $O(ns)$
+
+- **DFA 自动机(Deterministic Final Automaton 确定有限状态自动机)** 
+- **NFA 自动机(Non deterministic Finite Automaton 非确定有限状态自动机)**
+
+----
+
+**案例**：以 `text="aabcab"` 和 `regex="bc"` 分析 NFA 的解析过程
+
+> NFA 自动机会读取正则表达式的每一个字符，拿去和目标字符串匹配，匹配成功就换正则表达式的下一个字符，反之就继续和目标字符串的下一个字符进行匹配
+
+- 首先，读取正则表达式的第一个匹配符和字符串的第一个字符进行比较，b 对 a，不匹配；继续换字符串的下一个字符，也是 a，不匹配；继续换下一个，是 b，匹配
+
+    ![](../../pics/java/java_18.jpg)
+
+- 然后，同理，读取正则表达式的第二个匹配符和字符串的第四个字符进行比较，c 对 c，匹配；继续读取正则表达式的下一个字符，然而后面已经没有可匹配的字符了，结束
+
+    ![](../../pics/java/java_19.jpg)
+
+### (2) NFA 自动机的回溯
+
+> 用 NFA 自动机实现的正则表达式，在匹配过程中经常会引起回溯问题。大量的回溯会长时间地占用 CPU，从而带来系统性能开销
+
+案例：以 `text="abbc"` 和 `regex="ab{1,3}c"` 说明
+
+- 首先，读取正则表达式第一个匹配符 a 和字符串第一个字符 a 进行比较，a 对 a，匹配
+
+    ![](../../pics/java/java_20.jpg)
+
+- 然后，读取正则表达式第二个匹配符 b{1,3} 和字符串的第二个字符 b 进行比较，匹配
+
+    但因为 b{1,3} 表示 1-3 个 b 字符串，NFA 自动机又具有贪婪特性，所以此时不会继续读取正则表达式的下一个匹配符，而是依旧使用 b{1,3} 和字符串的第三个字符 b 进行比较，结果还是匹配
+
+    ![](../../pics/java/java_21.jpg)
+
+- 接着继续使用 b{1,3} 和字符串的第四个字符 c 进行比较，发现不匹配了，此时就会发生回溯，已经读取的字符串第四个字符 c 将被吐出去，指针回到第三个字符 b 的位置
+
+    ![](../../pics/java/java_22.jpg)
+
+- 发生回溯后，程序会读取正则表达式的下一个匹配符 c，和字符串中的第四个字符 c 进行比较，结果匹配，结束
+
+    ![](../../pics/java/java_23.jpg)
+
+### (3) 正则优化
+
+**NFA 的三种模式**：
+
+1. **贪婪模式(Greedy)**：在数量匹配中，若单独使用 `+、 ? 、*、{min,max}` 等量词，正则表达式会匹配尽可能多的内容
+
+2. **懒惰模式(Reluctant)**：会尽可能少地重复匹配字符，若匹配成功，会继续匹配剩余的字符串
+
+    > 注：懒惰模式是无法完全避免回溯
+    >
+    > - 案例一：以 `text="abc"` 和 `regex="ab{1,3}?c"` 为例，NFA 先选择最小的匹配范围，即匹配 1 个 b 字符，避免回溯问题
+    >
+    > - 案例二(回溯)：以 `text="abbc"` 和 `regex="ab{1,3}?c"` 为例
+    >
+    >     - 首先，读取正则表达式第一个匹配符 a 和字符串第一个字符 a 进行比较，a 对 a，匹配
+    >
+    >     - 然后，读取正则表达式第二个匹配符 b{1,3} 和字符串的第二个字符 b 进行比较，匹配
+    >
+    >         <img src="../../pics/java/java_24.png" align=left width=300>
+    >
+    >     - 其次，由于懒惰模式下，正则表达式会尽可能少地重复匹配字符，匹配字符串中的下一个匹配字符 b 不会继续与 b{1,3}进行匹配，从而选择放弃最大匹配 b 字符，转而匹配正则表达式中的下一个字符 c
+    >
+    >         <img src="../../pics/java/java_25.png" align=left width=300>
+    >
+    >     - 此时你会发现匹配字符 c 与正则表达式中的字符 c 是不匹配的，这个时候会发生一次回溯，这次的回溯与贪婪模式中的回溯刚好相反，懒惰模式的回溯是回溯正则表达式中一个匹配字符，与上一个字符再进行匹配。如果匹配，则将匹配字符串的下一个字符和正则表达式的下一个字符
+    >
+    >         <img src="../../pics/java/java_26.png" align=left width=300>
+
+3. **独占模式(Possessive)**：同贪婪模式一样，独占模式一样会最大限度地匹配更多内容；不同的是，在独占模式下，匹配失败就会结束匹配，不会发生回溯问题
+
+---
+
+**三种正则优化方法**：
+
+1. **少用贪婪模式，多用独占模式**：贪婪模式会引起回溯问题，而使用独占模式可避免回溯
+
+2. **减少分支选择**：分支选择类型 `(X|Y|Z)` 的正则表达式会降低性能
+
+    > 若一定要用，可以通过以下几种方式来优化：
+    >
+    > - 首先，考虑选择的顺序，将比较常用的选择项放在前面，使它们可以较快地被匹配
+    > - 其次，尝试提取共用模式，如：将 `(abcd|abef)` 替换为 `ab(cd|ef)`，后者匹配速度较快，因为 NFA 自动机会尝试匹配 ab，如果没有找到，就不会再尝试任何选项
+    > - 最后，若是简单的分支选择类型，可以用三次 `index` 代替 `(X|Y|Z)`
+
+3. **减少捕获嵌套**：
+
+    - **捕获组**：指把正则表达式中，子表达式匹配的内容保存到以数字编号或显式命名的数组中，方便后面引用
+
+        > 一般一个 `()` 就是一个捕获组，捕获组可以进行嵌套
+        >
+        > ---
+        >
+        > 在正则表达式中，每个捕获组都有一个编号，编号 0 代表整个匹配到的内容，可以看下面的例子：
+        >
+        > ```java
+        > public static void main( String[] args){
+        >     String text = "<input high=\"20\" weight=\"70\">test</input>";
+        >     String reg ="(<input.*?>)(.*?)(</input>)";
+        >     Pattern p = Pattern.compile(reg);
+        >     Matcher m = p.matcher(text);
+        >     while(m.find()) {
+        >         System.out.println(m.group(0)); //整个匹配到的内容
+        >         System.out.println(m.group(1)); //(<input.*?>)
+        >         System.out.println(m.group(2)); //(.*?)
+        >         System.out.println(m.group(3)); //(</input>)
+        >     }
+        > }
+        > 
+        > //结果：
+        > <input high=\"20\" weight=\"70\">test</input>
+        > <input high=\"20\" weight=\"70\">
+        > test
+        > </input>
+        > ```
+
+    - **非捕获组**：指参与匹配却不进行分组编号的捕获组，其表达式一般由 `(?:exp)`组成
+
+        > 如果并不需要获取某一个分组内的文本，那么就使用非捕获分组。例如：使用“(?:X)”代替“(X)”，再看下面的例子：
+        >
+        > ```java
+        > public static void main( String[] args){
+        >     String text = "<input high=\"20\" weight=\"70\">test</input>";
+        >     String reg="(?:<input.*?>)(.*?)(?:</input>)";
+        >     Pattern p = Pattern.compile(reg);
+        >     Matcher m = p.matcher(text);
+        >     while(m.find()) {
+        >         System.out.println(m.group(0)); //整个匹配到的内容
+        >         System.out.println(m.group(1)); //(.*?)
+        >     }
+        > }
+        > 
+        > //结果
+        > <input high=\"20\" weight=\"70\">test</input>
+        > test
+        > ```
 
 # 三、运算
 
@@ -921,6 +1097,8 @@ public class EqualExample {
 
 ## 3、hashCode()
 
+推荐阅读：==[对Java中HashCode方法的深入思考](https://www.cnblogs.com/jajian/p/11306471.html)== 
+
 - 作用：是获取哈希码(散列码)；实际上返回一个int整数，哈希码的作用是确定该对象在哈希表中的索引位置
 
 ```java
@@ -1220,6 +1398,8 @@ public class StaticDemoDriven {
 [Java中Native关键字的作用](https://www.cnblogs.com/Qian123/p/5702574.html) 
 
 ## 4、transient 
+
+> ==使用 Protobuf 序列化替换 Java 序列化== 
 
 - **[Java 序列化的高级认识](https://www.ibm.com/developerworks/cn/java/j-lo-serial/index.html?mhq=%E4%BB%80%E4%B9%88%E6%98%AF%E5%BA%8F%E5%88%97%E5%8C%96%E4%B8%8E%E5%8F%8D%E5%BA%8F%E5%88%97%E5%8C%96%E3%80%81%E4%B8%BA%E4%BB%80%E4%B9%88%E5%BA%8F%E5%88%97%E5%8C%96)** 
 - **[序列化与单例模式](http://www.cnblogs.com/ixenos/p/5831067.html)** 

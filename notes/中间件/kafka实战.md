@@ -1,3 +1,5 @@
+- 推荐阅读：==[kafka中文教程](https://www.orchome.com/kafka/index)== 
+
 # 一、认识 Kafka
 
 ## 1、快速入门

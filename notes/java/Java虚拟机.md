@@ -6,7 +6,7 @@
 
 ## 1、运行时数据区域
 
-![](../../pics/java/jvm_1.png)
+![](../../pics/java/jvm_1.jpg)
 
 -  **线程隔离**：线程隔离的意思，就是给不同的线程多分配的资源用，以做到不争用
 -  **线程共享：**线程共享就是资源只有一个没有办法分配更多，只能共享
@@ -70,6 +70,8 @@ java -Xss512M HackTheJava
 
 ### (4) Java 堆
 
+> 堆是 JVM 内存中最大的一块内存空间，该内存被所有线程共享，几乎所有对象和数组都被分配到了堆内存中
+
 - JVM 堆是运行时数据区，所有类的实例和数组都是在堆上分配内存
 
   > - JVM 启动时被创建
@@ -97,6 +99,20 @@ java -Xms1M -Xmx2M HackTheJava
 ```
 
 > 若 Java 堆没有内存完成实例分配，并且堆也无法再扩展时，Java 虚拟机将会抛出 `OutOfMemoryError` 异常
+
+---
+
+堆被划分为新生代和老年代，新生代又被进一步划分为 Eden 和 Survivor 区，最后 Survivor 由 From Survivor 和 To Survivor 组成：
+
+- JDK6 中，永久代在非堆内存区
+- 到 JDK7 版本，永久代的静态变量和运行时常量池被合并到了堆中
+- 而到了 JDK8，永久代被元空间(方法区)取代
+
+![](../../pics/java/jvm_125.png)
+
+
+
+
 
 ### (5) 方法区(MetaSpace)
 
@@ -373,7 +389,72 @@ if (!constants -> tag_at(index).is_unresolved_klass()) {
 
 ![](../../pics/java/jvm_6.png)
 
-## 3、实战：OutOfMemoryError(OOM) 异常
+## 3、JVM 运行原理
+
+```java
+public class JVMCase {
+    public final static String MAN_SEX_TYPE = "man"; // 常量
+    public static String WOMAN_SEX_TYPE = "woman"; // 静态变量
+
+    public static void main(String[] args) {
+        Student stu = new Student();
+        stu.setName("nick");
+        stu.setSexType(MAN_SEX_TYPE);
+        stu.setAge(20);
+
+        JVMCase jvmcase = new JVMCase();
+        print(stu); // 调用静态方法
+        jvmcase.sayHello(stu); // 调用非静态方法
+    }
+
+    // 常规静态方法
+    public static void print(Student stu) {
+        System.out.println("name:" + stu.getName() + ";sex:" + stu.getSexType() + ";age:" + stu.getAge()); 
+    }
+
+    // 非静态方法
+    public void sayHello(Student stu) {
+        System.out.println(stu.getName() + "say: hello"); 
+    }
+}
+
+@Data
+class Student{
+    String name;
+    String sexType;
+    int age;
+}
+```
+
+当我们通过 Java 运行以上代码时，JVM 的整个处理过程如下：
+
+1. 首先，JVM 通过配置参数向操作系统申请内存空间，根据内存大小找到内存分配表，并把内存段的起始和终止地址分配给 JVM
+
+2. 接下来，JVM 根据配置参数分配堆、栈以及方法区的内存大小
+
+3. 然后，进行 class 文件加载、验证、准备、解析
+
+    > 其中准备阶段会为类的静态变量分配内存，初始化为系统的初始值
+
+    <img src="../../pics/java/jvm_126.jpg" align=left width=600>
+
+4. 接着，进行初始化阶段，JVM 会先执行构造器 `<clinit>`方法，编译器会在 .java 文件被编译成.class 文件时，收集所有类的初始化代码，包括静态变量赋值语句、静态代码块、静态方法，收集在一起成为 `<clinit>()` 方法
+
+    <img src="../../pics/java/jvm_127.jpg" align=left width=600>
+
+5. 再接着，启动 main 线程，执行 main 方法，开始执行第一行代码
+
+    > 此时堆内存中会创建一个 student 对象，对象引用 student 就存放在栈中
+
+    <img src="../../pics/java/jvm_128.jpg" align=left width=600>
+
+6. 最后，创建 `JVMCase` 对象，调用 `sayHello` 非静态方法，sayHello 方法属于对象 JVMCase，此时 sayHello 方法入栈，并通过栈中的 student 引用调用堆中的 Student 对象
+
+    之后，调用静态方法 print，print 静态方法属于 JVMCase 类，是从静态方法中获取，之后放入到栈中，也是通过 student 引用调用堆中的 student 对象
+
+    <img src="../../pics/java/jvm_129.jpg" align=left width=600>
+
+## 4、实战：OutOfMemoryError(OOM) 异常
 
 推荐阅读： **[jvm内存溢出分析](https://www.cnblogs.com/wewill/p/6038528.html)**
 
@@ -772,6 +853,8 @@ public class ReferenceCountingGC {
 
 ### (3) 引用类型
 
+<img src="../../pics/java/jvm_130.jpg">
+
 推荐阅读： [Java引用类型原理剖析](https://github.com/farmerjohngit/myblog/issues/10) 
 
 > **判定对象是否可被回收与引用有关** 
@@ -935,6 +1018,8 @@ no, i am dead :(
 - `-verbose:class、-XX:+TraceClass-Loading、-XX:+TraceClassUnLoading` 查看类加载和卸载信息
 
 ## 2、垃圾收集算法
+
+<img src="../../pics/java/jvm_131.jpg">
 
 从如何判定对象消亡的角度出发，垃圾收集算法分为：
 
@@ -1285,7 +1370,11 @@ JDK 7 后，HotSpot 新增参数 ``-XX：+UseCondCardMark` 用来决定是否开
 
 ## 5、经典垃圾收集器
 
- **HotSpot 虚拟机中的 7 个垃圾收集器，连线表示垃圾收集器可以配合使用**： 
+> 查询 JVM 垃圾收集器类型：先通过 `ps` 命令查询进程 ID，再通过 `jmap -heap ID` 查询 JVM 配置信息，其中包括垃圾收集器类型
+
+<img src="../../pics/java/jvm_132.jpg">
+
+**HotSpot 虚拟机中的 7 个垃圾收集器，连线表示垃圾收集器可以配合使用**： 
 
 <img src="../../pics/java/jvm_11.png" width="600" align=left>
 
@@ -1982,6 +2071,15 @@ x64 硬件平台的大、中、小三类容量：
 
 ### (2) 内存分配策略
 
+查看堆内存配置的默认值：
+
+```shell
+java -XX:+PrintFlagsFinal -version | grep HeapSize 
+jmap -heap 17284
+```
+
+---
+
 #### 1. 对象优先在 Eden 分配
 
 - 大多数情况**对象在新生代 Eden 区分配**，当 Eden 区空间不足时，虚拟机将发起一次 Minor GC
@@ -2020,7 +2118,7 @@ No shared spaces configured.
 
     > 其中 10MB 分配给新生代，剩下的 10MB 分配给老年代
 
-- `-XX：Survivor-Ratio=8` 决定了新生代中 Eden 区与 Survivor 区的空间比例是 8∶1
+- `-XX：SurvivorRatio=8` 决定了新生代中 Eden 区与 Survivor 区的空间比例是 8∶1
 
     > 输出结果：eden space 8192K、from space 1024K、tospace 1024K
     >
@@ -2047,7 +2145,7 @@ No shared spaces configured.
 
 - **避免大对象原因**：分配空间时，容易提前触发垃圾收集，以获取足够的连续空间，当复制对象时，大对象意味高额的内存复制开销
 
-    > `-XX：PretenureSizeThreshold`：指定大于该设置值的对象直接在老年代分配，但只对 Serial 和 ParNew 有效
+    > `-XX：PretenureSizeThreshold`：指定大于该设置值的对象直接在老年代分配
     >
     > - **目的**：避免在 Eden 区及两个 Survivor 区之间来回复制，产生大量的内存复制操作
 
@@ -2077,9 +2175,11 @@ No shared spaces configured.
 
 #### 3. 长期存活的对象进入老年代
 
+> JDK8 默认开启 `-XX:+UseAdaptiveSizePolicy`，JVM 会动态调整 Java 堆中各区域大小及进入老年代的年龄，即 `–XX:NewRatio` 和 `-XX:SurvivorRatio` 会失效
+
 虚拟机给每个对象定义了一个对象年龄计数器，存储在对象头中。
 
-- 对象通常在 Eden 区里诞生，若经过第一次 Minor GC 后仍存活，且能被 Survivor 容纳，则该对象会被移动到 Survivor 中，并且将其对象年龄设为1岁。
+- 对象通常在 Eden 区里诞生，若经过第一次 Minor GC 后仍存活，且能被 Survivor 容纳，则该对象会被移动到 Survivor 中，并且将其对象年龄设为1岁
 
 - 对象在 Survivor 区每熬过一次 Minor GC，年龄就增加1岁，当年龄增加到一定程度(默认 15)，就会被晋升到老年代
 
@@ -2314,6 +2414,165 @@ max_promotion_in_bytes) const {
 
 - 老年代空间不足(可能是 GC 过程中浮动垃圾过多导致暂时性的空间不足)，便会报 Concurrent Mode Failure 错误，并触发 Full GC
 
+## 9、GC 调优
+
+### (1) 降低 Minor GC 频率
+
+> 由于新生代空间较小，Eden 区很快被填满，就会导致频繁 Minor GC，因此通过增大新生代空间来降低 Minor GC 的频率
+
+单次 Minor GC 时间是由两部分组成：`T1`(扫描新生代)和 `T2`(复制存活对象)
+
+- 假设一个对象在 Eden 区的存活时间为 500ms，Minor GC 的时间间隔是 300ms，则 Minor GC 时间为：`T1 + T2` 
+- 当增大新生代空间，Minor GC 的时间间隔可能会扩大到 600ms，此时存活 500ms 的对象会在 Eden 区被回收，即不存在复制存活对象，因此此时的 Minor GC 时间为：两次扫描新生代，即 `2T1` 
+
+**总结**：
+
+- 若堆内存有较多的长期存活对象，此时增加年轻代空间，反而会增加 Minor GC 时间
+- 若堆中的短期对象很多，则扩容新生代，单次 Minor GC 时间不会显著增加
+- 因此，单次 Minor GC 时间更多取决于 GC 后存活对象的数量，而非 Eden 区大小
+
+### (2) 降低 Full GC 频率
+
+> 由于堆内存空间不足或老年代对象太多，会触发 Full GC，频繁 Full GC 会带来上下文切换，增加系统的性能开销
+
+- **减少创建大对象**：可以通过二次查询将大对象拆解
+
+    若大对象超过年轻代最大对象阈值，会被直接创建在老年代
+
+    即使被创建在了年轻代，由于年轻代的内存空间有限，通过 Minor GC 之后也会进入到老年代
+
+- **增大堆内存空间**：在堆内存不足的情况下，增大堆内存空间，且设置初始化堆内存为最大堆内存，也可以降低 Full GC 频率
+
+### (3) 选择合适的 GC 回收器
+
+- 响应速度较快的 GC 回收器：CMS 回收器和 G1 回收器都是不错的选择
+
+- 系统吞吐量的 GC 回收器：Parallel Scavenge 回收器来提高系统的吞吐量
+
+### (4) 调优参考指标
+
+- **GC 频率**：高频 FullGC 会给系统带来非常大的性能消耗，过多的 MinorGC 仍会给系统带来压力
+
+- **堆内存**：首先分析堆内存大小是否合适，即分析年轻代和老年代的比例是否合适
+
+    > 若内存不足或分配不均，会增加 FullGC，严重的将导致 CPU 持续爆满，影响系统性能
+
+- **吞吐量**：频繁 FullGC 会引起线程的上下文切换，增加系统性能开销，从而影响每次处理的线程请求，最终导致系统的吞吐量下降
+
+- **延时**：JVM 的 GC 持续时间会影响到每次请求的响应时间
+
+### (5) 具体调优方法
+
+- **调整堆内存空间减少 FullGC**：通过日志分析，堆内存基本用完，且存在大量 FullGC，因此堆内存严重不足，这时要调大堆内存空间
+
+    > ```shell
+    > java -jar -Xms4g -Xmx4g heapTest-0.0.1-SNAPSHOT.jar
+    > ```
+    >
+    > - `-Xms`：堆初始大小
+    > - `-Xmx`：堆最大值
+
+- **调整年轻代减少 MinorGC**：通过调整堆内存大小，已经提升了整体吞吐量，降低了响应时间，但还可以将年轻代设置大一些，从而减少一些 MinorGC
+
+    > ```shell
+    > java -jar -Xms4g -Xmx4g -Xmn3g heapTest-0.0.1-SNAPSHOT.jar
+    > ```
+
+- **设置 Eden、Survivor 区比例**：若 JVM 开启 `-XX:-UseAdaptiveSizePolicy`，则每次 GC 后都会重新计算 Eden、From Survivor 和 To Survivor 区大小，计算依据是 GC 过程中统计的 GC 时间、吞吐量、内存占用量
+
+    > 此时 SurvivorRatio 默认设置的比例会失效
+
+## 10、内存查看工具
+
+- Linux 命令行工具之 `top` 命令：可以实时显示正在执行进程的 CPU 使用率、内存使用率、系统负载等信息
+
+    > 其中，上半部分显示系统的统计信息，下半部分显示进程的使用率统计信息
+    >
+    > 还可以通过 `top -Hp pid` 查看具体线程使用系统资源情况
+
+- Linux 命令行工具之 `vmstat` 命令：一款指定采样周期和次数的功能性监测工具
+
+    > 不仅可以统计内存的使用情况，还可以观测到 CPU 的使用率、swap 的使用情况
+    >
+    > 注：vmstat 很少用来查看内存的使用情况，而是经常被用来观察进程的上下文切换
+    >
+    > ---
+    >
+    > 返回值参数详解：
+    >
+    > - `r`：等待运行的进程数
+    > - `b`：处于非中断睡眠状态的进程数
+    > - `swpd`：虚拟内存使用情况
+    > - `free`：空闲的内存
+    > - `buff`：用来作为缓冲的内存数
+    > - `si`：从磁盘交换到内存的交换页数量
+    > - `so`：从内存交换到磁盘的交换页数量
+    > - `bi`：发送到块设备的块数
+    > - `bo`：从块设备接收到的块数
+    > - `in`：每秒中断数
+    > - `cs`：每秒上下文切换次数
+    > - `us`：用户 CPU 使用时间
+    > - `sy`：内核 CPU 系统使用时间
+    > - `id`：空闲时间
+    > - `wa`：等待 I/O 时间
+    > - `st`：运行虚拟机窃取的时间
+
+- Linux 命令行工具之 `pidstat` 命令：可以深入到线程级别
+
+    > 参数详解：
+    >
+    > - `-u`：默认的参数，显示各个进程的 cpu 使用情况
+    > - `-r`：显示各个进程的内存使用情况
+    > - `-d`：显示各个进程的 I/O 使用情况
+    > - `-w`：显示每个进程的上下文切换情况
+    > - `-p`：指定进程号
+    > - `-t`：显示进程中线程的统计信息
+    >
+    > 返回参数：
+    >
+    > - `Minflt/s`：任务每秒发生的次要错误，不需要从磁盘中加载页
+    > - `Majflt/s`：任务每秒发生的主要错误，需要从磁盘中加载页
+    > - `VSZ`：虚拟地址大小，虚拟内存使用 KB
+    > - `RSS`：常驻集合大小，非交换区内存使用 KB
+
+- JDK 工具之 `jstat` 命令：可以监测 Java 应用程序的实时运行情况，包括堆内存信息以及垃圾回收信息
+
+    > 参数详解：
+    >
+    > - `-class`：显示 ClassLoad 的相关信息
+    > - `-compiler`：显示 JIT 编译的相关信息
+    > - `-gc`：显示和 gc 相关的堆信息
+    > - `-gccapacity`：显示各个代的容量以及使用情况
+    > - `-gcmetacapacity`：显示 Metaspace 的大小
+    > - `-gcnew`：显示新生代信息
+    > - `-gcnewcapacity`：显示新生代大小和使用情况
+    > - `-gcold`：显示老年代和永久代的信息
+    > - `-gcoldcapacity`：显示老年代的大小
+    > - `-gcutil`：显示垃圾收集信息
+    > - `-gccause`：显示垃圾回收的相关信息(同 `-gcutil`)，同时显示最后一次或当前正在发生的垃圾回收的诱因
+    > - `-printcompilation`：输出 JIT 编译的方法信息
+    >
+    > 返回参数：
+    >
+    > - `S0C`：年轻代中 To Survivor 的容量(单位 KB)
+    > - `S1C`：年轻代中 From Survivor 的容量(单位 KB)
+    > - `S0U`：年轻代中 To Survivor 目前已使用空间(单位 KB)
+    > - `S1U`：年轻代中 From Survivor 目前已使用空间(单位 KB)
+    > - `EC`：年轻代中 Eden 的容量(单位 KB)
+    > - `EU`：年轻代中 Eden 目前已使用空间(单位 KB)
+    > - `OC`：Old 代的容量(单位 KB)
+    > - `OU`：Old 代目前已使用空间(单位 KB)
+    > - `MC`：Metaspace 的容量(单位 KB)
+    > - `MU`：Metaspace 目前已使用空间(单位 KB)
+    > - `YGC`：从应用程序启动到采样时年轻代中 gc 次数
+    > - `YGCT`：从应用程序启动到采样时年轻代中 gc 所用时间 (s)；
+    > - `FGC`：从应用程序启动到采样时 old 代(全 gc)gc 次数
+    > - `FGCT`：从应用程序启动到采样时 old 代（全 gc）gc 所用时间 (s)
+    > - `GCT`：从应用程序启动到采样时 gc 用的总时间 (s)
+
+- JDK 工具之 `jstack` 命令：线程堆栈分析工具
+- JDK 工具之 `jmap` 命令：查看堆内存初始化配置信息以及堆内存的使用情况
+
 # 四、虚拟机性能监控、故障处理工具
 
 > mac 下的 Java 默认安装在 `/Library/Java/JavaVirtualMachines/jdk1.8.0_231.jdk/Contents/Home`
@@ -2322,7 +2581,18 @@ max_promotion_in_bytes) const {
 
 - 推荐阅读：==[深入JVM-性能监控工具](https://www.jianshu.com/p/038d718f36fb)== 
 
-## 1、基础故障处理工具
+## 1、GC 日志参数
+
+```shell
+-XX:+PrintGC #输出GC日志
+-XX:+PrintGCDetails #输出GC的详细日志
+-XX:+PrintGCTimeStamps #输出GC的时间戳（以基准时间的形式）
+-XX:+PrintGCDateStamps #输出GC的时间戳（以日期的形式，如 2013-05-04T21:53:59.234+0800）
+-XX:+PrintHeapAtGC #在进行GC的前后打印出堆的信息
+-Xloggc:../logs/gc.log #日志文件的输出路径
+```
+
+## 2、基础故障处理工具
 
 **命令格式**：
 
@@ -2760,7 +3030,7 @@ max_promotion_in_bytes) const {
 |    `jjs`     | 对 Nashorn 引擎的调用入口<br/>Nashorn 是基于 Java 实现的一个轻量级高性能 JS 运行环境 |
 | `jrunscript` | Java 命令行脚本外壳工具，主要用于解释执行 JS、Groovy、Ruby 等脚本语言 |
 
-## 2、可视化故障处理工具
+## 3、可视化故障处理工具
 
 ### (1) JHSDB：给予服务性代理的调试工具
 
@@ -3029,7 +3299,7 @@ public class TracingScript {
 
 > BTrace 的用途：打印调用堆栈、参数、返回值；进行性能监视、定位连接泄漏、内存泄漏、解决多线程竞争问题等
 
-## 3、BTrace 详解
+## 4、BTrace 详解
 
 ```java
 //BTrace 脚本示例

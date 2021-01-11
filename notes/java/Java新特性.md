@@ -751,6 +751,21 @@ public void test8(){
 
 推荐阅读：**[Java 8 中的 Streams API 详解(IBM)](https://developer.ibm.com/zh/technologies/java/articles/j-lo-java8streamapi/)** 
 
+![](../../pics/java/javaN_8.jpg)
+
+**性能测试**：==[测试代码](https://github.com/nickliuchao/stream)== 
+
+- 多核 CPU 服务器配置环境下，对比长度 100 的 int 数组的性能：常规的迭代 < Stream 并行迭代 < Stream 串行迭代
+- 多核 CPU 服务器配置环境下，对比长度 1.00E+8 的 int 数组的性能：Stream 并行迭代 < 常规的迭代 < Stream 串行迭代
+- 多核 CPU 服务器配置环境下，对比长度 1.00E+8 对象数组过滤分组的性能：Stream 并行迭代 < 常规的迭代 < Stream 串行迭代
+- 单核 CPU 服务器配置环境下，对比长度 1.00E+8 对象数组过滤分组的性能：常规的迭代 < Stream 串行迭代 < Stream 并行迭代
+
+**总结**：
+
+- 在循环迭代次数较少的情况下，常规的迭代方式性能反而更好
+- 在单核 CPU 服务器配置环境中，也是常规迭代方式更有优势
+- 而在大数据循环迭代中，如果服务器是多核 CPU 的情况下，Stream 的并行迭代优势明显。所以我们在平时处理大数据的集合时，应该尽量考虑将应用部署在多核 CPU 环境下，并且使用 Stream 的并行迭代方式进行处理
+
 ### (1) Stream 简介
 
 **Stream 优势**：
@@ -766,7 +781,7 @@ public void test8(){
     > ```java
     > @PostConstruct
     > public void init() {
-    >     System.setProperty("java.util.concurrent.ForkJoinPool.common.parallelism", "15"); //设置线程数为 15
+    >    	System.setProperty("java.util.concurrent.ForkJoinPool.common.parallelism", "15"); //设置线程数为 15
     > }
     > ```
     >

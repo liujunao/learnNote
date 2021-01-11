@@ -1235,6 +1235,8 @@ MYSQL数据库的分区总是**把NULL值视为小于任何一个非NULL值**，
 
 ## 1. InnoDB 索引概述
 
+<img src="../../../pics/mysql/global/mysql_18.jpg">
+
 ### 1. 物理存储角度
 
 - **聚集(聚簇)索引**
@@ -1334,6 +1336,8 @@ MYSQL数据库的分区总是**把NULL值视为小于任何一个非NULL值**，
 >
 > - **一级索引**： 聚簇索引
 > - **二级索引**： 其他非聚簇索引，又叫辅助索引
+>
+> InnoDB 默认创建的主键索引是聚簇索引，其它索引都属于辅助索引，也称为二级索引或非聚簇索引
 
 推荐阅读： **[聚集索引和非聚集索引根本区别以及使用方式](https://blog.csdn.net/jiadajing267/article/details/54581262)** 
 
@@ -1548,6 +1552,8 @@ InnoDB 对更新 Cardinality  信息的策略为：
 
 ## 4. hash 索引
 
+> 只有 Memory 存储引擎支持 Hash 索引
+
 ### 1. hash 算法
 
 - **InnoDB 存储引擎使用哈希算法来对字典进行查找，其冲突机制采用链表方式，哈希函数采用除法散列方式**
@@ -1695,13 +1701,13 @@ search_modifier:
 
 - **[SELECT FOR UPDATE](https://www.cnblogs.com/chenwenbiao/archive/2012/06/06/2537508.html)**
 
-## 1. 什么是锁
+## 1、什么是锁
 
 - 锁是数据库系统区别于文件系统的一个关键特性
 - **锁机制用于管理对共享资源的并发访问**
 -  数据库系统使用锁是为了支持对共享资源进行并发访问，提供数据的完整性和一致性
 
-## 2. lock 和 latch
+## 2、lock 和 latch
 
 - `latch` ： 称为**闩锁(轻量级的锁)**，要求**锁定时间非常短**；若持续的时间长，则应用的性能会非常差
 
@@ -1723,7 +1729,7 @@ search_modifier:
 | 死锁     | 通过 waits-for graph、 time out 等机制进行死锁检测与处理 | 无死锁检测与处理机制，仅通过应用程序加锁的顺序( lock leveling)保证无死锁的情况发生 |
 | 存在     |                 Lock Manager 的哈希表中                  |                     每个数据结构的对象中                     |
 
-​						**命令SHOW ENGINE INNODB MUTEX输出结果说明**
+**命令SHOW ENGINE INNODB MUTEX输出结果说明**
 
 |     名称      |                             说明                             |
 | :-----------: | :----------------------------------------------------------: |
@@ -1734,7 +1740,7 @@ search_modifier:
 |   os_yields   |             进行 os_thread_yield 唤醒操作的次数              |
 | os_wait_times |                 操作系统等待的时间，单位是ms                 |
 
-## 3. InnoDB 中的锁
+## 3、InnoDB 中的锁
 
 ### 1. 锁分类
 
@@ -1793,7 +1799,7 @@ search_modifier:
 
   ![](../../../pics/mysql/global/mysqlG6_5.png)
 
-## 4. 锁算法
+## 4、锁算法
 
 ### 1. 行锁的3种算法
 
@@ -1821,13 +1827,15 @@ search_modifier:
 > - Next-Key Lock 降级为Record Lock 仅存在于查询所有的唯一索引列
 > - 若唯一索引由多个列组成，而查询仅是查找多个唯一索引列中的其中一个，那么查询其实是 range 类型查询，而不是 point类型查询，故 InnoDB 存储引擎依然使用 Next-Key Lock 进行锁定
 
+![](../../../pics/mysql/global/mysql_21.jpg)
+
 ### 2. 解决Phantom(幻读)
 
 - `Phantom Problem`： 指在同一事务下，连续执行两次同样的 SQL 语句可能导致不同的结果，第二次的SQL语句可能会返回之前不存在的行
 
 - InnoDB存储引擎**采用 Next-Key Locking 机制来避免幻读**
 
-## 5. 锁问题
+## 5、锁问题
 
 ### 1. 脏读
 
@@ -1881,7 +1889,7 @@ search_modifier:
   - User1 修改这行记录，更新数据库并提交
   - User2 修改这行记录，更新数据库并提交
 
-## 6. 阻塞
+## 6、阻塞
 
 - 参数 `innodb_lock_wait_timeout` ： 用来控制等待的时间，默认为 50s
 
@@ -1892,11 +1900,11 @@ search_modifier:
   > - 是静态的，不可在启动时进行修改
   > - 在默认情况下，InnoDB 存储引擎不会回滚超时引发的错误异常
 
-## 7. 死锁
+## 7、死锁
 
 推荐阅读： [mysql死锁问题分析](https://www.cnblogs.com/LBSer/p/5183300.html) 
 
-### 1. 简介
+### (1) 简介
 
 - **死锁**： 是指两个或两个以上的事务在执行过程中，因争夺锁资源而造成的一种互相等待的现象
 
@@ -1915,7 +1923,7 @@ search_modifier:
     >
     > 通过上述链表可以构造出一张图，而在这个图中**若存在回路，就代表存在死锁**
 
-### 2. 死锁概率
+### (2) 死锁概率
 
 事务发生死锁的概率与以下几点因素有关：
 
@@ -1923,20 +1931,108 @@ search_modifier:
 - 每个事务操作的数量(r)越多，发生死锁的概率越大
 - 操作数据的集合(R)越小，发生死锁的概率越大
 
-### 3. 死锁成因
+### (3) 死锁成因
 
 - 不同表相同记录行锁冲突
 - 相同表记录行锁冲突
 - 不同索引锁冲突
 - gap 锁冲突
 
-### 4. 定位死锁
+### (4) 定位死锁
 
 - 通过应用业务日志定位到问题代码，找到相应的事务对应的 sql
 - 确定数据库隔离级别： `select @@global/.tx_isolation` 
 - 找DBA执行 `show InnoDB STATUS` 看看最近死锁的日志
 
-## 8. 锁升级
+### (5) 死锁案例
+
+#### 1. 案例说明
+
+- 首先，创建一张订单记录表，该表主要用于校验订单重复创建：
+
+    ```sql
+    CREATE TABLE `order_record`  (
+      `id` int(11) NOT NULL AUTO_INCREMENT,
+      `order_no` int(11) DEFAULT NULL,
+      `status` int(4) DEFAULT NULL,
+      `create_date` datetime(0) DEFAULT NULL,
+      PRIMARY KEY (`id`) USING BTREE,
+      INDEX `idx_order_status`(`order_no`,`status`) USING BTREE
+    ) ENGINE = InnoDB
+    ```
+
+- 为了模拟问题，将事务设置为手动提交
+
+    > - 查看自动提交事务是否开启：`show variables like 'autocommit';`
+    > - 将 mysql 事务提交设置为手动提交：`set autocommit = 0;`
+
+- 场景：订单在做幂等性校验时，先是通过订单号检查订单是否存在，若不存在则新增订单记录
+
+    模拟创建产生死锁的运行 SQL 语句：
+
+    - 首先，模拟新建两个订单，并按照以下顺序执行幂等性校验 SQL 语句(垂直方向代表执行的时间顺序)：
+
+        <img src="../../../pics/mysql/global/mysql_19.jpg" align=left width=600>
+
+    - 此时，会发现两个事务已经进入死锁状态，可以在 information_schema 数据库中查询到具体的死锁情况，如下图所示：
+
+        <img src="../../../pics/mysql/global/mysql_20.jpg" align=left width=900>
+
+---
+
+使用 `SELECT ... for update` 排他锁，而不是使用共享锁的原因：若两个订单号一样的请求同时进来，就有可能出现幻读
+
+- 一开始事务 A 中的查询没有该订单号，后来事务 B 新增了一个该订单号的记录
+- 此时事务 A 再新增一条该订单号记录，就会创建重复的订单记录
+- 面对这种情况，可以使用锁间隙算法来防止幻读
+
+#### 2. 死锁分析
+
+行锁的具体实现算法有三种：
+
+- `record lock` 专门对索引项加锁
+
+- `gap lock` 对索引项之间的间隙加锁
+
+    > MySQL 中的 `gap lock` 默认开启，即 `innodb_locks_unsafe_for_binlog` 参数值是 disable，且默认 RR 事务隔离级别
+
+- `next-key lock` 则是前面两种的组合，对索引项以其之间的间隙加锁
+
+> 注：
+>
+> - 只在可重复读或以上隔离级别下的特定操作才会取得 gap lock 或 next-key lock，
+>
+> - 在 Select、Update、Delete 时，除基于唯一索引的查询外，其它索引查询会获取 gap lock 或 next-key lock，即锁住扫描范围
+> - 主键索引也属于唯一索引，所以主键索引是不会使用 gap lock 或 next-key lock
+
+---
+
+- 当执行查询 `SELECT id FROM demo.order_record where order_no = 4 for update;` 时，由于 `order_no` 为非唯一索引，此时又是 RR 事务隔离级别，所以 SELECT 的加锁类型为 gap lock 且范围是 `(4,+∞)`
+
+- 上述 SQL 并不会导致阻塞，而当执行插入 `INSERT INTO demo.order_record(order_no, status, create_date) VALUES (5, 1, ‘2019-07-13 10:57:03’);` 时，会在插入间隙上再次获取插入意向锁
+
+    > 插入意向锁是一种 gap 锁，与 gap lock 冲突，所以当其它事务持有该间隙的 gap lock 时，需要等待其它事务释放 gap lock 之后，才能获取到插入意向锁
+
+![](../../../pics/mysql/global/mysql_21.jpg)
+
+### (6) 其他死锁问题
+
+> 死锁的四个必要条件：互斥、占有且等待、不可强占用、循环等待
+
+---
+
+案例：
+
+- 若先使用辅助索引来更新数据库，就需要修改为使用聚簇索引来更新数据库
+- 若两个更新事务使用了不同的辅助索引，或一个使用了辅助索引，一个使用了聚簇索引，就都有可能导致锁资源的循环等待
+
+![](../../../pics/mysql/global/mysql_22.jpg)
+
+出现死锁的步骤：
+
+![](../../../pics/mysql/global/mysql_23.jpg)
+
+## 8、锁升级
 
 - **锁升级**： 是指将当前锁的粒度降低
 

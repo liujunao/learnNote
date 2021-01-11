@@ -3057,7 +3057,7 @@ LIMIT <limit_number>
 - **IO**： 在装入数据远大于内存容量时，会出现磁盘 IO 瓶颈
 - **服务器硬件的性能瓶颈**： `top,free,vmstat` 可查看系统的性能状态
 
-### (3) Explain
+### (3) 通过 EXPLAIN 分析 SQL 执行计划
 
 #### 1. 简介
 
@@ -3077,13 +3077,13 @@ LIMIT <limit_number>
 
 #### 3. 使用
 
-`Explain + SQL 语句`
+- `Explain + SQL 语句`
 
 结果：
 
 ![](../../../pics/mysql/mysqlG2_9.png)
 
-- `id`： select 查询的序列号，包含一组数字，表示查询中执行select子句或操作表的顺序
+- `id`： select 查询的序列号，包含一组数字，表示查询中执行 select 子句或操作表的顺序
 
   > - id 相同：执行顺序由上至下
   > - id 不同：若是子查询，id 序列号会递增，id 越大优先级越高
@@ -3099,13 +3099,13 @@ LIMIT <limit_number>
   > - `UNION`： 若第二个 SELECT 出现在 UNION 之后，则被标记为 UNION；若 UNION 包含在 FROM 子句的子查询中，外层 SELECT 被标记为 DERIVED
   > - `UNION RESULT`： 从 UNION 表获取结果的 SELECT
 
-- `table`： 显示这一行数据是关于哪张表的
+- `table`： 当前执行计划查询的表，若给表起了别名，则显示别名信息
 
-- `partitions`
+- `partitions`：访问的分区表信息
 
 - `type`： 显示查询使用了何种类型，**建议参考**： [MySQL高级 之 explain执行计划详解](https://blog.csdn.net/wuseyukui/article/details/71512793)
 
-  > 最好到最差依次是： `system>const>eq_ref>ref>range>index>all`
+  > 最好到最差依次是： `system > const > eq_ref > ref > range > index > all`
   >
   > - `system`： 表只有一行记录，const 类型的特例
   >
@@ -3115,24 +3115,24 @@ LIMIT <limit_number>
   >
   > - `eq_ref`： 唯一性索引扫描，对于每个索引键，表中只有一条记录与之匹配，常见于主键或唯一索引扫描
   >
-  > - `ref`： 非唯一性索引扫描，返回匹配某个单独值的所有行
+  > - `ref`： 非唯一性索引扫描，返回匹配某个单独值的所有行，还可见于唯一索引最左原则匹配扫描
   >
   >   > - 本质是也是一种索引访问，它返回所有匹配某个单独值的行
   >   > - 可能会找到多个符合条件的行，所以应属于查找和扫描的混合体 
   >
-  > - `range`： 只检索给定范围的行，使用一个索引来选择行
+  > - `range`： 检索给定范围的行，使用一个索引来选择行，比如：`<、>、between` 等操作
   >
   >   > - key 列显示使用了那个索引
   >   > - 一般就是在where语句中出现了bettween、<、>、in等的查询
   >   > - 这种索引列上的范围扫描比全索引扫描要好
   >   > - 只需要开始于某个点，结束于另一个点，不用扫描全部索引 
   >
-  > - `index`： Full Index Scan，index与ALL区别为index类型只遍历索引树
+  > - `index`： Full Index Scan，即索引全表扫描，此时遍历整个索引树，index 与 ALL 区别为 index 类型只遍历索引树
   >
   >   > - 这通常为ALL块，因为索引文件通常比数据文件小
   >   > - Index与ALL虽然都是读全表，但index是从索引中读取，而ALL是从硬盘读取
   >
-  > - `all`： Full Table Scan，遍历全表以找到匹配的行 
+  > - `all`： Full Table Scan，遍历全表以找到匹配的行，需要遍历全表来找到对应的行
 
 - `possible_keys`： 查询涉及到的字段上存在索引，则该索引将被列出，但不一定被查询实际使用
 
@@ -3148,7 +3148,7 @@ LIMIT <limit_number>
 
 - `rows`： 根据表统计信息及索引选用情况，大致估算出找到所需的记录所需要读取的行数
 
-- `filtered`
+- `filtered`：查找到所需记录占总扫描记录数的比例
 
 - `Extra`： 不适合在其他字段中显示，但是十分重要的额外信息
 
@@ -3171,7 +3171,83 @@ LIMIT <limit_number>
   >
   > - `distinct`： 优化distinct操作，在找到第一个匹配的元祖后即停止找同样值得动作
 
-## 5、索引优化
+### (4)  通过 Show Profile 分析 SQL 执行性能
+
+```shell
+SHOW PROFILE [type [, type] ... ]
+[FOR QUERY n]
+[LIMIT row_count [OFFSET offset]]
+
+type参数：
+| ALL：显示所有开销信息
+| BLOCK IO：阻塞的输入输出次数
+| CONTEXT SWITCHES：上下文切换相关开销信息
+| CPU：显示CPU的相关开销信息 
+| IPC：接收和发送消息的相关开销信息
+| MEMORY ：显示内存相关的开销，目前无用
+| PAGE FAULTS ：显示页面错误相关开销信息
+| SOURCE ：列出相应操作对应的函数名及其在源码中的调用位置(行数) 
+| SWAPS：显示swap交换次数的相关开销信息
+```
+
+**`Profile` 作用**：可以分析执行线程的状态和时间，还支持进一步选择 `ALL、CPU、MEMORY、BLOCK IO、CONTEXT SWITCHES ` 等类型来查询 SQL 语句在不同系统资源上所消耗的时间
+
+- 可以通过 `select @@have_profiling` 查询是否支持该功能
+
+    ![](../../../pics/mysql/mysql_2.jpg)
+
+- `Show Profiles` 只显示最近发给服务器的 SQL 语句，默认记录最近已执行的 15 条记录，通过 `profiling_history_size` 增大该存储记录，最大值为 100
+
+    ![](../../../pics/mysql/mysql_1.jpg)
+
+- 获取 Query_ID 后，再通过 Show Profile for Query ID 语句，就能查看对应 Query_ID 的 SQL 语句在执行过程中线程的每个状态所消耗的时间
+
+    ![](../../../pics/mysql/mysql_3.jpg)
+
+## 5、常用的 SQL 优化
+
+### (1) 优化分页查询
+
+- 利用子查询优化分页查询：假设要查询的数据为 10020 行，则能否先查询出所需要的 20 行数据中的最小 ID 值，然后通过偏移量返回所需要的 20 行数据
+
+    >  即：通过索引覆盖扫描，使用子查询的方式来实现分页查询
+
+```sql
+#原语句
+select * from `demo`.`order` order by order_no limit 10000, 20;
+
+#优化后的子查询语句
+select * from `demo`.`order` 
+	where id > (select id from `demo`.`order` order by order_no limit 10000, 1) 
+	limit 20;
+```
+
+子查询遍历索引的范围跟上一个查询差不多，而主查询扫描了更多的行数，但执行时间却减少了，只有 0.004s
+
+- 因为返回行数只有 20 行，执行效率得到了明显的提升
+
+### (2) 优化 SELECT COUNT(*)
+
+通常在没有任何查询条件下的 COUNT(*)，MyISAM 的查询速度要明显快于 InnoDB：
+
+- MyISAM 存储引擎记录整个表的行数，在 COUNT(*) 查询操作时无需遍历表计算，直接获取该值即可
+- 而 InnoDB 存储引擎需要扫描表来统计具体的行数。
+
+> 注：当带上 where 条件语句后，MyISAM 跟 InnoDB 没有区别，都需要扫描表来进行行数的统计
+
+---
+
+优化操作：
+
+- **使用近似值**：当不需要精确的 COUNT 值时，可以使用 EXPLAIN 对表进行估算
+
+    > 执行 EXPLAIN 并不会真正去执行查询，而是返回一个估算的近似值
+
+- **增加汇总统计**：若需要一个精确的 COUNT 值，可以额外新增一个汇总统计表或缓存字段来统计需要的 COUNT 值
+
+    > 这种方式在新增和删除时有一定的成本，但却可以大大提升 COUNT() 的性能
+
+## 6、索引优化
 
 推荐阅读： **[MYSQL中IN与EXISTS的区别](https://blog.csdn.net/weixin_39539399/article/details/80851817)**
 
