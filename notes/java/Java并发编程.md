@@ -462,7 +462,7 @@ class Consumer implements Runnable{
     >
     > - `Condition` 接口定义的 `await、signal、signalAll` 相当于 `Object.wait()、Object.notify()、Object.notifyAll()`
 
-#### 5. 合理设置线程池大小，避免创建过多线程
+#### 5. 合理设置线程池大小
 
 - 线程池设置不宜过大，因为一旦线程池的线程总数超过系统所拥有的处理器数量，就会导致过多的上下文切换
 
@@ -483,7 +483,7 @@ class Consumer implements Runnable{
 
 ## 3、线程与协程
 
-### (1) 线程实现模型
+### (1) 三种线程模型
 
 实现线程主要有三种方式：
 
@@ -531,6 +531,10 @@ class Consumer implements Runnable{
 #### 3. `N:M` 线程模型
 
 - `N:M` 线程模型支持用户态线程通过 `LWP` 与内核线程连接，用户态的线程数量和内核态的 LWP 数量是 `N:M` 的映射关系
+
+---
+
+![](../../pics/concurrent/concurrent_80.jpg)
 
 #### 4. Java 线程与 Go 协程
 
@@ -659,6 +663,8 @@ i am alive
 ## 5、Ring Buffer
 
 推荐阅读： [Ring Buffer 有什么特别?](https://www.cnblogs.com/shanyou/archive/2013/02/04/2891300.html) 
+
+==阅读：[你应该知道的高性能无锁队列Disruptor](https://juejin.im/post/6844903648875528206)== 
 
 简介： 
 

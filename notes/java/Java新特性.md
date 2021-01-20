@@ -776,7 +776,7 @@ public void test8(){
 
     > `parallelStream` 开启线程数 = 内核数 - 1
     >
-    > **修改并行线程数**：
+    > **修改并行线程数**：==全局操作==，即将影响代码中所有的并行流，同时是 final 类型，整个 JVM 中只允许设置一次
     >
     > ```java
     > @PostConstruct
