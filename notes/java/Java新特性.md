@@ -908,7 +908,7 @@ List<Integer> transactionsIds = transactions.parallelStream()
 
 #### 1. Intermediate
 
-- `map/flatMap`：将 InputStream 的每一个元素，映射成 output Stream 的另一个元素
+- `map/flatMap`：将 InputStream 的每一个元素，映射成 outputStream 的另一个元素
 
     > - 转换大写：
     >
@@ -1196,87 +1196,92 @@ List<Integer> transactionsIds = transactions.parallelStream()
     >
     >  ```java
     >  public void test3(){
-    >      List<String> list = emps.stream().map(Employee::getName).collect(Collectors.toList());
-    >      list.forEach(System.out::println);
-    >      System.out.println("----------------------------------");
+    >    List<String> list = emps.stream().map(Employee::getName).collect(Collectors.toList());
+    >    list.forEach(System.out::println);
+    >    System.out.println("----------------------------------");
     >  
-    >      Set<String> set = emps.stream().map(Employee::getName).collect(Collectors.toSet());
-    >      set.forEach(System.out::println);
-    >      System.out.println("----------------------------------");
+    >    Set<String> set = emps.stream().map(Employee::getName).collect(Collectors.toSet());
+    >    set.forEach(System.out::println);
+    >    System.out.println("----------------------------------");
     >  
-    >      HashSet<String> hs = emps.stream()
-    >          					   .map(Employee::getName)
-    >          					   .collect(Collectors.toCollection(HashSet::new));
-    >      hs.forEach(System.out::println);
+    >    HashSet<String> hs = emps.stream()
+    >        					   .map(Employee::getName)
+    >        					   .collect(Collectors.toCollection(HashSet::new));
+    >    hs.forEach(System.out::println);
     >  }
     >  
     >  public void test4(){
-    >      Optional<Double> max = emps.stream()
-    >          					     .map(Employee::getSalary)
-    >          					     .collect(Collectors.maxBy(Double::compare));
-    >      System.out.println(max.get());
+    >    Optional<Double> max = emps.stream()
+    >        					     .map(Employee::getSalary)
+    >        					     .collect(Collectors.maxBy(Double::compare));
+    >    System.out.println(max.get());
     >  
-    >      Optional<Employee> op = emps.stream()
-    >          						  .collect(Collectors.minBy((e1, e2) -> 
-    >                          							Double.compare(e1.getSalary(), e2.getSalary())));
-    >      System.out.println(op.get());
+    >    Optional<Employee> op = emps.stream()
+    >        						  .collect(Collectors.minBy((e1, e2) -> 
+    >                        							Double.compare(e1.getSalary(), e2.getSalary())));
+    >    System.out.println(op.get());
     >  
-    >      Double sum = emps.stream().collect(Collectors.summingDouble(Employee::getSalary));
-    >      System.out.println(sum);
+    >    Double sum = emps.stream().collect(Collectors.summingDouble(Employee::getSalary));
+    >    System.out.println(sum);
     >  
-    >      Double avg = emps.stream().collect(Collectors.averagingDouble(Employee::getSalary));
-    >      System.out.println(avg);
+    >    Double avg = emps.stream().collect(Collectors.averagingDouble(Employee::getSalary));
+    >    System.out.println(avg);
     >  
-    >      Long count = emps.stream().collect(Collectors.counting());
-    >      System.out.println(count);
+    >    Long count = emps.stream().collect(Collectors.counting());
+    >    System.out.println(count);
     >  
-    >      DoubleSummaryStatistics dss = emps.stream()
-    >          							    .collect(Collectors.summarizingDouble(Employee::getSalary));
-    >      System.out.println(dss.getMax());
+    >    DoubleSummaryStatistics dss = emps.stream()
+    >        							    .collect(Collectors.summarizingDouble(Employee::getSalary));
+    >    System.out.println(dss.getMax());
     >  }
     >  
     >  //分组
     >  public void test5(){
-    >      Map<Status, List<Employee>> map = emps.stream()
+    >    Map<Status, List<Employee>> map = emps.stream()
     >  										.collect(Collectors.groupingBy(Employee::getStatus));
-    >      System.out.println(map);
+    >    System.out.println(map);
     >  }
     >  
     >  //多级分组
     >  public void test6(){
-    >      Map<Status, Map<String, List<Employee>>> map = emps.stream()
-    >          		.collect(Collectors.groupingBy(Employee::getStatus, Collectors.groupingBy((e) -> {
-    >                      if(e.getAge() >= 60)
-    >                          return "老年";
-    >                      else if(e.getAge() >= 35)
-    >                          return "中年";
-    >                      else
-    >                          return "成年";
-    >                  })));
-    >      System.out.println(map);
+    >    Map<Status, Map<String, List<Employee>>> map = emps.stream()
+    >        		.collect(Collectors.groupingBy(Employee::getStatus, Collectors.groupingBy((e) -> {
+    >                    if(e.getAge() >= 60)
+    >                        return "老年";
+    >                    else if(e.getAge() >= 35)
+    >                        return "中年";
+    >                    else
+    >                        return "成年";
+    >                })));
+    >    System.out.println(map);
     >  }
     >  
     >  //分区
     >  @Test
     >  public void test7(){
-    >      Map<Boolean, List<Employee>> map = emps.stream()
-    >          							.collect(Collectors.partitioningBy((e) -> e.getSalary() >= 5000));
-    >      System.out.println(map);
+    >    Map<Boolean, List<Employee>> map = emps.stream()
+    >        							.collect(Collectors.partitioningBy((e) -> e.getSalary() >= 5000));
+    >    System.out.println(map);
     >  }
     >  
     >  public void test8(){
-    >      String str = emps.stream()
-    >          			   .map(Employee::getName)
-    >          			   .collect(Collectors.joining("," , "----", "----"));
-    >      System.out.println(str);
+    >    String str = emps.stream()
+    >        			   .map(Employee::getName)
+    >        			   .collect(Collectors.joining("," , "----", "----"));
+    >    System.out.println(str);
     >  }
     >  
     >  public void test9(){
-    >      Optional<Double> sum = emps.stream()
-    >          					     .map(Employee::getSalary)
-    >          					     .collect(Collectors.reducing(Double::sum));
-    >      System.out.println(sum.get());
+    >    Optional<Double> sum = emps.stream()
+    >        					     .map(Employee::getSalary)
+    >        					     .collect(Collectors.reducing(Double::sum));
+    >    System.out.println(sum.get());
     >  }
+    >  
+    >  //去重: collectingAndThen
+    >  List<FeaturePlanParam> top1List = packageTop2List.stream()
+    >      .collect(Collectors.collectingAndThen(Collectors.toCollection(
+    >                  () -> new TreeSet<>(Comparator.comparing(p -> p.getUser))), ArrayList::new));
     >  ```
 
 - `findFirst`：termimal 兼 short-circuiting 操作，总是返回 Stream 的第一个元素或空，返回值类型为 `Optional` 

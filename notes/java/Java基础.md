@@ -490,9 +490,8 @@ location.set(messageInfo.getLatitude());
 
 > **强烈推荐**： ==[Java 有值类型吗](www.yinwang.org/blog-cn/2016/06/08/java-value-type)== 
 
-- **Java 的参数是以值传递的形式传入方法中**，而不是引用传递
-- 形参是基本数据类型：将实参的值传递给形参的基本数据类型的变量
-- 形参是引用数据类型：将实参的引用（对应的堆空间的对象实体的首地址值）传递给形参的引用类型变量
+- **形参是基本数据类型**：将实参的值传递给形参的基本数据类型的变量
+- **形参是引用数据类型**：将实参的引用（对应的堆空间的对象实体的首地址值）传递给形参的引用类型变量
 
 > - 值传递： 传递该变量的副本，改变副本不影响原变量
 >
@@ -636,6 +635,16 @@ switch((s = str).hashCode())
 ```
 
 [StackOverflow : Why can't your switch statement data type be long, Java?](https://stackoverflow.com/questions/2676210/why-cant-your-switch-statement-data-type-be-long-java)
+
+## 5、&&与&、||与|
+
+- `&&`(短路与)：当第一个条件为 false 时，直接返回，不会对后续进行判断
+- `&`：要对所有的条件进行判断
+
+---
+
+- `||`(短路或)：只要满足第一个条件，后面的条件就不再判断
+- `|`：要对所有的条件进行判断
 
 # 四、继承
 
