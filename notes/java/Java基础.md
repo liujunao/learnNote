@@ -1592,7 +1592,24 @@ abstract：抽象的，可以用来修饰类、方法
 6. 接口与接口之间也是继承的关系，而且可以实现多继承
 7. 接口与具体的实现类之间也存在多态性
 
-## 7、代码块
+## 7、assert
+
+- 推荐阅读：[使用断言](https://www.liaoxuefeng.com/wiki/1252599548343744/1264740093521088) 
+
+两种使用方式：`assert <boolean表达式>` 或 `assert <boolean表达式> : <错误信息表达式>` 
+
+- 若 <boolean表达式> 为 true，则程序继续执行
+- 若为 false，则程序抛出 java.lang.AssertionError，并输入<错误信息表达式>(方式二才有)
+
+---
+
+**开启断言**：
+
+- 传递 JVM 参数 `-enableassertions`(简写为 `-ea`)来启用断言
+- 对特定类启用断言，如：`-ea:com.itranswarp.sample.Main` 表示只对 `com.itranswarp.sample.Main` 这个类启用断言
+- 对特定包启用断言，如：`-ea:com.itranswarp.sample...` 表示对 `com.itranswarp.sample` 这个包启动断言
+
+## 8、代码块
 
 执行顺序：静态代码块>mian方法>构造代码块>构造方法
 作用：用来初始化类的属性

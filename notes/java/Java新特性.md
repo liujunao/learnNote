@@ -233,36 +233,9 @@ public void test7(){
 }
 ```
 
-## 2、接口扩展
+## 2、接口默认方法
 
-### (1) 函数式接口
-
-**函数式接口**：只有**一个抽象方法的接口**，可以使用注解 `@FunctionalInterface` 检查是否是函数式接口
-
-> Lambda 表达式需要**函数式接口**支持
-
-```java
-//声明函数式接口
-@FunctionalInterface
-public interface MyFun {
-	public Integer getValue(Integer num);
-}
-
-//对一个数进行运算
-@Test
-public void test(){
-    Integer num = operation(100, (x) -> x * x);
-    System.out.println(num);
-
-    System.out.println(operation(200, (y) -> y + 200));
-}
-
-public Integer operation(Integer num, MyFun mf){
-    return mf.getValue(num);
-}
-```
-
-### (2) 接口的默认方法和静态方法
+### (1) 默认方法与静态方法对比
 
 - **默认方法**：可以在不破坏二进制兼容性的前提下，往现存接口中添加新方法
 
@@ -311,9 +284,7 @@ public Integer operation(Integer num, MyFun mf){
     Overridden implementation
     ```
 
----
-
-**接口默认方法案例**：
+### (2) 接口默认方法案例
 
 - 接口默认方法的**类优先原则**：若一个父类提供了具体的实现，则接口中具有相同名称和参数的默认方法会被忽略
 
@@ -384,9 +355,36 @@ public Integer operation(Integer num, MyFun mf){
     }
     ```
 
-### (3) Java 内置四大核心函数式接口
+## 3、函数式接口
 
-#### 1. Function 功能型函数式接口
+**函数式接口**：只有**一个抽象方法的接口**，可以使用注解 `@FunctionalInterface` 检查是否是函数式接口
+
+> Lambda 表达式需要**函数式接口**支持
+
+```java
+//声明函数式接口
+@FunctionalInterface
+public interface MyFun {
+	public Integer getValue(Integer num);
+}
+
+//对一个数进行运算
+@Test
+public void test(){
+    Integer num = operation(100, (x) -> x * x);
+    System.out.println(num);
+
+    System.out.println(operation(200, (y) -> y + 200));
+}
+
+public Integer operation(Integer num, MyFun mf){
+    return mf.getValue(num);
+}
+```
+
+### (1) Function 功能型函数式接口
+
+#### 1. `Function<T,R>`
 
 `Function` 接口：接受一个输入参数 `T`，返回一个结果 `R` 
 
@@ -400,19 +398,19 @@ public interface Function<T, R> {
     // 接受输入参数，对输入执行所需操作后，返回一个结果
     R apply(T t);
 
-    // 返回一个先执行 before 函数对象 apply 方法，再执行当前函数对象 apply 方法的函数对象
+    // 先做传入的 Function 类型的参数的 apply 操作，再做当前这个接口的 apply 操作
     default <V> Function<V, R> compose(Function<? super V, ? extends T> before) {
        Objects.requireNonNull(before);
        return (V v) -> apply(before.apply(v));
     }
 
-    // 返回一个先执行当前函数对象 apply 方法， 再执行 after 函数对象 apply 方法的函数对象
+    // 先做本接口的 apply 操作，再做传入的 Function 类型的参数的 apply 操作
     default <V> Function<T, V> andThen(Function<? super R, ? extends V> after) {
         Objects.requireNonNull(after);
         return (T t) -> after.apply(apply(t));
     }   
 
-    // 返回一个执行了 apply() 方法之后只会返回输入参数的函数对象
+    // 静态方法表示，这个传入的泛型参数 T 本身
     static <T> Function<T, T> identity() {
         return t -> t;
     } 
@@ -421,47 +419,135 @@ public interface Function<T, R> {
 
 ---
 
-**案例一**：
+**案例**：
 
-```java
-public class FunctionDemo {
-    static int modifyTheValue(int valueToBeOperated, Function<Integer, Integer> function) {
-        return function.apply(valueToBeOperated);
+- **案例一**：`compose` 与 `andThen` 使用详解
+
+    ```java
+    public class TestFunction {
+        public static void main(String[] args) {
+            Function<Integer, Integer> times2 = i -> i * 3;
+            Function<Integer, Integer> squared = i -> i * i;
+    
+            System.out.println(times2.apply(4)); //12
+            System.out.println(squared.apply(4)); //16
+    
+            //先4×4然后16×2,先执行apply(4)，在times2的apply(16),先执行参数，再执行调用者
+            System.out.println(times2.compose(squared).apply(4));  //48
+            //先4×2,然后8×8,先执行times2的函数，在执行squared的函数
+            System.out.println(times2.andThen(squared).apply(4));  //144
+            System.out.println(Function.identity().compose(squared).apply(4));   //16
+            System.out.println(times2.compose(squared).andThen(times2).compose(squared).apply(2)); //144
+        }
     }
+    ```
 
+- **案例二**：`Function` 作为参数的使用
+
+    ```java
+    public class FunctionDemo {
+        static int modifyTheValue(int valueToBeOperated, Function<Integer, Integer> function) {
+            return function.apply(valueToBeOperated);
+        }
+    
+        public static void main(String[] args) {
+            int myNumber = 10;
+            //方式一：lambda 表达式实现
+            int res1 = modifyTheValue(myNumber, x -> x + 20);
+            System.out.println(res1); //30
+    
+            //方式二：匿名内部类实现
+            int res2 = modifyTheValue(myNumber, new Function<Integer, Integer>() {
+                @Override
+                public Integer apply(Integer t) {
+                    return t + 20;
+                }
+            });
+            System.out.println(res2); //30
+        }
+    }
+    ```
+
+- **案例三**：综合使用
+
+    ```java
+    public static Integer modifyTheValue2(int value, Function<Integer, Integer> function1, 
+                                          		Function<Integer, Integer> function2){
+             //value作为function1的参数，返回一个结果，该结果作为function2的参数，返回一个最终结果
+             return  function1.andThen(function2).apply(value);
+        }
+    
     public static void main(String[] args) {
-        int myNumber = 10;
-        //方式一：lambda 表达式实现
-        int res1 = modifyTheValue(myNumber, x -> x + 20);
-        System.out.println(res1); //30
-
-        //方式二：匿名内部类实现
-        int res2 = modifyTheValue(myNumber, new Function<Integer, Integer>() {
-            @Override
-            public Integer apply(Integer t) {
-                return t + 20;
-            }
-        });
-        System.out.println(res2); //30
+        System.out.println(modifyTheValue2(3, val -> val + 2, val -> val + 3));
     }
-}
-```
+    ```
 
-**案例二**：
+#### 2. `Function` 类函数
+
+- `DoubleFunction<R>`：代表接受一个double值参数的方法，并且返回结果
+
+- `IntFunction<R>`：接受一个 int 类型输入参数，返回一个结果
+
+- `LongFunction<R>`：接受一个 long 类型输入参数，返回一个结果
+
+- `DoubleToIntFunction`：接受一个double类型输入，返回一个int类型结果
+
+- `DoubleToLongFunction`：接受一个double类型输入，返回一个long类型结果
+
+- `IntToDoubleFunction`：接受一个 int 类型输入，返回一个 double 类型结果
+
+- `IntToLongFunction`：接受一个 int 类型输入，返回一个 long 类型结果
+
+- `LongToDoubleFunction`：接受一个 long 类型输入，返回一个 double 类型结果
+
+- `LongToIntFunction`：接受一个 long 类型输入，返回一个 int 类型结果
+
+- `ToDoubleFunction<T>`：接受一个输入参数，返回一个double类型结果
+
+- `ToIntFunction<T>`：接受一个输入参数，返回一个int类型结果
+
+- `ToLongFunction<T>`：接受一个输入参数，返回一个long类型结果
+
+#### 3. `BiFunction<T,U,R>`
+
+> 代表了一个接受两个输入参数的方法，并且返回一个结果
 
 ```java
-public static Integer modifyTheValue2(int value, Function<Integer, Integer> function1, 
-                                      		Function<Integer, Integer> function2){
-         //value作为function1的参数，返回一个结果，该结果作为function2的参数，返回一个最终结果
-         return  function1.andThen(function2).apply(value);
+@FunctionalInterface
+public interface BiFunction<T, U, R> {
+    // 先做本接口的 apply 操作，再做传入的 Function 类型的参数的 apply 操作
+    default <V> BiFunction<T, U, V> andThen(Function<? super R, ? extends V> after) {
+        Objects.requireNonNull(after);
+        return (T t, U u) -> after.apply(apply(t, u));
     }
-
-public static void main(String[] args) {
-    System.out.println(modifyTheValue2(3, val -> val + 2, val -> val + 3));
 }
 ```
 
-#### 2. Consumer 消费型函数式接口
+---
+
+**案例**：
+
+```java
+public int compute(int a, int b, BiFunction<Integer, Integer, Integer> biFunction, 
+                    Function<Integer, Integer> function) {
+    return biFunction.andThen(function).apply(a, b);
+}
+
+//首先执行(v1, v2) -> v1 + v2，然后执行 v1 -> v1 * v1
+test.compute4(2, 3, (v1, v2) -> v1 + v2, v1 -> v1 * v1) 
+```
+
+#### 4. `BiFunction` 类函数
+
+- `ToDoubleBiFunction<T,U>`：接受两个输入参数，返回一个 double 类型结果
+
+- `ToIntBiFunction<T,U>`：接受两个输入参数，返回一个 int 类型结果
+
+- `ToLongBiFunction<T,U>`：接受两个输入参数，返回一个 long 类型结果
+
+### (2) Consumer 消费型函数式接口
+
+#### 1. `Consumer<T>` 
 
 `Consumer` 接口：接受一个输入参数并且无返回的操作
 
@@ -470,6 +556,7 @@ public static void main(String[] args) {
 public interface Consumer<T> {
     void accept(T t);
     
+    //先做本接口的 accept 操作，然后在做传入的 Consumer 类型的参数的 accept 操作
     default Consumer<T> andThen(Consumer<? super T> after) {
         Objects.requireNonNull(after);
         return (T t) -> { accept(t); after.accept(t); };
@@ -481,66 +568,189 @@ public interface Consumer<T> {
 
 **案例**：
 
-```java
-@Test
-public void test(){
-    happy(10000, (m) -> System.out.println("每次消费：" + m + "元"));
-} 
+- **案例一**：
 
-public void happy(double money, Consumer<Double> con){
-    con.accept(money);
+    ```java
+    List<Person> lisiList = new ArrayList<>();
+    Consumer <Person> consumer  =  x -> {
+        if (x.name.equals("lisi")){
+            lisiList.add(x);
+        }
+    };
+    
+    Stream.of(
+            new Person(21,"zhangsan"),
+            new Person(22,"lisi"),
+            new Person(23,"wangwu"),
+            new Person(24,"wangwu"),
+            new Person(23,"lisi"),
+            new Person(26,"lisi"),
+            new Person(26,"zhangsan")
+    ).forEach(consumer);
+    
+    System.out.println(JSON.toJSONString(lisiList));
+    
+    //结果：
+    [{"age":22,"name":"lisi"},{"age":23,"name":"lisi"},{"age":26,"name":"lisi"}]
+    ```
+
+- **案例二**：
+
+    ```java
+     List<Person> lisiList = new ArrayList<>();
+    Consumer <Person> consumer  =  x -> {
+        if (x.name.equals("lisi")){
+            lisiList.add(x);
+        }
+    };
+    
+    consumer = consumer.andThen(
+       x -> lisiList.removeIf(y -> y.age < 23)
+    );
+    
+    Stream.of(
+            new Person(21,"zhangsan"),
+            new Person(22,"lisi"),
+            new Person(23,"wangwu"),
+            new Person(24,"wangwu"),
+            new Person(23,"lisi"),
+            new Person(26,"lisi"),
+            new Person(26,"zhangsan")
+    ).forEach(consumer);
+    
+    System.out.println(JSON.toJSONString(lisiList));
+    
+    //结果：
+    [{"age":23,"name":"lisi"},{"age":26,"name":"lisi"}]
+    ```
+
+#### 2. `BiConsumer<T,U>`
+
+> 代表了一个接受两个输入参数的操作，并且不返回任何结果
+
+```java
+@FunctionalInterface
+public interface BiConsumer<T, U> {
+    void accept(T t, U u);
+
+    default BiConsumer<T, U> andThen(BiConsumer<? super T, ? super U> after) {
+        Objects.requireNonNull(after);
+        return (l, r) -> {
+            accept(l, r);
+            after.accept(l, r);
+        };
+    }
 }
 ```
 
-#### 3. Supplier 供给型函数式接口
+---
+
+**案例**：
+
+```java
+public static void main(String[] args) {
+    BiConsumer<Integer, Integer> action1 = (x, y) -> {
+        System.out.println("对传进来的进行相加操作: " + (x + y));
+    };
+    BiConsumer<Integer, Integer> action2 = (x, y) -> {
+        System.out.println("对传进来的进行相减操作: " + (x - y));
+    };
+    BiConsumer<Integer, Integer> anction3 = action1.andThen(action2);
+
+    //先执行加法在执行减法
+    System.out.println("执行anction1");
+    action1.accept(1, 1);
+    System.out.println("执行anction2");
+    action2.accept(1, 1);
+    System.out.println("执行anction3");
+    anction3.accept(1, 1);
+}
+
+//结果：
+执行anction1
+对传进来的进行相加操作: 2
+执行anction2
+对传进来的进行相减操作: 0
+执行anction3
+对传进来的进行相加操作: 2
+对传进来的进行相减操作: 0
+```
+
+#### 3. `Consumer` 类函数
+
+- `DoubleConsumer`：代表一个接受 double 值参数的操作，并且不返回结果
+
+- `IntConsumer`
+
+- `LongConsumer`：接受一个 long 类型的输入参数，无返回值
+
+- `ObjDoubleConsumer<T>`：接受一个 object 类型和一个 double 类型的输入参数，无返回值
+
+- `ObjIntConsumer<T>`：接受一个 object 类型和一个 int 类型的输入参数，无返回值
+
+- `ObjLongConsumer<T>`：接受一个 object 类型和一个 long 类型的输入参数，无返回值
+
+### (3) Supplier 供给型函数式接口
+
+#### 1. `Supplier<T>` 
 
 `Supplier` 接口：无参数，返回一个结果
 
 ```java
 @FunctionalInterface
 public interface Supplier<T> {
-    T get();
+    T get(); //获取提供的对象实例
 }
 ```
 
 ---
 
-案例：
+**案例**：
 
 ```java
-public static String supplierTest(Supplier<String> supplier) {  
-    return supplier.get();  
-}  
-
-public static void main(String args[]) {
-    String name = "冷冷";
-    System.out.println(supplierTest(() -> name.length() + "")); //2
-}
+Supplier <Double>  supplier = () -> Math.random();
+System.out.println(supplier.get());
 ```
 
-#### 4. Predicate 断言型函数式接口
+#### 2. `Supplier` 类函数
+
+- `BooleanSupplier`：代表了 boolean 值结果的提供方
+
+- `DoubleSupplier`：代表一个 double 值结构的提供方
+
+- `IntSupplier`：无参数，返回一个 int 类型结果
+
+- `LongSupplier`：无参数，返回一个结果 long 类型的值
+
+### (4) Predicate 断言型函数式接口
+
+#### 1. `Predicate<T>` 
 
 `Predicate` 接口：接受一个输入参数，返回一个布尔值结果
 
 ```java
 @FunctionalInterface
 public interface Predicate<T> {
-    boolean test(T t);
+    boolean test(T t); //用于处理参数 T，判断是否满足要求
     
+    //调用当前 Predicate 的 test 方法后，再调用 other 的 test 方法(相当于进行两次判断)
     default Predicate<T> and(Predicate<? super T> other) {
         Objects.requireNonNull(other);
         return (t) -> test(t) && other.test(t);
     }
     
+    //对当前判断进行"!"操作，即取非操作
     default Predicate<T> negate() {
         return (t) -> !test(t);
     }
     
+    //对当前判断进行"||"操作，即取或操作
     default Predicate<T> or(Predicate<? super T> other) {
         Objects.requireNonNull(other);
         return (t) -> test(t) || other.test(t);
     }
     
+    //对当前操作进行"="操作，即取等操作
     static <T> Predicate<T> isEqual(Object targetRef) {
         return (null == targetRef) ? Objects::isNull : object -> targetRef.equals(object);
     }
@@ -549,70 +759,256 @@ public interface Predicate<T> {
 
 ---
 
-**案例一**：
+- **案例一**：`test(T t)` 测试
 
-```java
-public static boolean predicateTest(int value, Predicate<Integer> predicate) {
-    return predicate.test(value);
-}
+    ```java
+    Predicate<Integer> predicate = x -> x >  0;
+    System.out.println(predicate.test(100));
+    
+    //结果：
+    true
+    ```
 
-public static void main(String[] args) {
-    System.out.println(predicateTest(3, (x) -> x == 3)); //true
-}
-```
+- **案例二**：`and(Predicate<? super T> other)` 测试
 
-**案例二**：
+    ```java
+    Predicate<Integer> predicate = x -> x > 100;
+    predicate = predicate.and(x -> x % 2 == 0 );
+    System.out.println(predicate.test(98)); //false
+    System.out.println(predicate.test(102)); //true
+    System.out.println(predicate.test(103)); //false
+    ```
 
-```java
-public static void eval(List<Integer> list, Predicate<Integer> predicate) {
-    for (Integer n : list) {
-        if (predicate.test(n)) {
-            System.out.print(n + " ");
+- **案例三**：`negate()` 测试
+
+    ```java
+    Predicate<Person> personPredicate = x -> x.age > 22;
+    System.out.println(
+        Stream.of(
+                new Person(21,"zhangsan"),
+                new Person(22,"lisi"),
+                new Person(23,"wangwu"),
+                new Person(24,"wangwu"),
+                new Person(25,"lisi"),
+                new Person(26,"zhangsan")
+        ).filter(personPredicate.negate())
+        .count()
+    );
+    
+    //结果：
+    
+    ```
+
+- **案例四**：`or(Predicate<? super T> other)` 测试
+
+    ```java
+    Predicate<Person> predicate =  x -> x.name.equals("lisi");
+    predicate = predicate.or(x -> x.age > 25);
+    System.out.println(
+        Stream.of(
+                new Person(21,"zhangsan"),
+                new Person(22,"lisi"),
+                new Person(23,"wangwu"),
+                new Person(24,"wangwu"),
+                new Person(25,"lisi"),
+                new Person(26,"zhangsan")
+        ).filter(predicate)
+        .count()
+    );
+    
+    //结果：
+    3
+    ```
+
+- **案例五**：`isEqual(Object targetRef)` 测试
+
+    ```java
+    Person person = new Person(22,"lisi");
+    Predicate<Person> predicate =  Predicate.isEqual(person);
+    System.out.println(
+        Stream.of(
+                new Person(21,"zhangsan"),
+                new Person(22,"lisi"),
+                new Person(23,"wangwu"),
+                new Person(24,"wangwu"),
+                new Person(22,"lisi"),
+                new Person(26,"zhangsan")
+        ).filter(predicate)
+        .count()
+    );
+    
+    //结果：
+    2
+    
+    @Data
+    class Person{
+        private int age;
+        private String name;
+        public Person(int age, String name) {
+            this.age = age;
+            this.name = name;
+        }
+        
+        @Override
+        public boolean equals(Object o) {
+            if (this == o) return true;
+            if (o == null || getClass() != o.getClass()) return false;
+            Person person = (Person) o;
+            if (age != person.age || !name.equals(person.name)) return false;
+            return true;
+        }
+        
+        @Override
+        public int hashCode() {
+            int result = age;
+            result = 31 * result + name.hashCode();
+            return result;
         }
     }
-}
+    ```
 
-public static void main(String args[]) {
-    List<Integer> list = Arrays.asList(1, 2, 3, 4, 5, 6, 7, 8, 9);
-    System.out.println("输出所有数据:");
-    eval(list, n -> true); //传递参数 n
+#### 2. `BiPredicate<T,U>`
 
-    System.out.println("\n输出所有偶数:");
-    eval(list, n -> n % 2 == 0);
-
-    System.out.println("\n输出大于 3 的所有数字:");
-    eval(list, n -> n > 3);
-}
-
-//结果
-输出所有数据:
-1 2 3 4 5 6 7 8 9 
-输出所有偶数:
-2 4 6 8 
-输出大于 3 的所有数字:
-4 5 6 7 8 9
-```
-
-**案例三**：
+> 代表了一个两个参数的boolean值方法
 
 ```java
-public static boolean validInput(String name, Predicate<String> function) {  
-    return function.test(name);  
-}  
+@FunctionalInterface
+public interface BiPredicate<T, U> {
+    boolean test(T t, U u);
 
-public static void main(String args[]) {
-    String name = "冷冷";
-    if(validInput(name, s -> !s.isEmpty() &&  s.length() <= 3 )) {
-        System.out.println("名字输入正确");
+    default BiPredicate<T, U> and(BiPredicate<? super T, ? super U> other) {
+        Objects.requireNonNull(other);
+        return (T t, U u) -> test(t, u) && other.test(t, u);
+    }
+
+    default BiPredicate<T, U> negate() {
+        return (T t, U u) -> !test(t, u);
+    }
+
+    default BiPredicate<T, U> or(BiPredicate<? super T, ? super U> other) {
+        Objects.requireNonNull(other);
+        return (T t, U u) -> test(t, u) || other.test(t, u);
     }
 }
 ```
 
-### (4) 其他接口
+---
 
-<img src="../../pics/java/javaN_1.png" align=left>
+**案例**：
 
-## 3、方法引用与构造器引用
+```java
+public static void main(String[] args) {
+    BiPredicate<String, Integer> filter = (x, y) -> x.length() == y;
+
+    boolean result = filter.test("mkyong", 6);
+    System.out.println(result);  // true
+
+    boolean result2 = filter.test("java", 10);
+    System.out.println(result2); // false
+}
+```
+
+#### 3. `Predicate` 类函数
+
+- `DoublePredicate`：接受一个 double 输入参数，返回一个布尔值的结果
+
+- `IntPredicate`：接受一个 int 输入参数，返回一个布尔值的结果
+
+- `LongPredicate`：接受一个 long 输入参数，返回一个布尔值类型结果
+
+### (5) Operator
+
+> `Operator` 继承自 `Function` 
+
+#### 1. `UnaryOperator<T>`
+
+> 接受一个参数为类型T,返回值类型也为T
+
+```java
+@FunctionalInterface
+public interface UnaryOperator<T> extends Function<T, T> {
+    static <T> UnaryOperator<T> identity() {
+        return t -> t;
+    }
+}
+```
+
+---
+
+**案例**：
+
+```java
+UnaryOperator<Integer> dda = x -> x + 1;
+System.out.println(dda.apply(10)); // 11
+
+UnaryOperator<String> ddb = x -> x + 1;
+System.out.println(ddb.apply("aa")); // aa1
+```
+
+#### 2. `BinaryOperator<T>`
+
+> 代表了一个作用于两个同类型操作符的操作，并且返回了操作符同类型的结果
+
+```java
+@FunctionalInterface
+public interface BinaryOperator<T> extends BiFunction<T,T,T> {
+    public static <T> BinaryOperator<T> minBy(Comparator<? super T> comparator) {
+        Objects.requireNonNull(comparator);
+        return (a, b) -> comparator.compare(a, b) <= 0 ? a : b;
+    }
+
+    public static <T> BinaryOperator<T> maxBy(Comparator<? super T> comparator) {
+        Objects.requireNonNull(comparator);
+        return (a, b) -> comparator.compare(a, b) >= 0 ? a : b;
+    }
+}
+```
+
+---
+
+**案例**：
+
+- **案例一**：
+
+    ```java
+    public static void main(String[] args) {
+        BinaryOperator<Integer> add = (n1, n2) -> n1 + n2;
+        //apply方法用于接收参数，并返回BinaryOperator中的Integer类型
+        System.out.println(add.apply(3, 4));
+    }
+    
+    //结果：7
+    ```
+
+- **案例二**：
+
+    ```java
+    public static void main(String[] args) {
+        BinaryOperator<Integer> bi = BinaryOperator.minBy(Comparator.naturalOrder());
+        System.out.println(bi.apply(2, 3)); //2
+    }
+    
+    public static void main(String[] args) {
+        BinaryOperator<Integer> bi = BinaryOperator.minBy(Comparator.naturalOrder());
+        System.out.println(bi.apply(2, 3)); //3
+    }
+    ```
+
+#### 3. 其他 Operator 函数
+
+- `DoubleBinaryOperator`：代表了作用于两个double值操作符的操作，并且返回了一个double值的结果
+
+- `IntBinaryOperator`：接受两个参数同为类型 Int，返回值类型也为 Int
+
+- `LongBinaryOperator`：接受两个参数同为类型 long，返回值类型也为 long
+
+- `DoubleUnaryOperator`：接受一个参数同为类型 double，返回值类型也为 double
+
+- `IntUnaryOperator`：接受一个参数同为类型 Int，返回值类型也为 Int
+
+- `LongUnaryOperator`：接受一个参数同为类型 long，返回值类型也为 long
+
+## 4、方法引用与构造器引用
 
 ### (1) 方法引用
 
@@ -747,7 +1143,7 @@ public void test8(){
 }
 ```
 
-## 4、Stream
+## 5、Stream
 
 推荐阅读：**[Java 8 中的 Streams API 详解(IBM)](https://developer.ibm.com/zh/technologies/java/articles/j-lo-java8streamapi/)** 
 
@@ -821,122 +1217,69 @@ List<Integer> transactionsIds = transactions.parallelStream()
 
 ### (2) Stream 的构造与转换
 
-**生成 Stream Source 的多种方式**：
+#### 1. 由集合创建 Stream
 
-- 从 Collection 和数组
-    - `Collection.stream()`
-    - `Collection.parallelStream()`
-    - `Arrays.stream(T array) or Stream.of()`
+```java
+List<String> list = new ArrayList<>();
+Stream<String> stream = list.stream(); //获取一个顺序流
+Stream<String> parallelStream = list.parallelStream(); //获取一个并行流
+```
 
-- 从 BufferedReader：`java.io.BufferedReader.lines()`
+#### 2. 由数组创建 Stream
 
-- 静态工厂
-    - `java.util.stream.IntStream.range()`
-    - `java.nio.file.Files.walk()`
-- 自己构建：`java.util.Spliterator`
+```java
+String [] strArray = new String[] {"a", "b", "c"};
+Stream stream = Stream.of(strArray); //Stream.of 
+stream = Arrays.stream(strArray); //Arrays.stream
+```
 
-- 其它
-    - `Random.ints()`
-    - `BitSet.stream()`
-    - `Pattern.splitAsStream(java.lang.CharSequence)`
-    - `JarFile.stream()`
+#### 3. 由值创建 Stream
 
----
+```java
+//方式一：Stream.of
+Stream stream = Stream.of("a", "b", "c");
+//方式二：IntStream.of
+IntStream.of(new int[]{1, 2, 3}).forEach(System.out::println);
+//方式三：IntStream.range
+IntStream.range(1, 3).forEach(System.out::println);
+//方式四：IntStream.rangeClosed
+IntStream.rangeClosed(1, 3).forEach(System.out::println);
+```
 
-- **常见构造 Stream 的方法**：
+#### 4. 由函数创建流
 
-    ```java
-    // 1. Individual values
-    Stream stream = Stream.of("a", "b", "c");
-    // 2. Arrays
-    String [] strArray = new String[] {"a", "b", "c"};
-    stream = Stream.of(strArray);
-    stream = Arrays.stream(strArray);
-    // 3. Collections
-    List<String> list = Arrays.asList(strArray);
-    stream = list.stream();
-    // 4. concat
-    Stream<Integer> firstStream = Stream.of(1, 2, 3);
-    Stream<Integer> secondStream = Stream.of(4, 5, 6);
-    Stream<Integer> resultingStream = Stream.concat(firstStream, secondStream);
-    ```
+```java
+//方式一：Stream.iterate
+Stream.iterate(1, (x) -> x + 1).forEach(System.out::println);
+//方式二：Stream.generate
+Stream.generate(() -> Math.random()).forEach(System.out::println);
+//方式三：Stream.concat
+Stream<Integer> firstStream = Stream.of(1, 2, 3);
+Stream<Integer> secondStream = Stream.of(4, 5, 6);
+Stream<Integer> resultingStream = Stream.concat(firstStream, secondStream);
+```
 
-    > 三种基本数值型对应的包装类型 Stream：`IntStream、LongStream、DoubleStream`
+#### 5. 流的转换
 
-- **数值流的构造**：
-
-    ```java
-    IntStream.of(new int[]{1, 2, 3}).forEach(System.out::println);
-    IntStream.range(1, 3).forEach(System.out::println);
-    IntStream.rangeClosed(1, 3).forEach(System.out::println);
-    ```
-
-- **流转换为其他数据结构**：
-
-    ```java
-    // 1. Array
-    String[] strArray1 = stream.toArray(String[]::new);
-    // 2. Collection
-    List<String> list1 = stream.collect(Collectors.toList());
-    List<String> list2 = stream.collect(Collectors.toCollection(ArrayList::new));
-    Set set1 = stream.collect(Collectors.toSet());
-    Stack stack1 = stream.collect(Collectors.toCollection(Stack::new));
-    // 3. String
-    String str = stream.collect(Collectors.joining()).toString();
-    ```
+```java
+//方式一：stream 转数组
+String[] strArray1 = stream.toArray(String[]::new);
+//方式二：stream 转 Collection
+List<String> list1 = stream.collect(Collectors.toList());
+List<String> list2 = stream.collect(Collectors.toCollection(ArrayList::new));
+Set set1 = stream.collect(Collectors.toSet());
+Stack stack1 = stream.collect(Collectors.toCollection(Stack::new));
+//方式三：stream 转 String
+String str = stream.collect(Collectors.joining()).toString();
+```
 
 ### (3) Stream 的操作
 
-**流的三种操作类型**：
+#### 1. 中间操作
 
-- **Intermediate** ：一个流可以后面跟随零个或多个 intermediate 操作
+> 操作惰性化：即仅仅调用到这类方法，并没有真正开始流的遍历
 
-    > - 目的：打开流，做出某种程度的数据映射/过滤，然后返回一个新的流，交给下一个操作使用
-    >
-    > - 操作惰性化：即仅仅调用到这类方法，并没有真正开始流的遍历
-
-- **Terminal** ：一个流只能有一个 terminal 操作，当这个操作执行后，流就无法再被操作
-
-    > Terminal 操作的执行，才会真正开始流的遍历，并且会生成一个结果，或一个 side effect
-
-- **short-circuiting**：用于操作一个无限大的 Stream，并在有限时间内完成操作
-
-    - 对于一个 intermediate 操作，若接受一个无限大的 Stream，则返回一个有限的新 Stream
-    - 对于一个 terminal 操作，若接受一个无限大的 Stream，则能在有限的时间计算出结果
-
----
-
-#### 1. Intermediate
-
-- `map/flatMap`：将 InputStream 的每一个元素，映射成 outputStream 的另一个元素
-
-    > - 转换大写：
-    >
-    >     ```java
-    >     List<String> output = wordList.stream().map(String::toUpperCase).collect(Collectors.toList());
-    >     ```
-    >
-    > - 平方数：
-    >
-    >     ```java
-    >     List<Integer> nums = Arrays.asList(1, 2, 3, 4);
-    >     List<Integer> squareNums = nums.stream().map(n -> n * n).collect(Collectors.toList());
-    >     ```
-    >
-    > - 一对多：flatMap 将 InputStream 层级结构扁平化，即将最底层元素抽出放到一起，最终 OutputStream 都是直接的数字
-    >
-    >     ```java
-    >     Stream<List<Integer>> inputStream = Stream.of(
-    >     	Arrays.asList(1),
-    >     	Arrays.asList(2, 3),
-    >     	Arrays.asList(4, 5, 6)
-    >     );
-    >     Stream<Integer> outputStream = inputStream.flatMap(childList -> childList.stream()); //List 合并
-    >     outputStream.forEach(System.out::print);
-    >     //结果：123456
-    >     ```
-
-- `filter`：对原始 Stream 进行某项测试，通过测试的元素被留下来生成一个新 Stream
+- `filter(Predicate<? super T> predicate`：对原始 Stream 进行某项测试，通过测试的元素被留下来生成一个新 Stream
 
     > - 留下偶数：
     >
@@ -954,107 +1297,82 @@ List<Integer> transactionsIds = transactions.parallelStream()
     >     							.collect(Collectors.toList());
     >     ```
 
-- `peek`：对每个元素执行操作并**返回一个新的 Stream**，forEach 会销毁原有的 Stream
+- `distinct`：元素去重
 
     > ```java
-    > Stream.of("one", "two", "three", "four")
-    > 		.filter(e -> e.length() > 3)
-    > 		.peek(e -> System.out.println("Filtered value: " + e))
-    >  		.map(String::toUpperCase)
-    >  		.peek(e -> System.out.println("Mapped value: " + e))
-    >  		.collect(Collectors.toList());
-    > //结果
-    > Filtered value: three
-    > Mapped value: THREE
-    > Filtered value: four
-    > Mapped value: FOUR
+    > List<Integer> list = Arrays.asList(1, 2, 3, 4, 4, 4, 5, 6);
+    > list.stream()
+    >     .distinct()
+    >     .forEach(System.out::println);
     > ```
 
-- `limit/skip`：limit 返回 Stream 的前面 n 个元素；skip 则是扔掉前 n 个元素
+- `limit/skip`：limit 返回 Stream 的前面 n 个元素；skip 则是扔掉前 n 个元素，即 limit 去尾，skip 去头
 
-    > - **limit 和 skip 对运行次数的影响** 
-    >
-    >     > 这是一个有 10,000 个元素的 Stream，但在 short-circuiting 操作 limit 和 skip 的作用下：
-    >     >
-    >     > - 管道中 map 操作指定的 getName() 方法的执行次数为 limit 所限定的 10 次
-    >     > - 而最终返回结果在跳过前 3 个元素后只有后面 7 个返回
-    >
-    >     ```java
-    >     public void testLimitAndSkip() {
-    >         List<Person> persons = new ArrayList();
-    >         for (int i = 1; i <= 10000; i++) {
-    >             Person person = new Person(i, "name" + i);
-    >             persons.add(person);
-    >         }
-    >         List<String> personList = persons.stream()
-    >                 						  .map(Person::getName)
-    >             							  .limit(10)
-    >             							  .skip(3)
-    >             							  .collect(Collectors.toList());
-    >         System.out.println(personList);
+    > ```java
+    > public void testLimitAndSkip() {
+    >     List<Person> persons = new ArrayList();
+    >     for (int i = 1; i <= 10000; i++) {
+    >         Person person = new Person(i, "name" + i);
+    >         persons.add(person);
     >     }
-    >     
-    >     private class Person {
-    >         public int no;
-    >         private String name;
-    >     
-    >         public Person(int no, String name) {
-    >             this.no = no;
-    >             this.name = name;
-    >         }
-    >     
-    >         public String getName() {
-    >             System.out.println(name);
-    >             return name;
-    >         }
-    >     }
-    >     //结果
-    >     name1
-    >     name2
-    >     name3
-    >     name4
-    >     name5
-    >     name6
-    >     name7
-    >     name8
-    >     name9
-    >     name10
-    >     [name4, name5, name6, name7, name8, name9, name10]
-    >     ```
-    >
-    > - **limit 和 skip 对 sorted 后的运行次数无影响** 
-    >
-    >     > 注意：对于 parallel 的 Steam 管道，如果其元素有序，则 limit 操作的成本会比较大
-    >
-    >     ```java
-    >     public void testLimitAndSkip() {
-    >         List<Person> persons = new ArrayList();
-    >         for (int i = 1; i <= 5; i++) {
-    >             Person person = new Person(i, "name" + i);
-    >             persons.add(person);
-    >         }
-    >         List<Person> personList = persons.stream()
-    >                                          .sorted(Comparator.comparing(Person::getName)) //先排序再截断
-    >                                          .limit(2)
-    >                                          .collect(Collectors.toList());
-    >         System.out.println(personList);
-    >     }
-    >     //结果
-    >     name2
-    >     name1
-    >     name3
-    >     name2
-    >     name4
-    >     name3
-    >     name5
-    >     name4
-    >     [org.example.Main$Person@34c45dca, org.example.Main$Person@52cc8049]
-    >     ```
+    >     List<String> personList = persons.stream().map(Person::getName)
+    >         							  .limit(10)
+    >         							  .skip(3)
+    >         							  .collect(Collectors.toList());
+    >     System.out.println(personList);
+    > }
+    > 
+    > //结果
+    > [name4, name5, name6, name7, name8, name9, name10]
+    > ```
 
-- `sorted`：首先对 Stream 进行各类 map、filter、limit、skip 甚至 distinct 来减少元素数量后，再排序，能明显缩短执行时间
+- `map(Function<? super T, ? extends R> mapper)`：接收一个 `Function` 实例，并进行结果映射
 
-    >  上面代码的改进：不要求排序后再取值
+    > 类似函数：
     >
+    > - `mapToInt(ToIntFunction<? super T> mapper)` 
+    > - `mapToLong(ToLongFunction<? super T> mapper)` 
+    > -  `mapToDouble(ToDoubleFunction<? super T> mapper)` 
+    >
+    > ```java
+    > //1. 转换大写
+    > List<String> output = wordList.stream().map(String::toUpperCase).collect(Collectors.toList());
+    > 
+    > //2. 平方数
+    > List<Integer> nums = Arrays.asList(1, 2, 3, 4);
+    > List<Integer> squareNums = nums.stream().map(n -> n * n).collect(Collectors.toList());
+    > ```
+
+- `flatMap(Function<? super T, ? extends Stream<? extends R>> mapper)`：将流中的每个元素映射成一个流
+
+    > 类似函数：
+    >
+    > - `flatMapToInt(Function<? super T, ? extends IntStream> mapper)`
+    > - `flatMapToLong(Function<? super T, ? extends LongStream> mapper)`
+    > - `flatMapToDouble(Function<? super T, ? extends DoubleStream> mapper)`
+    >
+    > ```java
+    > Stream<List<Integer>> inputStream = Stream.of(
+    > 	Arrays.asList(1),
+    > 	Arrays.asList(2, 3),
+    > 	Arrays.asList(4, 5, 6)
+    > );
+    > Stream<Integer> outputStream = inputStream.flatMap(Collection::stream); //List 合并
+    > outputStream.forEach(System.out::print);
+    > //结果：123456
+    > ```
+
+- `sorted`：将流中元素按自然顺序排序
+
+    > 注：首先对 Stream 进行各类 map、filter、limit、skip 甚至 distinct 来减少元素数量后，再排序，能明显缩短执行时间
+    >
+    > ```java
+    > List<String> list = Arrays.asList("d", "a", "c");
+    > list.stream().sorted().forEach(System.out::print); //结果：acd
+    > ```
+
+- `sorted(Comparator<? super T> comparator)`：
+
     > ```java
     > public void testLimitAndSkip() {
     >     List<Person> persons = new ArrayList();
@@ -1062,21 +1380,100 @@ List<Integer> transactionsIds = transactions.parallelStream()
     >         Person person = new Person(i, "name" + i);
     >         persons.add(person);
     >     }
-    > 
     >     List<Person> personList = persons.stream()
-    >         							 .limit(2) //先截断，再排序
-    >         							 .sorted(Comparator.comparing(Person::getName))
-    >         							 .collect(Collectors.toList());
+    >                                  .limit(2) //先截断，再排序
+    >                                  .sorted(Comparator.comparing(Person::getName))
+    >                                  .collect(Collectors.toList());
     >     System.out.println(personList);
     > }
     > //结果
-    > name2
-    > name1
-    > [stream.StreamDW$Person@6ce253f1, stream.StreamDW$Person@53d8d10a]
+    > [name2, name1]
+    > ```
+
+- `peek`：对每个元素执行操作并**返回一个新的 Stream**，forEach 会销毁原有的 Stream
+
+    > `peek` 与 `map` 区别：
+    >
+    > - `peek` 用于不想改变流中元素本身的类型或只想操作元素的内部状态时
+    > - `map` 用于改变流中元素本身类型，即从元素中派生出另一种类型的操作
+    >
+    > peek 应用场景：对 `Stream<T>` 中的 `T` 的某些属性进行批处理时，用 `peek` 操作比较合适
+    >
+    > ```java
+    > Stream.of("one", "two", "three", "four")
+    > 		.filter(e -> e.length() > 3)
+    > 		.peek(e -> System.out.println("Filtered value: " + e))
+    > 		.map(String::toUpperCase)
+    > 		.peek(e -> System.out.println("Mapped value: " + e))
+    > 		.collect(Collectors.toList());
+    > //结果
+    > Filtered value: three
+    > Mapped value: THREE
+    > Filtered value: four
+    > Mapped value: FOUR
     > ```
 
 
-#### 2. Terminal
+#### 2. 终止操作
+
+##### 查找与匹配
+
+- `count`：返回流中元素总数
+
+- `findFirst/findAny`：返回流中的第一个/任意一个元素
+
+- `Match`：
+
+    - `anyMatch`：Stream 中只要有一个元素符合传入的 predicate，返回 true
+    - `allMatch`：Stream 中全部元素符合传入的 predicate，返回 true
+    - `noneMatch`：Stream 中没有一个元素符合传入的 predicate，返回 true
+
+    ```java
+    List<Person> persons = new ArrayList();
+    persons.add(new Person(1, "name" + 1, 10));
+    persons.add(new Person(2, "name" + 2, 21));
+    persons.add(new Person(3, "name" + 3, 34));
+    persons.add(new Person(4, "name" + 4, 6));
+    persons.add(new Person(5, "name" + 5, 55));
+    
+    boolean isAllAdult = persons.stream().allMatch(p -> p.getAge() > 18);
+    System.out.println("All are adult? " + isAllAdult);
+    
+    boolean isThereAnyChild = persons.stream().anyMatch(p -> p.getAge() < 12);
+    System.out.println("Any child? " + isThereAnyChild);
+    
+    //结果
+    All are adult? false
+    Any child? true
+    ```
+
+- `max/min`：
+
+    > - 找出最长一行的长度：
+    >
+    >     ```java
+    >     BufferedReader br = new BufferedReader(new FileReader("SUService.log"));
+    >     int longest = br.lines()
+    >     				.mapToInt(String::length)
+    >     				.max()
+    >     				.getAsInt();
+    >     br.close();
+    >     System.out.println(longest);
+    >     ```
+    >
+    > - 找出全文的单词，转小写，并排序
+    >
+    >     ```java
+    >     List<String> words = br.lines()
+    >     					   .flatMap(line -> Stream.of(line.split(" ")))
+    >     					   .filter(word -> word.length() > 0)
+    >      					   .map(String::toLowerCase)
+    >     					   .distinct()
+    >      					   .sorted()
+    >      					   .collect(Collectors.toList());
+    >     br.close();
+    >     System.out.println(words);
+    >     ```
 
 - `forEach`：接收一个 Lambda 表达式，然后在 Stream 的每一个元素上执行该表达式
 
@@ -1114,191 +1511,211 @@ List<Integer> transactionsIds = transactions.parallelStream()
 
 - `forEachOrdered`：在并行 Stream 中，严格按照顺序取数据
 
+---
+
+##### 归约
+
 - `reduce`：提供一个起始值，然后依照运算规则，把 Stream 元素组合起来
 
+    > 多态的三个实现：
+    >
+    > - `T reduce(T identity, BinaryOperator<T> accumulator)`：将流中元素反复结合起来，得到一个值，返回 T
+    > - `Optional<T> reduce(BinaryOperator<T> accumulator)`：将流中元素反复结合起来，得到一个值，返回 Optional
+    > - `<U> U reduce(U identity, BiFunction<U, ? super T, U> accumulator, BinaryOperator<U> combiner)`
+    >
     > ```java
-    > // 字符串连接，concat = "ABCD"
-    > String concat = Stream.of("A", "B", "C", "D").reduce("", String::concat);
+    > public static void main(String[] args) {
+    >     List<Integer> list = Arrays.asList(1, 3, 2, 8, 11, 4);
+    >     // 求和方式1
+    >     Optional<Integer> sum = list.stream().reduce((x, y) -> x + y);
+    >     // 求和方式2
+    >     Optional<Integer> sum2 = list.stream().reduce(Integer::sum);
+    >     // 求和方式3
+    >     Integer sum3 = list.stream().reduce(0, Integer::sum);
     > 
-    > // 求最小值，minValue = -3.0
-    > double minValue = Stream.of(-1.5, 1.0, -3.0, -2.0).reduce(Double.MAX_VALUE, Double::min);
+    >     // 求乘积
+    >     Optional<Integer> product = list.stream().reduce((x, y) -> x * y);
     > 
-    > // 求和，sumValue = 10, 有起始值
-    > int sumValue = Stream.of(1, 2, 3, 4).reduce(0, Integer::sum);
+    >     // 求最大值方式1
+    >     Optional<Integer> max = list.stream().reduce((x, y) -> x > y ? x : y);
+    >     // 求最大值写法2
+    >     Integer max2 = list.stream().reduce(1, Integer::max);
     > 
-    > // 求和，sumValue = 10, 无起始值
-    > sumValue = Stream.of(1, 2, 3, 4).reduce(Integer::sum).get();
-    > 
-    > // 过滤，字符串连接，concat = "ace"
-    > concat = Stream.of("a", "B", "c", "D", "e", "F")
-    >     			.filter(x -> x.compareTo("Z") > 0)
-    >     			.reduce("", String::concat);
+    >     System.out.println("list求和：" + sum.get() + "," + sum2.get() + "," + sum3);
+    >     System.out.println("list求积：" + product.get());
+    >     System.out.println("list求和：" + max.get() + "," + max2);
+    > }
     > ```
 
-- `max/min/distinct`：
+---
 
-    > - 找出最长一行的长度：
-    >
-    >     ```java
-    >     BufferedReader br = new BufferedReader(new FileReader("SUService.log"));
-    >     int longest = br.lines()
-    >     				.mapToInt(String::length)
-    >     				.max()
-    >     				.getAsInt();
-    >     br.close();
-    >     System.out.println(longest);
-    >     ```
-    >
-    > - 找出全文的单词，转小写，并排序
-    >
-    >     ```java
-    >     List<String> words = br.lines()
-    >     					   .flatMap(line -> Stream.of(line.split(" ")))
-    >     					   .filter(word -> word.length() > 0)
-    >      					   .map(String::toLowerCase)
-    >     					   .distinct()
-    >      					   .sorted()
-    >      					   .collect(Collectors.toList());
-    >     br.close();
-    >     System.out.println(words);
-    >     ```
+##### 收集
 
-- `Match`：
+`collect`：将流转换为其他形式，接收一个 Collector 接口的实现，用于汇总 Stream 元素
 
-    - `anyMatch`：Stream 中只要有一个元素符合传入的 predicate，返回 true
-    - `allMatch`：Stream 中全部元素符合传入的 predicate，返回 true
-    - `noneMatch`：Stream 中没有一个元素符合传入的 predicate，返回 true
+<img src="../../pics/java/javaN_4.png" align=left>
 
-    > ```java
-    > List<Person> persons = new ArrayList();
-    > persons.add(new Person(1, "name" + 1, 10));
-    > persons.add(new Person(2, "name" + 2, 21));
-    > persons.add(new Person(3, "name" + 3, 34));
-    > persons.add(new Person(4, "name" + 4, 6));
-    > persons.add(new Person(5, "name" + 5, 55));
-    > 
-    > boolean isAllAdult = persons.stream().allMatch(p -> p.getAge() > 18);
-    > System.out.println("All are adult? " + isAllAdult);
-    > 
-    > boolean isThereAnyChild = persons.stream().anyMatch(p -> p.getAge() < 12);
-    > System.out.println("Any child? " + isThereAnyChild);
-    > 
-    > //结果
-    > All are adult? false
-    > Any child? true
-    > ```
+- `toList/toSet/toMap/toConcurrentMap/toCollection` 
 
-- `collect`：将流转换为其他形式，接收一个 Collector 接口的实现，用于汇总 Stream 元素
+    ```java
+    public void test3(){
+        List<String> list = emps.stream().map(Employee::getName).collect(Collectors.toList());
+        list.forEach(System.out::println);
+        System.out.println("----------------------------------");
+    
+        Set<String> set = emps.stream().map(Employee::getName).collect(Collectors.toSet());
+        set.forEach(System.out::println);
+        System.out.println("----------------------------------");
+    
+        HashSet<String> hs = emps.stream()
+                                   .map(Employee::getName)
+                                   .collect(Collectors.toCollection(HashSet::new));
+        hs.forEach(System.out::println);
+        System.out.println("----------------------------------");
+        
+        Map<String, String> convertMap = IntStream.range(0, length).boxed()
+            .collect(Collectors.toMap(j -> heads[j], j -> dataArray[j]), (oldValue, newValue) -> newValue));
+    }
+    ```
 
-    >  <img src="../../pics/java/javaN_4.png" align=left>
-    >
-    >  <img src="../../pics/java/javaN_5.png" align=left>
-    >
-    >  ```java
-    >  public void test3(){
-    >    List<String> list = emps.stream().map(Employee::getName).collect(Collectors.toList());
-    >    list.forEach(System.out::println);
-    >    System.out.println("----------------------------------");
-    >  
-    >    Set<String> set = emps.stream().map(Employee::getName).collect(Collectors.toSet());
-    >    set.forEach(System.out::println);
-    >    System.out.println("----------------------------------");
-    >  
-    >    HashSet<String> hs = emps.stream()
-    >        					   .map(Employee::getName)
-    >        					   .collect(Collectors.toCollection(HashSet::new));
-    >    hs.forEach(System.out::println);
-    >  }
-    >  
-    >  public void test4(){
-    >    Optional<Double> max = emps.stream()
-    >        					     .map(Employee::getSalary)
-    >        					     .collect(Collectors.maxBy(Double::compare));
-    >    System.out.println(max.get());
-    >  
-    >    Optional<Employee> op = emps.stream()
-    >        						  .collect(Collectors.minBy((e1, e2) -> 
-    >                        							Double.compare(e1.getSalary(), e2.getSalary())));
-    >    System.out.println(op.get());
-    >  
-    >    Double sum = emps.stream().collect(Collectors.summingDouble(Employee::getSalary));
-    >    System.out.println(sum);
-    >  
-    >    Double avg = emps.stream().collect(Collectors.averagingDouble(Employee::getSalary));
-    >    System.out.println(avg);
-    >  
-    >    Long count = emps.stream().collect(Collectors.counting());
-    >    System.out.println(count);
-    >  
-    >    DoubleSummaryStatistics dss = emps.stream()
-    >        							    .collect(Collectors.summarizingDouble(Employee::getSalary));
-    >    System.out.println(dss.getMax());
-    >  }
-    >  
-    >  //分组
-    >  public void test5(){
-    >    Map<Status, List<Employee>> map = emps.stream()
-    >  										.collect(Collectors.groupingBy(Employee::getStatus));
-    >    System.out.println(map);
-    >  }
-    >  
-    >  //多级分组
-    >  public void test6(){
-    >    Map<Status, Map<String, List<Employee>>> map = emps.stream()
-    >        		.collect(Collectors.groupingBy(Employee::getStatus, Collectors.groupingBy((e) -> {
-    >                    if(e.getAge() >= 60)
-    >                        return "老年";
-    >                    else if(e.getAge() >= 35)
-    >                        return "中年";
-    >                    else
-    >                        return "成年";
-    >                })));
-    >    System.out.println(map);
-    >  }
-    >  
-    >  //分区
-    >  @Test
-    >  public void test7(){
-    >    Map<Boolean, List<Employee>> map = emps.stream()
-    >        							.collect(Collectors.partitioningBy((e) -> e.getSalary() >= 5000));
-    >    System.out.println(map);
-    >  }
-    >  
-    >  public void test8(){
-    >    String str = emps.stream()
-    >        			   .map(Employee::getName)
-    >        			   .collect(Collectors.joining("," , "----", "----"));
-    >    System.out.println(str);
-    >  }
-    >  
-    >  public void test9(){
-    >    Optional<Double> sum = emps.stream()
-    >        					     .map(Employee::getSalary)
-    >        					     .collect(Collectors.reducing(Double::sum));
-    >    System.out.println(sum.get());
-    >  }
-    >  
-    >  //去重: collectingAndThen
-    >  List<FeaturePlanParam> top1List = packageTop2List.stream()
-    >      .collect(Collectors.collectingAndThen(Collectors.toCollection(
-    >                  () -> new TreeSet<>(Comparator.comparing(p -> p.getUser))), ArrayList::new));
-    >  ```
+- `counting/maxBy/minBy/summingDouble/summingLong/summingInt/averagingDouble/averagingLong/averagingInt`
 
-- `findFirst`：termimal 兼 short-circuiting 操作，总是返回 Stream 的第一个元素或空，返回值类型为 `Optional` 
+    ```java
+    public void test4(){
+        Optional<Double> max = emps.stream()
+                                 .map(Employee::getSalary)
+                                 .collect(Collectors.maxBy(Double::compare));
+        System.out.println(max.get());
+    
+        Optional<Employee> op = emps.stream()
+              	.collect(Collectors.minBy((e1, e2) -> Double.compare(e1.getSalary(), e2.getSalary())));
+        System.out.println(op.get());
+    
+        Double sum = emps.stream().collect(Collectors.summingDouble(Employee::getSalary));
+        System.out.println(sum);
+    
+        Double avg = emps.stream().collect(Collectors.averagingDouble(Employee::getSalary));
+        System.out.println(avg);
+    
+        Long count = emps.stream().collect(Collectors.counting());
+        System.out.println(count);
+    
+        DoubleSummaryStatistics dss = emps.stream()
+                                            .collect(Collectors.summarizingDouble(Employee::getSalary));
+        System.out.println(dss.getMax());
+    }
+    ```
 
-- `findAny`：返回当前流中的任意元素
+---
 
-- `count`：返回流中元素总数
+<img src="../../pics/java/javaN_5.png" align=left>
 
-- `iterator`：返回一个迭代器
+- `groupingBy/partitioningBy`
 
-- `toArray`：返回数组(默认为 Object)
+    ```java
+    //分组
+    public void test5(){
+        Map<Status, List<Employee>> map = emps.stream().collect(Collectors.groupingBy(Employee::getStatus));
+        System.out.println(map);
+    }
+    
+    //多级分组
+    public void test6(){
+        Map<Status, Map<String, List<Employee>>> map = emps.stream()
+                    .collect(Collectors.groupingBy(Employee::getStatus, Collectors.groupingBy((e) -> {
+                        if(e.getAge() >= 60)
+                            return "老年";
+                        else if(e.getAge() >= 35)
+                            return "中年";
+                        else
+                            return "成年";
+                    })));
+        System.out.println(map);
+    }
+    
+    //分区
+    @Test
+    public void test7(){
+        Map<Boolean, List<Employee>> map = emps.stream()
+                                        .collect(Collectors.partitioningBy((e) -> e.getSalary() >= 5000));
+        System.out.println(map);
+    }
+    ```
 
-#### 3. Short-circuiting
+- `joining`：将stream中的元素用特定的连接符(没有则直接连接)连接成一个字符串
 
-- `anyMatch、 allMatch、 noneMatch、 findFirst、 findAny、 limit`
+    ```java
+    public void test8(){
+        String str = emps.stream()
+                         .map(Employee::getName)
+                         .collect(Collectors.joining("," , "----", "----"));
+        System.out.println(str);
+    }
+    ```
 
+- `reducing`：通 reduce，即提供一个起始值，然后依照运算规则，把 Stream 元素组合起来
 
+    ```java
+    public void test9(){
+        Optional<Double> sum = emps.stream()
+                                 .map(Employee::getSalary)
+                                 .collect(Collectors.reducing(Double::sum));
+        System.out.println(sum.get());
+    }
+    ```
+
+- `collectingAndThen`
+
+    ```java
+    //去重: collectingAndThen
+    List<FeaturePlanParam> top1List = packageTop2List.stream()
+      			.collect(Collectors.collectingAndThen(Collectors.toCollection(
+                  	() -> new TreeSet<>(Comparator.comparing(p -> p.getUser))), ArrayList::new));
+    ```
+
+- `sorted`:
+
+    ```java
+    public class StreamTest {
+    	public static void main(String[] args) {
+    		List<Person> personList = new ArrayList<Person>();
+    
+    		personList.add(new Person("Sherry", 9000, 24, "female", "New York"));
+    		personList.add(new Person("Tom", 8900, 22, "male", "Washington"));
+    		personList.add(new Person("Jack", 9000, 25, "male", "Washington"));
+    		personList.add(new Person("Lily", 8800, 26, "male", "New York"));
+    		personList.add(new Person("Alisa", 9000, 26, "female", "New York"));
+    
+    		// 按工资升序排序（自然排序）
+    		List<String> newList = personList.stream()
+                			.sorted(Comparator.comparing(Person::getSalary))
+                			.map(Person::getName)
+    						.collect(Collectors.toList());
+    		// 按工资倒序排序
+    		List<String> newList2 = personList.stream()
+                			.sorted(Comparator.comparing(Person::getSalary).reversed())
+    						.map(Person::getName).collect(Collectors.toList());
+    		// 先按工资再按年龄升序排序
+    		List<String> newList3 = personList.stream()
+                			.sorted(Comparator.comparing(Person::getSalary).thenComparing(Person::getAge))
+                			.map(Person::getName)
+    						.collect(Collectors.toList());
+    		// 先按工资再按年龄自定义排序（降序）
+    		List<String> newList4 = personList.stream().sorted((p1, p2) -> {
+    			if (p1.getSalary() == p2.getSalary()) {
+    				return p2.getAge() - p1.getAge();
+    			} else {
+    				return p2.getSalary() - p1.getSalary();
+    			}
+    		}).map(Person::getName).collect(Collectors.toList());
+    
+    		System.out.println("按工资升序排序：" + newList);
+    		System.out.println("按工资降序排序：" + newList2);
+    		System.out.println("先按工资再按年龄升序排序：" + newList3);
+    		System.out.println("先按工资再按年龄自定义降序排序：" + newList4);
+    	}
+    }
+    ```
 
 #### 4. 进阶操作
 
@@ -1322,17 +1739,17 @@ List<Integer> transactionsIds = transactions.parallelStream()
     >         Stream.generate(new PersonSupplier())
     >         	  .limit(10).
     >         	  .forEach(p -> System.out.println(p.getName() + ", " + p.getAge()));
-    >         
+    >                     
     >         private class PersonSupplier implements Supplier<Person> {
     >          	private int index = 0;
     >          	private Random random = new Random();
-    >             
+    >                         
     >             @Override
     >             public Person get() {
     >                 return new Person(index++, "StormTestUser" + index, random.nextInt(100));
     >             }
     >         }
-    >         
+    >                     
     >         //结果
     >         StormTestUser1, 9
     >         StormTestUser2, 12
@@ -1463,7 +1880,7 @@ List<Integer> transactionsIds = transactions.parallelStream()
   }
   ```
 
-## 5、新时间日期API
+## 6、新时间日期API
 
 ### (1) Clock
 
@@ -1686,7 +2103,7 @@ public void test7(){
 }
 ```
 
-## 6、其他新特性
+## 7、其他新特性
 
 ### (1) Optional
 

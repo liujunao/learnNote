@@ -1681,6 +1681,22 @@ Mave 提供很多命令行选择支持裁剪反应堆，输入 `mvn -h` 可以�
                     </execution>
                 </executions>
             </plugin>
+            
+            <!-- resources -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-resources-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <goals>
+                            <goal>copy-resources</goal>
+                        </goals>
+                        <configuration>
+                            <outputDirectory>${project.build.directory}/classes/META-INF</outputDirectory>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
 
             <!-- maven打包插件: 相对于默认的maven-jar-plugin,这个插件打的包是可执行的 -->
             <plugin>  
@@ -1712,6 +1728,11 @@ Mave 提供很多命令行选择支持裁剪反应堆，输入 `mvn -h` 可以�
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-jar-plugin</artifactId>
                 <version>3.1.0</version>
+                <configuration>
+                    <archive>
+                        <manifestFile>${project.build.outputDirectory}/META-INF/</manifestFile>
+                    </archive>
+                </configuration>
                 <executions>
                     <execution>
                         <goals>

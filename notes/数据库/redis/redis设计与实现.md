@@ -3266,105 +3266,307 @@ redis 集群的节点分为：
 
 # 十八、二进制位数组
 
-- 命令 `SETBIT, GETBIT, BITCOUNT, BITOP` ： 用于处理二进制位数组
-  - `SETBIT`： 为位数组指定偏移量的二进制位设置值，偏移量从 0 开始计数，二进制位值可为 0 或 1
-  - `GETBIT`： 用于获取位数组指定偏移量上的二进制位的值 
-  - `BITCOUNT`： 用于统计位数组中值为 1 的二进制位的数量
-  - `BITOP`： 可对多个位数组进行**按位与、按位或、按位异或、取反运算**
+命令 `SETBIT, GETBIT, BITCOUNT, BITOP` ： 用于处理二进制位数组
+- `SETBIT`： 用于为位数组指定偏移量的二进制位设置值，偏移量从 0 开始计数，二进制位值可为 0 或 1
+- `GETBIT`： 用于获取位数组指定偏移量上的二进制位的值 
+- `BITCOUNT`： 用于统计位数组中值为 1 的二进制位的数量
+- `BITOP`： 可对多个位数组进行**按位与、按位或、按位异或、取反运算**
 
-## 1. 位数组表示
+## 1、位数组表示
 
-- redis 使用字符串对象来表示位数组
+**redis 使用字符串对象来表示位数组**
 
-  > - 字符串对象使用的 SDS 数据结构是二进制安全的
-  > - 程序可直接使用 SDS 结构来保存位数组，并使用 SDS 结构的操作函数来处理位数组
+- 字符串对象使用的 SDS 数据结构是二进制安全的
+- 程序可直接使用 SDS 结构来保存位数组，并使用 SDS 结构的操作函数来处理位数组
 
-## 2. 命令实现
+---
 
-### 1. `GETBIT`
+- **案例一**：下图用 SDS 表示了一字节长的位数组
+    - `redisObject.type` 的值为 `REDIS_STRING`，表示是一个字符串对象
+    - `sdshdr.len` 的值为 1，表示这个 SDS 保存了一个一字节长的位数组
+    - buf 数组中的 `buf[0]` 字节保存了一字节长的位数组
+    - buf 数组中的 `buf[1]` 字节保存了 SDS 程序自动追加到值的末尾的空字符 `\0` 
+
+<img src="../../../pics/redis/redisG18_1.png" width=400 align=left><img src="../../../pics/redis/redisG18_2.png" width=400 align=left>
+
+
+
+
+
+
+
+
+
+
+
+
+
+- **案例二**：
+
+    - `sdshdr.len` 属性的值为 3，表示这个 SDS 保存了一个三字节长的位数组
+
+    - 位数组由 buf 数组中的 `buf[0]、buf[1]、buf[2]` 三个字节保存
+
+        > buf 数组使用逆序来保存位数组：位数组 `1111 0000 1100 0011 1010 0101` 在 buf 数组中会被保存为 `1010 0101 1100 0011 0000 1111`
+
+<img src="../../../pics/redis/redisG18_3.png" width=600 align=left>
+
+## 2、命令实现
+
+### (1) `GETBIT`
 
 - 命令 `GETBIT`： 用于返回位数组 bitarray 在 offset 偏移量上的二进制位的值
 - 格式： `GETBIT <bitarray> <offset>`，执行过程：
-  - 计算 `byte = offset / 8(向下取整)`，**byte 值**记录 offset 偏移量指定的二进制位保存在位数组**哪个字节**
-  - 计算 `bit = (offset mod 8) + 1`，**bit  值**记录了 offset 偏移量指定的二进制位是 byte 字节的**第几位二进制位**
-  - 根据 byte 值和 bit 值，在位数组 bitarray 中定位 offset 偏移量指定的二进制位，并返回这个位的值
+  1. 计算 `byte = offset / 8(向下取整)`，**byte 值**记录 offset 偏移量指定的二进制位保存在位数组**哪个字节**
+  2. 计算 `bit = (offset mod 8) + 1`，**bit  值**记录了 offset 偏移量指定的二进制位是 byte 字节的**第几位二进制位**
+  3. 根据 byte 值和 bit 值，在位数组 bitarray 中定位 offset 偏移量指定的二进制位，并返回这个位的值
 
-### 2. `SETBIT`
+---
+
+- **案例一**：对于图 22-2 的位数组执行 `GETBIT <bitarray> 3`：
+    1. `3 / 8 = 0`
+    2. `(3 mod 8) + 1 = 4` 
+    3. 定位到 `buf[0]` 字节上，然后取出该字节上的第 4 个二进制位(从左向右数)的值
+    4. 向客户端返回二进制位的值 1
+
+<img src="../../../pics/redis/redisG18_4.png" width=600 align=left>
+
+---
+
+- **案例二**：对于图 22-3 的位数组执行 `GETBIT <bitarray> 10`
+    1. `10 / 8 = 1`
+    2. `(10 mod 8) + 1 = 3`
+    3. 定位到 `buf[1]` 字节上，然后取出该字节上的第 3 个二进制位的值
+    4. 向客户端返回二进制位的值 0  
+
+<img src="../../../pics/redis/redisG18_5.png" width=600 align=left>
+
+### (2) `SETBIT`
 
 - 命令 `SETBIT` ： 用于将位数组 bitarray 在 offset 偏移量上的二进制位的值设置为 value，并向客户端返回二进制位被设置前的旧值
+
 - 格式： `SETBIT <bitarray> <offset> <value>`，执行过程：
-  - 计算 `len = offset / 8 + 1(向下取整)`，len 值记录保存 offset 偏移量指定的二进制位**需要多少字节**
-  - 检查 bitarray 键保存的位数组的长度是否小于 len，若小于，则将 SDS 的长度扩展为 len 字节，并将所有新扩展空间的二进制位的值设置为 0
-  - 计算 `byte = offset / 8(向下取整)`，byte 值记录了 offset 偏移量指定的二进制位保存在位数组的**哪个字节**
-  - 计算 `bit = (offset mod 8) + 1`，**bit  值**记录了 offset 偏移量指定的二进制位是 byte 字节的**第几位二进制位**
-  - 根据 byte 和 bit 值，将指定二进制位值保存在 oldvalue 变量，然后将新值 value 设置为该二进制位的值
-  - 向客户端返回 oldvalue 变量的值
+  1. 计算 `len = offset / 8 + 1(向下取整)`，len 值记录了保存 offset 偏移量指定的二进制位**需要多少字节**
 
-### 3. `BITCOUNT`
+  2. 检查 bitarray 键保存的位数组(即 SDS)的长度是否小于 len，若小于，则将 SDS 的长度扩展为 len 字节，并将所有新扩展空间的二进制位的值设置为 0
 
-- 命令 `BITCOUNT`： 用于统计给定位数组中，值为 1 的二进制位的数量
+  3. 计算 `byte = offset / 8(向下取整)`，byte 值记录了 offset 偏移量指定的二进制位保存在位数组的**哪个字节**
 
-- **二进制位统计算法**：
+  4. 计算 `bit = (offset mod 8) + 1`，**bit  值**记录了 offset 偏移量指定的二进制位是 byte 字节的**第几位二进制位**
 
-  - **遍历算法**： 遍历位数组中的每个二进制位，遇到值为 1 的二进制位时，将计数器值增一
+  5. 根据 byte 和 bit 值，在 bitarray 键保存的位数组中定位 offset 偏移量指定的二进制位
 
-  - **查表算法**：表的键是某种排列的位数组，表的值是相应位数组中值为 1 的二进制位的数量
+      > 首先将指定二进制位现在的值保存在 oldvalue 变量，然后将新值 value 设置为该二进制位的值
 
-    > 查表法是用空间换时间的方式
+  6. 向客户端返回 oldvalue 变量的值
 
-  - `variable-precision SWAR` 算法：32 位长度位数组的实现
+---
 
-    **汉明重量**： 统计一个位数组中非 0 二进制位的数量
+**案例一**：SETBIT 命令的执行示例，假设对图 22-2 的位数组执行命令 `SETBIT <bitarray> 1 1`
 
-    ```c
-    uint32_t swar(uint32_t i){
-        //步骤 1：表示可按每两个二进制位为一组进行分组，各组的十进制表示就是改组的汉明重量
-        i = (i & 0x55555555) _ ((i >> 1) & 0x55555555);
-        //步骤 2： 表示可按*每四个*二进制位为一组进行分组，各组的十进制表示就是改组的汉明重量
-        i = (i & 0x33333333) + ((i >> 2) & 0x33333333);
-        //步骤 3： 表示可按*每八个*二进制位为一组进行分组，各组的十进制表示就是改组的汉明重量
-        i = (i & 0x0F0F0F0F) + ((i >> 4) & 0x0F0F0F0F);
-        //步骤 4：i * (0x01010101)计算出汉明重量并保存在高八位，>>24 将汉明重量移到低八位
-        i = (i * (0x01010101) >> 24);
-        
-        return i;
-    }
-    ```
+1. 计算 `1 / 8 = 1`，表示保存偏移量为 1 的二进制位至少需要 1 字节长的位数组
+2. 检查位数组的长度，发现 SDS 的长度不小于 1 字节，无须执行扩展操作
+3. 计算 `1 / 8 = 0`，说明偏移量为 1 的二进制位位于 `buf[0]` 字节
+4. 计算 `(1 mod 8) + 1 = 2`，说明偏移量为 1 的二进制位是 `buf[0]` 字节的第 2 个二进制位
+5. 定位到 `buf[0]` 字节的第 2 个二进制位上，将二进制位现在的值 0 保存到 oldvalue，然后将二进制位的值设置为 1
+6. 向客户端返回  oldvalue 变量的值 0
 
-- **redis 的实现**：
+<img src="../../../pics/redis/redisG18_12.png" width=600 align=left>
 
-  - 若未处理的二进制位数量**大于等于 128 位**，使用 SWAR 算法计算汉明重量
-  - 若未处理的二进制位数量**小于 128 位**，使用查表法计算汉明重量
+---
 
-  > - 查表法使用键长为 8 位的表
-  > - SWAR 算法每次载入 128 个二进制位，通过调用四次 32 位 SWAR 算法来实现
+**案例二**：带扩展操作的 SETBIT 命令示例，假设对图 22-2 的位数组执行命令 `SETBIT <bitarray> 12 1` 
 
-### 4. `BITOP`
+1. 计算 `12 / 8 + 1 = 2`，表示保存偏移量为 12 的二进制位至少需要 2 字节长的位数组
 
-- 在执行 `BITOP AND` 命令时，程序用 ==&== 操作计算出所有输入二进制位的**逻辑与**结果，并保存在制定的键上面
-- 在执行 `BITOP OR` 命令时，程序用 ==|== 操作计算出所有输入二进制位的**逻辑或**结果，并保存在制定的键上面
-- 在执行 `BITOP XOR` 命令时，程序用 ==^== 操作计算出所有输入二进制位的**逻辑异或**结果，并保存在制定的键上面
-- 在执行 `BITOP NOT` 命令时，程序用 ==~== 操作计算出所有输入二进制位的**逻辑非**结果，并保存在制定的键上面
+2. 判断所需字节大于 1 字节，因此程序将位数组的长度扩展为 2 字节
+
+    > 注：此处 SDS 会额外分配 2 字节的未使用空间，再加上为保存空字符而分配的 1 字节，扩展后 buf 数组的实际长度为 5 字节
+
+3. 计算 `12 / 8 = 1`，说明偏移量为 12 的二进制位位于 `buf[1]` 字节中
+
+4. 计算 `(12 mod 8) + 1 = 5`，说明偏移量为 12 的二进制位是 `buf[1]` 字节的第 5 个二进制位
+
+5. 定位到 `buf[1]` 字节的第 5 个二进制位，将二进制位现在的值保存到 oldvalue 变量，然后将二进制位的值设置位 1
+
+6. 向客户端返回 old value 变量的值 0
+
+<img src="../../../pics/redis/redisG18_6.png" width=600 align=left>
+
+<img src="../../../pics/redis/redisG18_7.png" width=500 align=left>
+
+**注意**：
+
+- 因 buf 数组使用逆序来保存数组，所以当程序对 buf 数组进行扩展后，写入操作可以直接在新扩展的二进制位中完成，而不必改动位数组原来已有的二进制位
+
+- 相反，若 buf 数组使用和书写位数组时一样的顺序来保存位数组，则在每次扩展 buf 数组后，程序需将位数组已有的位进行移动，然后才能执行写入操作
+
+    > 这比 `SETBIT` 命令目前的实现方式要复杂，并且移位带来的 CPU 时间消耗也会影响命令的执行速度
+
+---
+
+**详情展示**：下图模拟了程序在 buf 数组按书写顺序保存位数组的情况下，对位数组 `0100 1101` 执行 `SETBIT <bitarray> 12 1`，将值改为 `0001 0000 0100 1101` 的整个过程
+
+<img src="../../../pics/redis/redisG18_8.png" width=400>
+
+<img src="../../../pics/redis/redisG18_9.png" width=400>
+
+<img src="../../../pics/redis/redisG18_10.png" width=700 align=left>
+
+<img src="../../../pics/redis/redisG18_11.png" width=700 align=left>
+
+### (3) `BITCOUNT`
+
+#### 1. 简介
+
+命令 `BITCOUNT`： 用于统计给定位数组中，值为 1 的二进制位的数量
+
+- 对于图 22-15 表示的位数组，`BITCOUNT` 返回 4
+
+<img src="../../../pics/redis/redisG18_13.png" width=400 align=left>
+
+- 对于图 22-16 表示的位数组，`BITCOUNT` 返回 12
+
+<img src="../../../pics/redis/redisG18_14.png" width=400 align=left>
+
+---
+
+#### 2. 二进制位统计算法
+
+- **遍历算法**： 遍历位数组中的每个二进制位，并在遇到值为 1 的二进制位时，将计数器值增一
+
+- **查表算法**：表的键是某种排列的位数组，表的值是相应位数组中值为 1 的二进制位的数量
+
+  > - 创建表后，根据输入的位数组进行查表，无须对位数组的每个位进行检查，即可知道位数组包含了多少个值为 1 的二进制位
+  >
+  > 创建表的基本原理：
+  >
+  > - 一个有限集合的元素的排列方式有限
+  > - 一个有限长度的位数组能表示的二进制位排列有限
+  >
+  > ---
+  >
+  > 案例：对于 8 位长的位数组，可以创建下述表格，通过表格可以一次从位数组中读入 8 个位，然后根据这 8 个位的值进行查表，直接知道这个值包含了多少个值位 1 的位
+  >
+  > <img src="../../../pics/redis/redisG18_15.png" width=500 align=left>
+
+- **`variable-precision SWAR` 算法**：通过位移和位运算操作，可以在常数时间内计算多个字节的汉明重量，并且不需要额外内存
+
+  > **汉明重量**： 统计一个位数组中非 0 二进制位的数量
+
+  ```c
+  //32 位长度位数组的实现
+  uint32_t swar(uint32_t i){
+      //步骤 1：表示可按每两个二进制位为一组进行分组，各组的十进制表示就是该组的汉明重量
+      i = (i & 0x55555555) _ ((i >> 1) & 0x55555555);
+      //步骤 2：表示可按每四个二进制位为一组进行分组，各组的十进制表示就是该组的汉明重量
+      i = (i & 0x33333333) + ((i >> 2) & 0x33333333);
+      //步骤 3：表示可按每八个二进制位为一组进行分组，各组的十进制表示就是该组的汉明重量
+      i = (i & 0x0F0F0F0F) + ((i >> 4) & 0x0F0F0F0F);
+      //步骤 4：计算出 bitarray 的汉明重量并保存在高八位，而 >>24 将汉明重量移到低八位，得出的结果就是 bitarray 汉明重量
+      i = (i * (0x01010101) >> 24);
+      
+      return i;
+  }
+  ```
+  
+  > 案例：对于调用 `swar(0x3A70F21B)`
+  >
+  > - **第一步**：计算出值 `0x2560A116`，该值的每两个二进制位的十进制表示记录了 `0x3A70F21B` 每两个二进制位的汉明重量
+  >
+  >     <img src="../../../pics/redis/redisG18_16.png" width=800 align=left>
+  >
+  > - **第二步**：计算出值 `0x22304113`，该值的每四个二进制位的十进制表示记录了 `0x3A70F21B` 每四个二进制位的汉明重量
+  >
+  >     <img src="../../../pics/redis/redisG18_17.png" align=left>
+  >
+  > - **第三步**：计算出值 `0x4030504`，该值表示每八个二进制位的十进制表示记录了 `0x3A70F21B` 每八个二进制位的汉明重量
+  >
+  >     <img src="../../../pics/redis/redisG18_18.png" align=left>
+  >
+  > - **第四步**：计算 `0x4030504 * 0x01010101 = 0x100c0904`，将汉明重量聚集到二进制位的最高八位
+  >
+  >     <img src="../../../pics/redis/redisG18_19.png" align=left>
+  >
+  >     再计算 `0x100c0904 >> 24`，将汉明重量移动到低八位，最终得出值 `ox10`，即 16，该值就是 `0x3A70F21B` 的汉明重量
+  >
+  >     <img src="../../../pics/redis/redisG18_20.png" align=left>
+  
+- **redis 的算法实现**：`BITCOUNT` 命令的实现用到了查表和 `variable-precision SWAR` 两种算法
+
+  - 查表算法的使用：使用键长为 8 位的表，表中记录了从 `0000 0000 到 1111 1111` 在内的所有二进制位的汉明重量
+  - `variable-precision SWAR` 算法的使用：在每次循环中载入 128 个二进制位，然后调用四次 32 位 `variable-precision SWAR` 算法来计算这 128 个二进制位的汉明重量
+
+  > 注：在执行 `BITCOUNT` 命令时，程序会根据未处理的二进制位的数量来决定使用哪种算法：
+  >
+  > - 若未处理的二进制位数量**大于等于 128 位**，则使用 `variable-precision SWAR` 算法计算汉明重量
+  > - 若未处理的二进制位数量**小于 128 位**，则使用查表法计算汉明重量
+  >
+  > ---
+  >
+  > **`BITCOUNT` 命令实现原理的伪代码**：
+  >
+  > - 第一个循环的执行次数计算公式：`loop = n / 128`
+  > - 第一个循环的执行次数计算公式：`loop = n mod 128`
+  >
+  > <img src="../../../pics/redis/redisG18_21.png" align=left width=700>
+
+### (4) `BITOP`
+
+`BITOP` 的 `AND、OR、XOR、NOT` 操作基于 `&、｜、^、～` 操作实现：
+
+- 在执行 `BITOP AND` 命令时，程序用 ==&== 操作计算出所有输入二进制位的**逻辑与**结果，然后保存在指定的键上面
+- 在执行 `BITOP OR` 命令时，程序用 ==|== 操作计算出所有输入二进制位的**逻辑或**结果，然后保存在指定的键上面
+- 在执行 `BITOP XOR` 命令时，程序用 ==^== 操作计算出所有输入二进制位的**逻辑异或**结果，然后保存在指定的键上面
+- 在执行 `BITOP NOT` 命令时，程序用 ==~== 操作计算出所有输入二进制位的**逻辑非**结果，然后保存在指定的键上面
+
+---
+
+案例：假设客户端执行命令 `BITOP AND result x y`，`x、y` 分别保存在下图的位数组中，并执行以下操作
+
+<img src="../../../pics/redis/redisG18_22.png" align=left>
+
+1. 创建一个空白的位数组 value，用于保存 AND 操作的结果
+
+2. 对两个位数组的第一个字节执行 `buf[0] & buf[0]` 操作，并将结果保存到 `value[0]` 字节
+
+3. 对两个位数组的第二个字节执行 `buf[1] & buf[1]` 操作，并将结果保存到 `value[1]` 字节
+
+4. 对两个位数组的第三个字节执行 `buf[2] & buf[2]` 操作，并将结果保存到 `value[2]` 字节
+
+5. 经过上面的三次逻辑与操作，得到了计算结果，并保存在键 `result` 上
+
+    <img src="../../../pics/redis/redisG18_23.png" align=left width=600>
+
+## 3、重点回顾
+
+- Redis 使用 SDS 来保存位数组
+- SDS 使用逆序来保存位数组，这种保存顺序简化了 `SETBIT` 命令的实现，使得 `SETBIT` 命令可以在不移动现有二进制位的前提下，对位数组进行空间扩展
+- `BITCOUNT` 命令使用查表算法和 `variable-precision SWAR` 算法来优化命令的执行效率
+- `BITOP` 命令的所有操作都使用 C 语言内置的位操作来实现
 
 # 十九、慢查询日志
 
-- **慢查询日志**： 用于记录执行时间超过给定时长的命令请求
+## 1、简介
 
-  > 用户可通过该功能产生的日志来监视和优化查询速度
+- **慢查询日志**： 用于记录执行时间超过给定时长的命令请求，用户可通过该功能产生的日志来监视和优化查询速度
 
 - 与慢查询日志有关的配置选项：
-  - 选项 `slowlog-log-slower-than`： 指定执行时间超过多少微秒的命令请求会被记录到日志上
-  - 选项 `slowlog-max-len`： 指定服务器最多保存多少条慢查询日志
+  - 选项 `slowlog-log-slower-than`：指定执行时间超过多少微秒的命令请求会被记录到日志上
+  
+  - 选项 `slowlog-max-len`：指定服务器最多保存多少条慢查询日志
+  
+      > 注：服务器使用 FIFO 方式保存多条慢查询日志，当服务器存储的慢查询日志数量等于 `slowlog-max-len` 后，再添加一个新的慢查询日志前，会先将最旧的一条慢查询日志删除
 
-## 1. 慢查询记录的保存
+- 命令 `SLOWLOG GET`：查看服务器所保存的慢查询日志
 
-- 命令 `SLOWLOG GET` ： 用于查看服务器所保存的慢查询日志
+## 2、慢查询记录的保存
 
 - 与慢查询日志功能有关的属性：
 
   ```c
   struct redisServer{
-      //下一条慢查询日志的 ID：初始值为 0，每当创建新的慢查询日志时，会作为新日志的 id 值，并增一
+      //下一条慢查询日志的 ID：初始值为 0，每当创建新的慢查询日志时，会加 1 并作为新日志的 id 值
       long long slowlog_entry_id;
       //保存了所有慢查询日志的链表，每个节点保存一个 slowlogEntry 结构
       list *slowlog;
@@ -3376,26 +3578,45 @@ redis 集群的节点分为：
   }
   ```
 
-  每个 `slowlogEntry` 结构代表一个慢查询日志：
+- 链表 `slowlog`：保存了服务器中的所有慢查询日志，链表中的每个节点都保存了 `slowlogEntry` 结构，其代表一个慢查询日志
 
-  ```c
-  typedef struct slowlogEntry{
-      //唯一标识符
-      long long id;
-      //命令执行时的时间，格式为 UNIX 时间戳
-      time_t time;
-      //执行命令消耗的时间，以微秒为单位
-      long long duration;
-      //命令与命令参数
-      robj **argv;
-      //命令与命令参数的数量
-      int argc;
-  }slowlogEntry;
-  ```
+    ```c
+    typedef struct slowlogEntry{
+        long long id; //唯一标识符
+        time_t time; //命令执行时的时间，格式为 UNIX 时间戳
+        long long duration; //执行命令消耗的时间，以微秒为单位
+        robj **argv; //命令与命令参数
+        int argc; //命令与命令参数的数量
+    } slowlogEntry;
+    ```
 
-## 2. 慢查询日志的阅览与删除
+---
 
-- 查看日志的 `SLOWLOG GET` 命令伪代码：
+**案例**：对于以下慢查询日志
+
+<img src="../../../pics/redis/redisG18_24.png" align=left width=300>
+
+- 下图展示该日志所对应的 `slowlogEntry` 结构
+
+    <img src="../../../pics/redis/redisG18_25.png" align=left width=600>
+
+- 下图展示了服务器状态中和慢查询功能有关的属性
+
+    - `slowlog_entry_id` 值为 6，表示服务器下条慢查询日志的 id 值将为 6
+
+    - `slowlog` 链表包含了 id 为 5 至 1 的慢查询日志，最新的 5 号日志排在链表的表头，而最旧的 1 号日志排在链表的表尾
+
+        > 这表明 `slowlog` 链表是使用插入到表头的方式来添加新日志
+
+    - `slowlog_log_slower_than` 记录了服务器配置 `slowlog-log-slower-than` 的值 0，表示执行时间超过 0 微秒的命令都会被慢查询日志记录
+
+    - `slowlog_max_len` 属性记录了服务器配置 `slowlog-max-len` 的值 5，表示服务器最多存储 5 条慢查询日志
+
+    <img src="../../../pics/redis/redisG18_26.png" align=left width=700>
+
+## 3、慢查询日志的阅览与删除
+
+- 查看日志 `SLOWLOG GET` 命令伪代码：
 
   ```python
   def SLOWLOG_GET(number=None):
@@ -3414,7 +3635,7 @@ redis 集群的节点分为：
           printLog(log)
   ```
 
-- 查看日志数量的  `SLOWLOG LEN` 命令伪代码：
+- 查看日志数量 `SLOWLOG LEN` 命令伪代码：
 
   ```python
   def SLOWLOG_LEN():
@@ -3422,7 +3643,7 @@ redis 集群的节点分为：
       return len(redisServer.slowlog)
   ```
 
-- 用于清除所有慢查询日志的 `SLOWLOG RESET` 命令的伪代码：
+- 用于清除所有慢查询日志的 `SLOWLOG RESET` 命令伪代码：
 
   ```python
   def SLOWLOG_RESET():
@@ -3432,11 +3653,11 @@ redis 集群的节点分为：
           deleteLog(log)
   ```
 
-## 3. 添加新日志
+## 4、添加新日志
 
 - 函数 `slowlogPushEntryIfNeeded`： **负责检查是否需要为此次执行的命令创建慢查询日志**
 
-  伪代码：
+  > 注：每次执行命令前后，程序都会记录微妙格式的 UNIX 时间戳，这两个时间戳间的差就是服务器执行命令所耗费的时长，服务器会将这个时长作为参数之一传给 `slowlogPushEntryIfNeeded` 函数
 
   ```python
   # 记录执行命令前的时间
@@ -3449,49 +3670,134 @@ redis 集群的节点分为：
   slowlogPushEntryIfNeeded(argv,argc,before - after)
   ```
 
-  > 函数 `slowlogPushEntryIfNeeded` 的作用：
-  >
-  > - 检查命令的执行时长是否超过 `slowlog-log-slower-than` 选项所设置的时间
-  >
-  >   > 若超过，就为命令创建一个新的日志，并将新日志添加到 `slowlog` 链表的表头
-  >
-  > - 检查慢查询日志的长度是否超过 `slowlog-max-len` 选项所设置的长度
-  >
-  >   > 若超过，将多出来的日志从 `slowlog` 链表中方删除
+- 函数 `slowlogPushEntryIfNeeded` 的作用：
+
+    - 检查命令的执行时长是否超过 `slowlog-log-slower-than` 选项所设置的时间
+
+        > 若超过，就为命令创建一个新的日志，并将新日志添加到 `slowlog` 链表的表头
+
+    - 检查慢查询日志的长度是否超过 `slowlog-max-len` 选项所设置的长度
+
+        > 若超过，将多出来的日志从 `slowlog` 链表中方删除
+
+- 函数 `slowlogPushEntryIfNeeded` 的实现代码：
+
+    ```c
+    void slowlogPushEntryIfNeeded(robj **argv, int argc, long long duration) {
+        //慢查询功能未开启，直接返回
+        if (server.slowlog_log_slower_than < 0) return;
+        //若执行时间超过服务器设置的上限，则将命令添加到慢查询日志
+        if (duration >= server.slowlog_log_slower_than) {
+            listAddNodeHead(server.slowlog, slowlogCreateEntry(argv, argc, duration));
+        }
+        //若日志数量过多，则进行删除
+        while (listLength(server.slowlog) > server.slowlog_max_len) {
+            listDelNode(server.slowlog, listLast(server.slowlog));
+        }
+    }
+    ```
+
+    > 注：函数 `slowlogCreateEntry` 根据传入的参数，创建一个新的慢查询日志，并将 `redisServer.slowlog_entry_id` 加 1 
+
+---
+
+**案例**：假设服务器当前保存的慢查询日志如下图
+
+<img src="../../../pics/redis/redisG18_26.png" align=left width=700>
+
+- 执行命令 `EXPIRE msg 10086` 后，会调用函数 `slowlogPushEntryIfNeeded` 为 `EXPIRE` 命令创建一条 id 为 6 的慢查询日志，并将这条新日志添加到链表 `slowlog` 的表头
+
+    > 注：`slowlog_entry_id` 的值也从 6 变为 7
+
+    <img src="../../../pics/redis/redisG18_27.png" align=left width=700>
+
+- 之后，函数 `slowlogPushEntryIfNeeded` 发现保存的慢查询日志数目为 6，大于设定的最大数目 5，于是服务器将 id 为 1 的慢查询日志删除，让服务器的慢查询日志数量回到设定号的 5 条
+
+    删除操作执行后的服务器状态如下：
+
+    <img src="../../../pics/redis/redisG18_28.png" align=left width=700>
+
+## 5、重点回顾
+
+- Redis 的慢查询日志功能用于记录执行时间超过指定时长的命令
+- Redis 服务器将所有的慢查询日志保存在服务器状态的 `slowlog` 链表中，每个链表节点都包含一个 `slowlogEntry` 结构，其代表一条慢查询日志
+- 打印和删除慢查询日志可以通过遍历 `slowlog` 链表来完成
+- `slowlog` 链表的长度就是服务器所保存慢查询日志的数量
+- 新的慢查询日志会被添加到 `slowlog` 链表的表头，若日志数量超过 `slowlog-max-len` 的值，则多出来的日志会被删除
 
 # 二十、监视器
 
-## 1. 成为监视器
+## 1、成为监视器
 
-- 命令 `MONITOR`：客户端可将自己变为一个监视器，实时接收并打印出服务器当前处理的命令请求的相关信息
+命令 `MONITOR`：可将客户端变为一个监视器，实时接收并打印出服务器当前处理的命令请求的相关信息
 
-  实现原理伪代码：
+- 每当客户端向服务器发送命令请求时，服务器除了会处理这条命令请求外，还会将关于这条命令请求的信息发送给所有监视器
 
-  ```python
-  def MONITOR():
-      # 打开客户端的监视器标志
-      client.flags |= REDIS_MONITOR
-      # 将客户端添加到服务器状态的 monitors 链表的末尾
-      server.monitors.append(client)
-      # 向客户端返回 ok
-      send_reply("OK")
-  ```
+    <img src="../../../pics/redis/redisG20_1.png" align=left width=500>
 
-## 2. 向监视器发送命令信息
+- 实现原理的伪代码
 
-- 函数 `replicationFeedMonitors`： 将被处理的命令请求的相关信息发送给各监视器
+    ```python
+    def MONITOR():
+        # 打开客户端的监视器标志
+        client.flags |= REDIS_MONITOR
+        # 将客户端添加到服务器状态的 monitors 链表的末尾
+        server.monitors.append(client)
+        # 向客户端返回 ok
+        send_reply("OK")
+    ```
 
-  伪代码定义：
+---
 
-  ```python
-  def replicationFeedMonitors(client,monitors,dbid,argv,argc):
-      # 根据执行命令的客户端、当前数据库的号码、命令参数、命令参数的个数 创建要发送给各监视器的信息
-      msg = create_message(client,dbid,argv,argc)
-      # 遍历所有监视器
-      for monitor in monitors:
-          # 将信息发送给监视器
-          send_message(monitor,msg)
-  ```
+**案例**：若客户端 c10086 向服务器发送 MONITOR 命令，则该客户端的 `REDIS_MONITOR` 标志被打开，且添加到 monitors 链表的表尾
+
+- 假设客户端 c10086 发送 MONITOR 命令前，monitors 链表状态如下：
+
+    <img src="../../../pics/redis/redisG20_2.png" align=left width=600>
+
+- 则在服务器执行客户端 c10086 发送的 MONITOR 命令后，monitors 链表将被更新为如下状态：
+
+    <img src="../../../pics/redis/redisG20_3.png" align=left width=600>
+
+## 2、向监视器发送命令信息
+
+- 服务器在每次处理命令请求前，会调用函数 `replicationFeedMonitors`，由该函数将被处理的命令请求的相关信息发给各监视器
+
+- 函数 `replicationFeedMonitors` 的伪代码如下：
+
+    > 函数首先根据传入的参数创建信息，然后将信息发送给各监视器
+
+    ```python
+    def replicationFeedMonitors(client,monitors,dbid,argv,argc):
+        # 根据执行命令的客户端、当前数据库的号码、命令参数、命令参数个数等参数，创建要发送给各监视器的信息
+        msg = create_message(client,dbid,argv,argc)
+        # 遍历所有监视器
+        for monitor in monitors:
+            # 将信息发送给监视器
+            send_message(monitor,msg)
+    ```
+
+---
+
+**案例**：假设服务器在时间 `1378822257.329412`，根据 IP 为 `127.0.0.1`、端口号为 `56604` 的客户端发送的命令请求，对 0 号数据库执行命令 `KEYS*`，则服务器将创建以下信息：`1378822257.329412 [0 127.0.0.1:56604] "KEYS" "*"`
+
+- 若服务器 monitors 链表的当前状态如下：
+
+    <img src="../../../pics/redis/redisG20_3.png" align=left width=600>
+
+- 则服务器会分别将信息发送给 c128、c256、c10086 四个监视器，如下：
+
+    <img src="../../../pics/redis/redisG20_4.png" align=left width=400>
+
+## 3、重点回顾
+
+1、客户端可以通过执行 `MONITOR` 命令，将客户端转换成监视器，接收并打印服务器处理的每个命令请求的相关信息
+
+2、当一个客户端从普通客户端变为监视器时，该客户端的 `REDIS_MONITOR` 标识会被打开
+
+3、服务器将所有监视器都记录在 monitors 链表中
+
+4、每次处理命令请求时，服务器都会遍历 monitors 链表，将相关信息发送给监视器
 
 # \# 应用
 
