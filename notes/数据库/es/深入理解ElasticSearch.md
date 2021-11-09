@@ -2,6 +2,8 @@
 
 # 一、回顾与简介
 
+> Elasticsearch使用的默认的堆大小（最小和最大都是）是2GB
+
 ## 1、Lucene 简介
 
 ### (1) Lucene 索引
@@ -1902,6 +1904,16 @@ Elasticsearch 能很自如地索引结构化对象：
 
 # 五、改善用户搜索体验
 
+- 用 `term suggester` 和 `phrasesuggester` 实现“你的意思是”功能
+
+- 用 `completion suggester` 实现自动完成功能，即“边输入边搜索”
+
+- 用 `completion suggester` 处理高级查询和部分匹配时的局限性
+
+    > 用 n-grams 实现定制 completion suggester 解决这些问题
+
+- 讨论了同义词的实现，以及在某些场景下使用同义词的限制
+
 ## 1、测试数据
 
 索引一些从 Wikipedia dump 上下载的数据：
@@ -1947,177 +1959,1095 @@ Elasticsearch 能很自如地索引结构化对象：
 
 ### (1) 在 _search 端点下使用 suggester
 
+- suggest 内部提供要分析的文本和要使用的 suggester 类型(term 或 phrase)，因此想得到对 chrimes in wordl 的建议(拼写错误单词)，就要运行下面的查询(在 _search 端点下使用建议请求)：
 
+    ```json
+    curl -XPOST "http://localhost:9200/wikinews/_search?pretty" -d 
+    '{
+        "suggest":{
+            "first_suggestion":{
+                "text":"chrimes in wordl",
+                "term":{
+                    "field":"title"
+                }
+            }
+        }
+    }'
+    ```
 
+    - 建议请求被封装在 suggest 对象中，用选定的名字(如：first_suggestion)发给 Elasticsearch
+    - 另外，用 text 参数指定了想得到建议的文本
+    - 最后，增加 suggester 对象，即 term 或 phrase
+    - suggester 对象包含着自己的配置，如：用于建议的字段(field 属性)
 
+- 通过添加多个建议名，可以一次性发送多个建议请求，如：已有建议再包含一个关于单词 arest 的建议，使用的命令如下：
 
+    ```json
+    curl -XPOST "http://localhost:9200/wikinews/_search?pretty" -d 
+    '{
+        "suggest":{
+            "first_suggestion":{
+                "text":"chrimes in wordl",
+                "term":{
+                    "field":"title"
+                }
+            },
+            "second_suggestion":{
+                "text":"arest",
+                "term":{
+                    "field":"text"
+                }
+            }
+        }
+    }'
+    ```
 
+---
+
+- **理解 suggester 响应**：
+
+    - 上述命令执行结果分析：
+
+        - term suggester 针对 first_suggestion 一节的 text 参数中的每个词项返回了可能的建议列表
+        - 对于每个词项，term suggester 都会返回一组可能的建议，并包含附加的信息
+        - 从为词项 wordl 返回的响应中，可以看到原来的单词(text参数)、与原来 text 参数的偏移量(offset参数)，长度(length参数)
+
+    - options 数组则包含对给定单词的建议，若 Elasticsearch 找不到任何的建议就为空
+
+        数组中的每一项都是一个建议，包含如下属性：
+
+        - `text`：Elasticsearch 给出的建议词
+
+        - `score`：建议词的得分，得分越高的建议词，其质量越高
+
+        - `freq`：建议词在文档出现的频率，频率越高，说明包含这个建议词的文档也越多，则这个词符合查询意图的可能性也越大
+
+            > 频率指建议词在被查询索引的文档中出现过多少次
+
+- **对相同建议文本的多种建议类型**：若一次获得针对同一段文本的多种类型的查询建议，则可以用 suggest 对象把建议请求封装起来，让 text 作为 suggest 对象的一个选项
+
+    如：若想获取文本 arest 在 text 字段和 title 字段中的建议，可以使用如下命令：
+
+    ```json
+    curl -XPOST "http://localhost:9200/wikinews/_search?pretty" -d 
+    '{
+        "query":{
+            "match_all":{
+            }
+        },
+        "suggest":{
+            "text":"arest",
+            "first_suggestion":{
+                "term":{
+                    "field":"text"
+                }
+            },
+            "second_suggestion":{
+                "term":{
+                    "field":"title"
+                }
+            }
+        }
+    }'
+    ```
 
 ### (2) term suggester
 
+> term suggester 基于编辑距离来运作，即增删改某些字符转化为原词的改动越少，这个建议词就越有可能是最佳选择
+>
+> 如：为了把 worl 转化为 work，需要把字母 `l` 改为字母 `k`，改动了一个字符，因此编辑距离为 `1` 
+>
+> 当然，提供给 suggester 的文本需要先经过分词转化为词项，之后再针对各个词项给出查询建议
 
+Elasticsearch 中 term suggester 的各种配置选项：
 
+- term suggester 的通用配置选项：对所有基于 term suggester 的 suggester 实现都有效
 
+    - `text`(必需)：代表希望从 Elasticsearch 得到建议的文本内容
+    - `field`(必需)：允许指定要产生建议的字段，如：若仅希望从 title 字段的词项中产生建议，给本选项赋值为 title
+    - `analyzer`：指定分析器，分析器会把 text 参数中提供的文本切分成词项，默认使用 field 参数所对应字段的分析器
+    - `size`：指定针对 text 参数提供的词项，每个词项最多返回的建议词数量。默认值是 5
+    - `sort`：指定给出建议词的排序方式
+        - `score`(默认)：表示先按建议词得分排序，再按文档频率排序，最后按词项本身排序
+        - `frequency`：表示先按文档频率排序，再按建议词得分排序，最后按词项本身排序
+    - `suggest_mode`：控制什么样的建议词可以被返回
+        - `missing`(默认)：对 text 参数的词项做一个区分对待，若该词项不存在于索引中，则返回它的建议词，否则不返回
+        - `popular`：在生成建议词时做一个判断，若建议词比原词更受欢迎(在更多文档中出现)则返回，否则不返回
+        - `always`：为 text 中的每个词都生成建议词
 
+- term suggester 的其他配置选项：
 
+    - `lowercase_terms`：若本选项设置为 true，Elasticsearch 会把 text 文本做分词后得到的词项都转为小写
+
+    - `max_edits`：用来设定建议词与原始词的最大编辑距离，可取 1 或 2(默认)
+
+        > 设置为 1 可能会得到较少的建议词，而对于有多个拼写错误的原始词，则可能没有建议词
+        >
+        > 若看到很多不正确的建议词，那可能是由于拼写错误引起，此时可以尝试将 max_edits 的值设置为1
+
+    - `prefix_length`：设置建议词开头必须和原始词开头字符匹配的字符数量，默认值为 1
+
+        > 若正在为 suggester 的性能而苦恼，可以通过增大这个值来获得更好的性能，因为这样做会减少参与计算的建议词数量
+
+    - `min_word_length`：用于指定可以返回的建议词的最少字符数。默认值是 4
+
+    - `shard_size`：用于指定每个分片返回建议词的最大数量，默认等于 size 参数的值
+
+        > 若给这个参数设定更大(大于 size 参数值)的值，就会得到更精确的文档频率(因为词项分布在多个索引分片中，除非索引只有一个分片)，但是会导致拼写检查器的性能下降
+
+    - `max_inspections`：用于控制 Elasticsearch 在一个分片中要检查多少个候选者来产生可用的建议词，默认值是 5
+
+        > 针对每个原始词总共最多需要扫描 `shard_size*max_inspecitons` 个候选者
+
+    - `min_doc_freq`：控制建议词的最低文档频率，只有文档频率高于本选项值的建议词才可以被返回，默认值 `0f` 表示未启用
+
+        > - 这个值是**针对每个分片**的，不是索引的全局取值
+        >
+        > - 把取值设置为大于 0 的数，可以提高返回建议词的质量，但是会让一些文档频率低于本值的建议词无法被返回
+        >
+        >     如：取值为 2 表示只有在给定分片中文档频率大于等于 2 的建议词才能被返回
+        >
+        > - 取值也可设置百分比，但取值必须小于 1(如：0.01 表示 1%)，即建议词的文档频率最低不能小于当前分片文档数的 1%
+
+    - `max_term_freq`：设置文本中词项的最大文档频率，文档频率高于设定值的词项不会给出拼写纠错建议，默认值是 `0.01f` 
+
+        > - 这个值也是针对单个分片设定
+        > - 取值可以是精确数字(如 4 或 100)，也可以是小于 1 的小数，表示百分比(如 0.01 表示 1%)
+        >
+        > - 取值越高，拼写检查器的性能越好，可用于在拼写检查时排除掉高频词，因为高频词往往不会存在拼写错误
+
+    - `string_distance`：用于指定计算词项相似度的算法
+
+        现在支持以下算法：
+
+        - `internal`(默认)：基于 Damerau-Levenshtein 相似度算法的优化实现
+        - `damerau_levenshtein`：是 Damerau-Levenshtein 字符串距离算法的实现
+        - `levenshtein`：是 Levenshtein 距离算法的实现
+        - `jarowinkler`：是 Jaro-Winkler 距离算法的实现
+        - `ngram`：是基于 n-gram 距离的算法实现
 
 ### (3) phrase suggester
 
+> phrasesuggester 建立在 term suggester 基础上，并增加了额外的短语计算逻辑，因此可以返回完整的关于短语的建议，而不是针对单个词项的建议
+>
+> 基于 n-gram 语言模型计算建议项的质量，在短语纠错方面比 term suggester 更好
+>
+> n-gram 方法将索引词项切分成 gram，即指由一个或多个字母组成的单词片段，如：将 mastering 切分成 maas st te er ri in ng
 
+**使用示例**：可以执行如下命令，向 _search 端点发送一个仅含有 suggest 片段的简单查询请求
 
+```json
+curl -XGET "http://localhost:9200/wikinews/_search?pretty" -d 
+'{
+    "query":{
+        "match_all":{
+        }
+    },
+    "suggest":{
+        "text":"Unitd States",
+        "our_suggestion":{
+            "phrase":{
+                "field":"text"
+            }
+        }
+    }
+}'
+```
 
+结果返回的是完整的短语建议，而不是针对单个词项的建议，建议项列表默认按得分排序
 
+---
 
+phrase suggester 配置参数：可以使用 term suggester 的通用配置参数
+
+- **基本参数**：用来定义一般行为
+
+    - `highlight`：设置对建议项的高亮处理，需结合 `pre_tag` 及 `post_tag` 属性使用
+
+        > 被 pre_tag 和 post_tag 括起来的返回项将被高亮显示，如：这两者可以被分别设置为<b>和</b>，则被<b>和</b>括起来的返回项就会被显示为高亮
+
+    - `gram_size`：指定 `field` 参数对应字段中存储的 `n-gram` 的最大的 `n`
+
+        > - 若指定字段中没存储 `n-gram`，这个值应该被设置为 `1` 或根本不用在请求中携带这个参数
+        >
+        > - 若这个值没有设置，Elasticsearch 会尝试去探测正确的值，如：对于使用 shingle 过滤器的字段，这个值会被设置为max_shingle_size 属性的取值
+
+    - `confidence`：可以基于得分来限制返回的建议项。选项值被作用到输入短语的原始得分上（原始得分乘以这个值），得到新的得分。新的得分作为临界值用于限制生成的建议项。如果建议项的得分高于这个临界值，可以被放入输出结果列表，否则被丢弃。例如，取值1.0（本选项的默认值）意味着只有得分高于输入短语的建议项才会被输出。另一方面，设置为0.0表示输出所有建议项（个数受size参数的限制），而不管得分高低
+
+    - `max_errors`：这个属性用于指定拼写错误词项的最大个数或百分比。取值可以是一个整数，例如1、5，或者一个0～1的浮点数。浮点数会被解释成百分比，表示最多可以有百分之多少的词项含有拼写错误。例如，0.5代表50%。而如果取值为整数，比如1、5，Elasticsearch会把它当作拼写错误词项的最大个数。默认值是1，意思是最多只能有一个词项有拼写错误
+
+    - `separator`：这个选项用于指定将返回的bigram字段中的词项分隔开的分隔符。默认分隔符是空格。
+
+    - `collate`：该选项允许用户检查特定查询（在collate对象内部使用query属性）返回建议项的每一项。这里的查询或过滤实际上是一个模板，对外暴露一个{{suggestion}}变量，该变量代表当前正在处理的建议。在collate对象中添加prune属性，将其值设置为true，通过这种办法Elasticsearch就可以将建议项与查询或过滤器匹配的信息包含进来（这些信息被包含在返回结果的collate_match属性中）。除此之外，如果使用了preference属性，查询偏好信息也会被包含进返回结果中（可以使用普通查询中的同名参数的值）
+
+    - `real_word_error_likehood`：这个选项用于设定词项有多大的可能会拼写出错，尽管存在于索引的词典中。选项取值是百分比，默认值为0.95，用于告知Elasticsearch的词典中约有5%的词项拼写不正确。减小这个值意味着更多的词项会被认为含有拼写错误，尽管它们可能是正确的
+
+- **平滑模型配置参数**：用来平衡 n-gram 权重，即平衡索引中不存在的稀有 n-gram 词元和索引中存在的高频 n-gram 词元之间的权重
+
+    > 为了使用某个平滑模型，需要在请求中添加一个 `smoothing` 对象，并让它包含一个要使用的平滑模型的名称
+    >
+    > 当然也可以根据需要设置平滑模型的各种属性，如：执行命令
+    >
+    > ```json
+    > curl -XGET "http://localhost:9200/wikinews/_search?pretty" -d 
+    > '{
+    >     "suggest":{
+    >         "text":"chrimes in world",
+    >         "generators_example_suggestion":{
+    >             "phrase":{
+    >                 "analyzer":"standard",
+    >                 "field":"text",
+    >                 "smoothing":{
+    >                     "linear":{
+    >                         "trigram_lambda":0.1,
+    >                         "bigram_lambda":0.6,
+    >                         "unigram_lambda":0.3
+    >                     }
+    >                 }
+    >             }
+    >         }
+    >     }
+    > }'
+    > ```
+
+    - `Stupid backoff`：默认平滑模型，为了能够修改或强制使用，需要在请求中使用名称 `stupid_backoff`
+
+        > Stupid backoff 平滑模型的实现：若高阶的 `n-gram` 出现频率为0，会转而使用低阶的 `n-gram` 频率(且给该频率打个折扣，折扣率由discount参数指定)
+        >
+        > 举例：假定有一个二元分词 ab 和一个单元分词 c，ab 和 c 普遍存在于索引中，而索引中不存在三元分词 abc，则 Stupid backoff 模型会直接使用 ab 二元分词模型，且给一个与 discount 属性值相同的折扣
+        >
+        > Stupid backoff 模型只提供了一个 discount 参数供调整，默认值是 0.4，被用来给低阶的 n-gram 打折
+
+    - `Laplace` 平滑(加法平滑)：为使用该模型，需要使用 `laplace` 作为模型名字
+
+        > 使用时，由 `alpha` 参数指定的常量(默认值0.5)将被加到词项的频率上，用来平衡频繁和不频繁的 n-gram
+        >
+        > Laplace平滑模型可以通过 alpha 属性进行配置，Alpha参数默认值为0.5，取值通常等于或小于 1.0
+
+    - 线性插值：使用配置中提供的 `lambda` 值计算三元分词、二元分词及单元分词的权重
+
+        为使用该模型，需在查询对象中指定 `smoothing` 为 `linear`，并提供：`trigram_lambda、bigram_lambda、unigram_lambda`，且以上 3 个参数之和必须为 1
+
+- **候选者生成器参数**：负责生成各个词项的建议列表，这些列表被用来生成最终的短语建议
+
+    - **直接生成器**：唯一可用的候选者生成器
+
+        Elasticsearch 允许在一个短语建议请求中指定多个直接生成器，可以通过 `direct_generators` 列表来做到这一点
+
+        如：执行如下命令
+
+        ```json
+        curl -XGET "http://localhost:9200/wikinews/_search?pretty" -d 
+        '{
+            "suggest":{
+                "text":"chrimes in wordl",
+                "generators_example_suggestion":{
+                    "phrase":{
+                        "analyzer":"standard",
+                        "field":"text",
+                        "direct_generator":[
+                            {
+                                "field":"text",
+                                "suggest_mode":"always",
+                                "min_word_length":2
+                            },
+                            {
+                                "field":"text",
+                                "suggest_mode":"always",
+                                "min_word_length":3
+                            }
+                        ]
+                    }
+                }
+            }
+        }'
+        ```
 
 ### (4) completion suggester
 
+> completion suggester 是一个基于前缀的 suggester，可以用非常高效的方法实现自动完成功能，将复杂的数据结构存储在索引中，不用在查询时实时计算
+>
+> 注：这个 suggester 与改正用户的拼写错误无关
 
+- **completion suggester 的背后逻辑**：
 
+    - **底层**：基于 `FST(Finite State Transducer)` 数据结构
 
+        > FST 特点：十分高效，但构建很消耗资源，特别是在拥有大量数据时
+        >
+        > 缺点：若在某些节点上构建这些数据结构，则每当节点重启或集群状态变更时，都会付出性能代价
+        >
+        > 改进：在索引过程中创建类似 FST 的数据结构，并存储在索引中，因此需要时就可以加载进内存
 
+    - **使用**：假设要添加一个针对书籍作者的自动完成功能，数据存储在另一个索引中。除了作者的名字之外，还想返回该作者所写的书的ID，通过一个额外查询来得到这些数据
 
+        首先使用如下命令建立 authors 索引：
 
+        ```json
+        curl -XPUT "http://localhost:9200/authors" -d 
+        '{
+            "mappings":{
+                "author":{
+                    "properties":{
+                        "name":{
+                            "type":"keyword"
+                        },
+                        "suggest":{
+                            "type":"completion"
+                        }
+                    }
+                }
+            }
+        }'
+        ```
 
+        - 该索引包含一个名为 author 的类型
+
+        - 每个文档有两个字段：name 字段是作者的名字，suggest 字段是用于自动完成的字段
+
+            > 用 completion 类型定义，因此就会在索引中保存类似 FST 的数据结构
+
+- **索引数据**：索引 completion 类型数据需要一般索引时信息和一些额外的信息
+
+    索引两个描述 author 信息文档的命令：
+
+    ```json
+    curl -XPOST "http://localhost:9200/authors/author/1" -d 
+    '{
+        "name":"Fyodor Dostoevsky",
+        "suggest":{
+            "input":[
+                "fyodor",
+                "dostoevsky"
+            ]
+        }
+    }'
+    
+    curl -XPOST "http://localhost:9200/authors/author/2" -d
+    '{
+        "name":"Joseph Conrad",
+        "suggest":{
+            "input":[
+                "Joseph",
+                "Conrad"
+            ]
+        }
+    }'
+    ```
+
+    > completion 字段使用 input 属性提供构建类 FST 的数据结构所要用到的输入信息，并用于匹配用户输入，来决定 suggester 要不要返回相应的文档
+
+- **查询数据**：假如要找到作者名以 fyo 开头的文档，可以使用如下命令：
+
+    ```json
+    curl -XGET "http://localhost:9200/authors/_search?pretty" -d
+    '{
+        "suggest":{
+            "authorAutocomplete":{
+                "prefix":"fyo",
+                "completion":{
+                    "field":"suggest"
+                }
+            }
+        }
+    }'
+    ```
+
+    发送请求的目标是 `_suggest` 端点，因为在这里并不想发送一个标准查询，而仅仅对自动完成的结果感兴趣
+
+    查询的其他部分和标准的发往 `_suggest` 端点的 `suggest` 查询如出一辙，查询类别需要设置为 completion
+
+    ---
+
+    **自定义权重**：词项频率将被基于前缀的 suggester 作为文档权重，但不适用拥有多个索引分片或索引由多个索引段组成时
+
+    > 在这些情况下，可以通过给 completion 类型的字段指定 weight 属性来自定义权重
+    >
+    > - weight 属性取值应该设置为整数，而不是浮点数，与查询 boost、文档 boost 情况类似
+    > - weight 取值越大，建议项的重要性越大
+    >
+    > 这项功能给了很多调整建议项排序的机会
+
+    如：给前面例子中的第一份文档指定权重，可以使用如下命令：
+
+    ```json
+    curl -XPOST "http://localhost:9200/authors/author/1" -d 
+    '{
+        "name":"Fyodor Dostoevsky",
+        "suggest":{
+            "input":[
+                "fyodor",
+                "dostoevsky"
+            ],
+            "weight":80
+        }
+    }'
+    ```
+
+- **使用 completion suggester 的模糊功能**：要处理搜索命令中的输入错误，可以使用 completion suggester 的模糊功能
+
+    如：想找 fyo，但不小心输入了 fio，用下面的命令仍然可以得到正确的结果：
+
+    ```json
+    curl -XGET "http://localhost:9200/authors/_search?pretty" -d
+    '{
+        "suggest":{
+            "authorAutocomplete":{
+                "text":"fyo",
+                "completion":{
+                    "field":"suggest",
+                    "fuzzy":{
+                        "fuzziness":2
+                    }
+                }
+            }
+        }
+    }'
+    ```
+
+    > 与查询条件中的前缀匹配的长度越长，建议的得分就越高
 
 ## 3、实现自定义自动完成功能
 
+**completion suggester 不足**：
 
+- **不足一**：只支持前缀查询，不支持更通用的残缺词完成功能
+- **不足二**：不支持高级查询和过滤器
 
+---
 
+解决上述不足：基于 `n-grams` 实现一个定制的自动完成功能
 
+**创建索引**：用下面的 `settings` 和 `mappings` 来创建索引 `location-suggestion` 
 
+```json
+curl -XPOST "http://localhost:9200/location-suggestion" -d 
+'{
+    "settings":{
+        "index":{
+            "analysis":{
+                "filter":{
+                    "nGram_filter":{
+                        "token_chars":[
+                            "letter",
+                            "digit",
+                            "punctuation",
+                            "symbol",
+                            "whitespace"
+                        ],
+                        "min_gram":"2",
+                        "type":"nGram",
+                        "max_gram":"20"
+                    }
+                },
+                "analyzer":{
+                    "nGram_analyzer":{
+                        "filter":[
+                            "lowercase",
+                            "asciifolding",
+                            "nGram_filter"
+                        ],
+                        "type":"custom",
+                        "tokenizer":"whitespace"
+                    },
+                    "whitespace_analyzer":{
+                        "filter":[
+                            "lowercase",
+                            "asciifolding"
+                        ],
+                        "type":"custom",
+                        "tokenizer":"whitespace"
+                    }
+                }
+            }
+        }
+    },
+    "mappings":{
+        "locations":{
+            "properties":{
+                "name":{
+                    "type":"text",
+                    "analyzer":"nGram_analyzer",
+                    "search_analyzer":"whitespace_analyzer"
+                },
+                "country":{
+                    "type":"keyword"
+                }
+            }
+        }
+    }
+}'
+```
 
+- **理解参数**：
 
+    - **配置 settings**：包含两个定制的 analyzer：nGram_analyzer和whitespace_analyzer
+
+        > 使用空格分词器定制一个whitespace_analyzer，这样所有的 token 都以小写字母和 asci 格式索引起来
+
+        nGram_analyzer 有个定制的过滤器 nGram_filter，用到了下面这些参数：
+
+        - `type`：描述了 token 过滤器的类型，如：N-gram
+
+        - `token_chars`：描述在生成的字符中怎样的字符是合法的
+
+            > 标点和特殊字符都会被从字符流中除掉
+
+        - `min_gram` 和 `max_gram`：设置生成的子字符串的最小和最大长度，并把它们加入搜索表
+
+            > 如：按本文索引设置，India 产生字符：`["di","dia","ia","in","ind","indi","india","nd","ndi","ndia"]`
+
+    - **配置 mappings**：本文索引的文档类型是 `locations`，有两个字段 `name` 和 `country`
+
+        - 为 name 字段定义 analyzer 的方法用于自动推荐，把这个字段的索引分析器设置成 `nGram_analyzer`，而搜索分析器则设置成 `whitespace_analyzer`
+
+- **索引文档**：把一些包含 name 和 country 名的文档索引起来
+
+    ```json
+    curl -XPOST "http://localhost:9200/location-suggestion/location/1" -d 
+    '{"name":"Bradford", "country":"england"}'
+    curl -XPOST "http://localhost:9200/location-suggestion/location/2" -d 
+    '{"name":"Bridport", "country":"england"}'
+    curl -XPOST "http://localhost:9200/location-suggestion/location/3" -d 
+    '{"name":"San Diego Country Estates", "country":"usa"}'
+    curl -XPOST "http://localhost:9200/location-suggestion/location/3" -d 
+    '{"name":"Ike's Point, NJ", "country":"usa"}'
+    ```
+
+- **用自动完成功能搜索文档**：现在索引中已经有了 4 份文档，可以执行搜索请求来测试自动完成功能
+
+    - 第一个请求内容是 `ke's`，可以匹配 `Ike's Point，NJ` 并从索引中返回第四份文档
+
+        ```json
+        curl -XGET "http://localhost:9200/location-suggestion/location/_search" -d
+        '{
+            "query":{
+                "match":{
+                    "name":"ke's"
+                }
+            }
+        }'
+        ```
+
+    - 类似地，搜索 `br` 会返回 `Bradford` 和 `Bridpoint`，用 `size` 参数可以控制响应内容中返回的匹配文档数
+
+    > 也可以在既定的上下文中使用高级查询和过滤器来提供建议，像普通的搜索请求一样工作
 
 ## 4、处理同义词
 
 ### (1) 为同义词搜索准备 settings
 
+要在搜索中使用同义词，相应字段要提前配置同义词词条过滤器，这个过滤器允许在 `settings` 中直接设置同义词，也可以从文件中获得同义词：
 
+```json
+curl -XPUT "http://localhost:9200/synonyms-index" -d
+'{
+    "settings":{
+        "analysis":{
+            "filter":{
+                "my_synonym_filter":{
+                    "type":"synonym",
+                    "synonyms":[
+                        "shares",
+                        "equity",
+                        "stock"
+                    ]
+                }
+            },
+            "analyzer":{
+                "my_synonyms":{
+                    "tokenizer":"standard",
+                    "filter":[
+                        "lowercase",
+                        "my_synonym_filter"
+                    ]
+                }
+            }
+        }
+    }
+}'
+```
 
+上面索引设置中：
 
+- 用定制过滤器 `my_synonym_filter` 创建了一个定制分析器，是基于同义词词条过滤器
+- 还用 `synonyms` 参数定义了 `shares、equity、stock` 3个词，都属于同一个同义词组
 
+除了使用内置词，也可以在 Elasticsearch 的配置目录 `/etc/elasticsearch/` 下创建名为 `synonyms.txt` 文件，把这些同义词都写在文件里，使用这个文件，定制过滤器配置如下：
 
+```json
+"my_synonym_filter":{
+    "type":"synonym",
+    "synonyms_path":"synonyms.txt"
+}
+```
+
+> 将文件 `/etc/elasticsearch/synonyms.txt` 的属主改为用户 Elasticsearc
 
 ### (2) 格式化同义词
 
+- **用逗号分隔的单词**：这种结构可以搜索任意单词，也可以找到任意其他词，原因在于词条就是用这种方法生成的：
 
+    > - 这种格式叫作简单扩展
+    > - 使用这种格式代价非常昂贵，因为每个词项都将被同义词组中的若干个词替代，因此会导致索引尺寸变得异常大
 
+<img src="../../../pics/es/es_108.png">
 
+- **使用符号 `=>` 的语法**：左边的词项将被右边的词项替代
 
+    - 简单收缩：当在右边只放一个词时
+    - 类型扩展：若左边只有一个词而右边有多个时
 
+    这种格式会导致词项被按这样的规则替换：
+
+    <img src="../../../pics/es/es_109.png">
+
+    ---
+
+    注：当多种解析方法都合适时，启动最早并可以解析最多词条的规则将胜出，如规则：
+
+    ```
+    a => x 
+    a b => y
+    b c d => z
+    ```
+
+    输入 `a b c d e` 会解析成 `y b c d`，第二个规则胜出，因为启动最早，且与同时启动的其他规则相比，可以匹配最多的输入词条
 
 ### (3) 同义词扩展与收缩
 
+索引时使用简单扩展有两个主要缺点：
 
+- 缺点一：会让索引变得异常大
 
+- 缺点二：对于现有文档，要改变同义词规则就必须重新索引
 
+    > 不过搜索速度会非常快，因为 Elasticsearch 只需要查找一个词项
+    >
+    > 若在查询时使用这个技巧，会对搜索速度造成极大的性能影响，因为对单一词项的查询会被改写成寻找同义词组中的所有词项。
 
+在查询时使用简单查询最大优点：不需要重新索引文档就可以更新同义词规则
 
+---
 
+简单收缩：
 
+- 像 `u s a，united states=>usa` 这样的简单收缩会将左侧的一组同义词映射成右边的一个词，这种方法有许多优点：
+    - 首先，索引大小很正常，因为一个词项替换了整个同义词组
+    - 其次，查询性能非常好，因为只需要匹配一个词项
+    - 第三，同义词规则更新时不需要重新索引文档，有下面的方法可以做到
+
+- 简单收缩缺点：会极大影响相关性，属于同一个同义词组的所有词项都有相同的反向文档频率，因此无法区分最常见和最不常见单词
 
 # 六、分布式索引架构
 
-## 1、配置示例的多节点集群
+## 1、选择合适数量的分片和副本
 
+> 两台服务器处于相同的网络中，并且 9200 和 930 0端口相互开放
 
+- 当开始使用 Elasticsearch时，一般会先创建索引，往索引中导入数据，然后开始执行查询
 
+- 在数据量不大和查询压力不是很高会很顺利，但随着应用程序规模的成长，不得不索引越来越多的数据，每秒钟处理越来越多的请求，这时问题开始出现
 
-
-
-
-## 2、选择合适数量的分片和副本
+    > 本章将给出如何处理这个问题的一些指导方针，不幸的是不会有具体的处理方法
 
 ### (1) 分片和预分配
 
+- **分片**：将一个 Elasticsearch 索引分割成更小索引的过程，这样才能在同一集群的不同节点上将它们分散
 
+    > 查询时，总结果集汇总了索引中每个分片的返回结果
 
+- **预分配**：Elasticsearch 默认为每个索引创建 5 个分片，即使在单节点环境下也是如此
 
+    > - **背景**：当前版本的 Elasticsearch 无法将已有的索引重新分割成多份，必须在创建索引时就指定好需要的分片数量
+    > - **问题**：若索引只有一个分片，则当应用程序的增长超过了单台服务器的容量时，就会遇到问题
+    > - **解决**：只有创建一个拥有更多分片的新索引，并重新索引数据
+    > - **局限**：这样的操作需要额外的时间和服务器资源，如 CPU、内存、大量的存储
+    >
+    > Elasticsearch 设计者选择的默认配置(5个分片和1个副本)是在数据量增长和合并多分片搜索结果之间做了平衡
 
+- **问题**：什么时候需要用更多的分片？或者 什么时候应该让分片数量尽可能少？
 
+    > 注意：为了保证高可用和查询的吞吐量，需要配置副本，且跟普通的分片一样需要占用节点上的空间
+    >
+    > 若每个分片有一份额外的拷贝，最终会有20个分片(10个是主分片，另10个是副本)
+
+- 节点数和分片数、副本数的简单计算公式如下：`所需最大节点数 = 分片数 * (副本数+1)` 
+
+    > 若计划使用 10 个分片和 2 个副本，则所需的最大的节点数是 30
 
 ### (2) 预分配的正面例子
 
+- 注意点：使用的分片数量应该尽可能少
 
+- 有时更多分片较好，因为一个分片是一个 Lucene 索引，更多的分片意味每个在较小的 Lucene 索引上执行的操作会更快
 
+    > 将查询拆散成对每个分片的请求然后再合并结果的代价：如那种每个查询都在指定用户的上下文中执行的多租户系统
+    >
+    > 解决：可以将单个用户的数据都索引到一个独立的分片中，在查询时就只查询那个用户的分片，这时需要使用路由
 
+### (3) 多分片与多索引(副本)
 
+**副本**：
 
+- 使用分片够存储超过单节点容量限制的数据，而使用副本则解决了日渐增长的吞吐量、高可用和容错的问题
 
-### (3) 多分片与多索引
+- 当一个存放主分片的节点失效后，Elasticsearch 会把一个可用的副本升级为新的主分片
 
+- 默认情况下，Elasticsearch 只为每个索引分片创建一个副本，但不同于分片的数量，副本的数量可以通过相关的 API 随时更改
 
+    > 该功能让构建应用程序变得非常方便，因为在需要更大的查询吞吐量时，使用副本就可以应对不断增长的并发查询
 
+- 增加副本数量可以让查询负载分散到更多机器上，理论上可以让 Elasticsearch 处理更多的并发请求
 
+使用过多副本的缺点：额外的副本占用了额外的存储空间，也会增加构建索引副本的开销，主分片及其副本之间的数据同步也存在开销
 
+---
 
+增加或减少副本数量的命令：
 
+```json
+curl -XPUT 'localhost:9200/books/_settings' -d
+'{
+	"index": {
+        "number_of_replicas": 2
+    }
+}'
+```
 
-
-## 3、路由
+## 2、路由
 
 ### (1) 分片和数据
 
+- Elasticsearch 查询时，请求会被发送至所有的分片，因此能均匀分发数据的算法，让每个分片都包含差不多数量的文档
 
+    > 并不希望某个分片持有99%的数据，而另一个分片持有剩下的1%，这样做极其低效
 
+- 当删除文档或为一份文档增加新版本时，分片算法需要对同一个文档标识符永远生成相同的值
 
+- 另外，某些时候需要把一部分数据都索引到相同的分片上
 
-
+    > 如：将特定类别的书籍都存储在某个特定的分片上，在查询这类书时可以避免查询多个分片及合并查询结果
 
 ### (2) 测试路由功能
 
+案例：演示 Elasticsearch 如何分配分片，以及如何将文档存放到特定分片上
 
+> 使用 Elasticsearch的 `_cat API`，可以查看 Elasticsearch 到底对数据做了什么
 
+- 用如下的命令启动两个 Elasticsearch 节点并创建索引：
 
+    ```json
+    curl -XPUT 'localhost:9200/documents' -d
+    '{
+    	"settings": {
+            "number_of_replicas": 0,
+            "number_of_shards": 2
+        }
+    }'
+    ```
 
+    > 这个索引有两个分片，但没有副本
 
+- 索引文档命令：
+
+    ```json
+    curl -XPUT 'localhost:9200/documents/docs/1' -d '{"title": "Document No.1"}'
+    curl -XPUT 'localhost:9200/documents/docs/2' -d '{"title": "Document No.2"}'
+    curl -XPUT 'localhost:9200/documents/docs/3' -d '{"title": "Document No.3"}'
+    curl -XPUT 'localhost:9200/documents/docs/4' -d '{"title": "Document No.4"}'
+    ```
+
+- 然后，从下面命令的输出中可以看到两个主分片已经创建成功：
+
+    ```json
+    curl -XGET localhost:9200/_cat/shard?v
+    ```
+
+    <img src="../../../pics/es/es_110.png">
+
+    > 从上面可以看到与分片有关的信息：集群的每个节点恰好包含两份文档，基于分片的索引做到了平均分布文档
+
+    接下来关掉第二个节点，现在 `cat` 命令输出如下结果：
+
+    <img src="../../../pics/es/es_111.png">
+
+    第一个信息是集群状态红色，即至少有一个主分片不见了，因此一些数据不再可用，索引的某些部分也不再可用
+
+- Elasticsearch 还是允许执行查询，至于是通知用户查询结果可能不完整还是拒绝查询请求，则由应用的构建者来决定：
+
+    ```json
+    curl -XGET 'localhost:9200/documents/_search?pretty'
+    ```
+
+    Elasticsearch 返回了关于故障的信息：有一个分片不可用
+
+    - 在返回的结果集中，只能看到标识符为 1、2 和 4 的文档(至少在主分片恢复正常之前如此)
+    - 若启动第2个节点，经过一段时间(取决于网络和网关模块的设置)后，集群就会恢复到绿色状态，此时所有的文档都可用
+
+    <img src="../../../pics/es/es_112.png" align=left width=500>
+
+    <img src="../../../pics/es/es_113.png" align=left width=500>
 
 ### (3) 在索引过程中使用路由
 
+- 路由参数 `routing`：控制 Elasticsearch 选择将文档发送到哪个分片
 
+    > 路由参数值无关紧要，可以选择任何值，重要的是在将不同文档放到同一个分片上时，需要使用相同的值
+    >
+    > 即给不同的文档使用相同的路由参数值可以确保这些文档被索引到相同分片中
 
+- 向 Elasticsearch 提供路由信息有多种途径，最简单的办法是在索引文档时加一个 routing URI 参数：
 
+    ```json
+    curl -XPUT localhost:9200/books/doc/1?routing=A -d '{"title": "Document"}'
+    ```
 
+    也可以在批量索引时使用这个参数：在批量索引时，路由参数由每份文档元数据中的 `_routing` 属性指定，如：
 
+    ```json
+    curl -XPOST localhost:9200/_bulk --data-binary 
+    '{"index": {"_index": "books", "_type": "doc", "_routing": "A" }}
+    {"title": "Document"}'
+    ```
 
 ### (4) 路由实战
 
+现在重复前面的例子，只是这次会使用路由：
 
+- 首先删除旧文档：如果不这么做，那么使用相同的标识符添加文档时，路由会把相同的文档都存放到另一个分片上去
 
+    ```json
+    curl -XPOST "http://localhost:9200/documents/_delete_by_query" -d
+    '{"query": {"match_all": {}}}'
+    ```
 
+- 然后重新索引数据，但是这次会增加路由信息：
 
+    ```json
+    curl -XPOST localhost:9200/documents/doc/1?routing=A -d '{"title": "Document No. 1"}'
+    curl -XPOST localhost:9200/documents/doc/1?routing=B -d '{"title": "Document No. 2"}'
+    curl -XPOST localhost:9200/documents/doc/1?routing=C -d '{"title": "Document No. 3"}'
+    curl -XPOST localhost:9200/documents/doc/1?routing=D -d '{"title": "Document No. 4"}'
+    ```
 
+    > 路由参数指示 Elasticsearch 应该将文档放到哪个分片上
+    >
+    > 同一个分片可能会存放多份文档，因为分片数往往少于路由参数值的个数
+
+- 现在停掉一个节点，集群会再次显示红色状态，执行匹配所有文档的查询，Elasticsearch 将返回相应的结果：
+
+    ```json
+    curl -XGET 'localhost:9200/documents/_search?q=*&pretty'
+    ```
+
+    响应结果如下：
+
+    <img src="../../../pics/es/es_114.png" align=left width=400>
+
+    <img src="../../../pics/es/es_115.png" align=left width=400>
 
 ### (5) 查询
 
+> 路由允许用户指定 Elasticsearch 应该在哪个分片上执行查询
 
+案例：从路由值 A 确定的分片上查询数据，可以执行如下查询命令：
 
+```json
+curl -XGET 'localhost:9200/documents/_search?pretty&q=*&routing=A'
+```
 
+或者执行命令：
 
+```json
+curl -XGET 'http://localhost:9200/documents/doc/_search?routing=A&pretty' -d
+'{
+	"query": {
+        "match_all": {}
+    }
+}'
+```
 
+---
+
+**路由确保在索引时，拥有相同路由值的文档被索引到相同的分片上**：
+
+- 一个特定的分片上，可以有很多路由值不同的文档
+
+- 路由可以限制查询时使用的节点数，但不能替代过滤功能
+
+    > 无论一个查询有没有使用路由，都应该使用相同的过滤器
+
+**案例**：若拿用户标识来作为路由值，在搜索该用户的数据时，还应当在查询中包含一个按用户标识进行过滤的过滤器
 
 ### (6) 别名
 
+> 别名让用户可以像使用普通索引那样来使用路由
 
+用下面的命令来创建一个别名：
 
+```json
+curl -XPOST 'http://localhost:9200/_aliases' -d
+'{
+	"actions": [
+        "add": {
+        	"index": "documents",
+        	"alias": "documentsA",
+        	"routing": "A"
+        }
+    ]
+}'
+```
 
+上面例子：
 
-
+- 创建了一个 doucmentsA 的虚拟索引(别名)，用来代表来自 doucments 索引的信息
+- 同时，在使用路由值 A 时，查询会被限定在相关的分片上
 
 ### (7) 多值路由
 
+- 文档被放置在哪个分片上取决于文档的路由值，多值路由查询意味着查询会发生在一个或多个分片上：
 
+    ```json
+    curl -XGET 'localhost:9200/documents/_search?routing=A,B'
+    ```
 
+- 多值路由也支持别名：
 
+    ```json
+    curl -XPOST 'http://localhost:9200/_aliases' -d
+    '{
+    	"actions": [
+            "add": {
+            	"index": "documents",
+            	"alias": "documentsA",
+            	"search_routing": "A,B",
+            	"index_routing": "A"
+            }
+        ]
+    }'
+    ```
 
+> 注：索引时不支持多个路由值，同时要做适当的过滤
 
+## 3、分片分配控制
 
-
-
-## 4、分片分配控制
+> Elasticsearch 集群主节点主要任务之一：在节点间分配分片，并为让集群处于均衡状态，而将分片从一个节点迁移到另一个节点
 
 ### (1) 部署意识
+
+- 部署意识：允许使用通用参数来配置分片和副本的部署。
+
+    > 适用场景：集群运行在一台物理服务器的多个虚拟机上、多个机架上，甚至分布在多个可用区之间
+
+- 部署意识通过为实例打标签，而让主分片和副本分布在不同的区或机架上，从而保证高可用
+
+    > 避免同一台物理服务器、机架或可用区里面的多个节点宕机而引发的问题
+
+----
+
+**案例**：假设集群包含4个节点
+
+- 每个节点都绑定了一个指定的 IP 地址，每个节点都被赋予了一个 tag 属性和一个 group 属性
+
+    > 对应 elasticsearch.yml 文件中的 `node.attr.tag` 和 `node.attr.group` 属性
+    >
+    > 注：node.attr 可以使用任何想配置的属性名
+
+    <img src="../../../pics/es/es_116.png" align=left width=800>
+
+- 现在把下面的属性加入到所有节点的 elasticsearch.yml 文件中：
+
+    ```shell
+    cluster.routing.allocation.awareness.attributes: group
+    ```
+
+    > 设置属性时可以指定多个属性名，如：`cluster.routing.allocation.awareness.attributes: group,node`
+
+- 然后，先启动前两个节点，即 `node.group` 属性值是 `groupA` 的那两个
+
+    接下来用下面的命令创建一个索引：
+
+    ```json
+    curl -XPOST 'localhost:9200/mastering' -d 
+    '{
+    	"settings": {
+            "index": {
+                "number_of_shards": 2,
+                "number_of_replicas": 1
+            }
+        }
+    }'
+    ```
+
+    执行了前面的命令后，拥有两个节点的集群看起来会类似下面的截图：
+
+    <img src="../../../pics/es/es_117.png" align=left width=800>
+
+- 接着，启动剩下的两个节点(`node.attr.group` 设置成 groupB 的那两个)：
+
+    <img src="../../../pics/es/es_118.png" align=left width=800>
+
+**结论**：当使用分片部署意识时，Elasticsearch 不会将主分片和副本放到拥有相同属性值的节点上
+
+> 注：在使用部署意识时，分片不会被部署到没有设置指定属性的节点上
+
+---
+
+1. **强制部署意识**：通过使用 `cluster.routing.allocation.awareness.force.zone.values` 属性，并提供一个用逗号分隔的列表值来指定这些属性值
+
+    > 如：若对于部署意识来说只使用 `node.attr.gorup` 属性的 `groupA` 和 `groupB` 两个值，就应该把下面的代码加到elasticsearch.yml文件中：
+    >
+    > ```json
+    > cluster.routing.allocation.awareness.attributes: group
+    > cluster.routing.allocation.awareness.force.zone.values: groupA, groupB
+    > ```
+    >
+    > 适用场景：预先知道部署意识参数需要接受几个值，且不希望超过副本被部署到集群中
+
+2. **分片分配过滤**：Elasticsearch 允许在整个集群或索引的级别来配置分片的分配
+
+    - 在集群的级别上可以使用带下面前缀的属性：
+
+        ```json
+        cluster.routing.allocation.include
+        cluster.routing.allocation.require
+        cluster.routing.allocation.exclude
+        ```
+
+    - 处理索引级的分配时，使用带下面前缀的属性：
+
+        ```json
+        index.routing.allocation.include
+        index.routing.allocation.require
+        index.routing.allocation.exclude
+        ```
+
+    上面三种属性的
+
+    ---
+
+    对应 tag 和 group 的 3 个特殊属性：`_ip、_name、_host`：
+
+    - `_ip`：可以用来匹配或排除节点的 IP 地址
+
+        > 例：`cluster.routing.allocation.include._ip: 192.168.2.1`
+
+    - `_name`：可以用来通过名字匹配节点
+
+        > 例：`cluster.routing.allocation.include._name: node-1`
+
+    - `_host`：可以用来通过主机名匹配节点
+
+        > 例：`cluster.routing.allocation.include._host: es-host-1` 
+
+3. **运行时更新分配策略**：
+
+
+
+
+
+
 
 
 
@@ -2143,7 +3073,7 @@ Elasticsearch 能很自如地索引结构化对象：
 
 
 
-## 5、查询执行偏好
+## 4、查询执行偏好
 
 ### (1) preference 参数
 
@@ -2163,7 +3093,7 @@ Elasticsearch 能很自如地索引结构化对象：
 
 
 
-## 6、将数据切分到多个路径中
+## 5、将数据切分到多个路径中
 
 
 
@@ -2171,7 +3101,7 @@ Elasticsearch 能很自如地索引结构化对象：
 
 
 
-## 7、索引类型——创建索引的改进方法
+## 6、索引类型——创建索引的改进方法
 
 
 
