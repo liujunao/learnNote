@@ -6505,19 +6505,191 @@ final void updateHead(Node<E> h, Node<E> p) {
 
 #### 1. 加锁
 
+> - 单线程情况下，不加锁的性能 > CAS操作的性能 > 加锁的性能
+>
+> - 在多线程情况下，为了保证线程安全，必须使用CAS或锁，这种情况下，CAS 性能大约是锁性能的8倍
 
+---
 
+- **锁**：采取加锁方式，默认线程会冲突，访问数据时先加上锁再访问，访问之后再解锁；通过锁界定临界区，同时只有一个线程进入
 
+    > 下面是 ArrayBlockingQueue 通过加锁的方式实现的 offer 方法，保证线程安全：
+    >
+    > ```java
+    > public boolean offer(E e) {
+    >     checkNotNull(e);
+    >     final ReentrantLock lock = this.lock;
+    >     lock.lock();
+    >     try {
+    >         if (count == items.length)
+    >             return false;
+    >         else {
+    >             insert(e);
+    >             return true;
+    >         }
+    >     } finally {
+    >         lock.unlock();
+    >     }
+    > }
+    > ```
 
+- **原子变量**：保证原子性的操作，即某个任务在执行过程中，要么全部成功，要么全部失败回滚，恢复到执行之前的初态，不存在初态和成功之间的中间状态
 
+    > AtomicInteger 的 getAndAdd 方法：
+    >
+    > ```java
+    > public final int getAndAdd(int delta) {
+    >     for (;;) {
+    >         int current = get();
+    >         int next = current + delta;
+    >         if (compareAndSet(current, next))
+    >             return current;
+    >     }
+    > }
+    > 
+    > public final boolean compareAndSet(int expect, int update) {
+    >     return unsafe.compareAndSwapInt(this, valueOffset, expect, update);
+    > } 
+    > ```
+
+注：
+
+- 高度竞争情况下，锁的性能将超过原子变量的性能，但更真实的竞争情况下，原子变量的性能将超过锁的性能
+- 同时原子变量不会有死锁等活跃性问题
 
 #### 2. 伪共享
 
+- **共享**：L1、L2、L3分别表示一级缓存、二级缓存、三级缓存，越靠近CPU的缓存，速度越快，容量也越小。所以 L1 缓存很小但很快，并且紧靠着在使用它的 CPU 内核；L2大一些，也慢一些，并且仍然只能被一个单独的CPU核使用；L3更大、更慢，并且被单个插槽上的所有CPU核共享；最后是主存，由全部插槽上的所有CPU核共享
 
+    <img src="../../pics/concurrent/concurrent_126.png" align=left width=400>
 
+    > 当 CPU 执行运算时，先去 L1 查找所需的数据、再去 L2、然后是L3，若最后这些缓存中都没有，所需的数据就要去主内存拿
 
+- **缓存行**：Cache 由很多个 cache line 组成，每个 cache line 通常是 64 字节，且有效地引用主内存中的一块儿地址
 
+    - CPU 每次从主存中拉取数据时，会把相邻的数据也存入同一个 cache line
 
+    - 在访问一个 long 数组时，若数组中的一个值被加载到缓存中，它会自动加载另外  7个，因此能非常快的遍历这个数组
+
+        > 事实上，可以非常快速的遍历在连续内存块中分配的任意数据结构
+
+    测试利用 cache line 特性和不利用 cache line 特性的效果对比：
+
+    ```java
+    public class CacheLineEffect {
+        //考虑一般缓存行大小是64字节，一个 long 类型占8字节
+        static  long[][] arr;
+     
+        public static void main(String[] args) {
+            arr = new long[1024 * 1024][];
+            for (int i = 0; i < 1024 * 1024; i++) {
+                arr[i] = new long[8];
+                for (int j = 0; j < 8; j++) {
+                    arr[i][j] = 0L;
+                }
+            }
+            long sum = 0L;
+            long marked = System.currentTimeMillis();
+            for (int i = 0; i < 1024 * 1024; i+=1) {
+                for(int j =0; j< 8;j++){
+                    sum = arr[i][j];
+                }
+            }
+            System.out.println("Loop times:" + (System.currentTimeMillis() - marked) + "ms");
+     
+            marked = System.currentTimeMillis();
+            for (int i = 0; i < 8; i+=1) {
+                for(int j = 0; j < 1024 * 1024;j++){
+                    sum = arr[j][i];
+                }
+            }
+            System.out.println("Loop times:" + (System.currentTimeMillis() - marked) + "ms");
+        }
+    }
+    
+    //结果：Loop times:30ms Loop times:65ms
+    ```
+
+- **伪共享**：
+
+    > ArrayBlockingQueue 有三个成员变量： 
+    >
+    > - takeIndex：需要被取走的元素下标
+    > - putIndex：可被元素插入的位置的下标
+    > - count：队列中元素的数量
+    >
+    > 这三个变量很容易放到一个缓存行中，但是之间修改没有太多的关联，所以每次修改，都会使之前缓存的数据失效，从而不能完全达到共享的效果
+    >
+    > <img src="../../pics/concurrent/concurrent_127.png" align=left width=800>
+    >
+    > 如上图所示，当生产者线程 put 一个元素到 ArrayBlockingQueue 时，putIndex 会修改，从而导致消费者线程的缓存中的缓存行无效，需要从主存中重新读取，这种无法充分使用缓存行特性的现象，称为伪共享
+    >
+    > ---
+    >
+    > 伪共享的解决方案：增大数组元素的间隔使得由不同线程存取的元素位于不同的缓存行上，以空间换时间
+    >
+    > ```java
+    > public class FalseSharing implements Runnable{
+    >     public final static long ITERATIONS = 500L * 1000L * 100L;
+    >     private int arrayIndex = 0;
+    >     private static ValuePadding[] longs;
+    >     
+    >     public FalseSharing(final int arrayIndex) {
+    >         this.arrayIndex = arrayIndex;
+    >     }
+    > 
+    >     public static void main(final String[] args) throws Exception {
+    >         for(int i = 1; i < 10; i++){
+    >             System.gc();
+    >             final long start = System.currentTimeMillis();
+    >             runTest(i);
+    >             System.out.println("Thread num "+ i +" duration = " 
+    >                                + (System.currentTimeMillis() - start));
+    >         }
+    >     }
+    > 
+    >     private static void runTest(int NUM_THREADS) throws InterruptedException {
+    >         Thread[] threads = new Thread[NUM_THREADS];
+    >         longs = new ValuePadding[NUM_THREADS];
+    >         for (int i = 0; i < longs.length; i++) {
+    >             longs[i] = new ValuePadding();
+    >         }
+    >         for (int i = 0; i < threads.length; i++) {
+    >             threads[i] = new Thread(new FalseSharing(i));
+    >         }
+    > 
+    >         for (Thread t : threads) {
+    >             t.start();
+    >         }
+    > 
+    >         for (Thread t : threads) {
+    >             t.join();
+    >         }
+    >     }
+    > 
+    >     public void run() {
+    >         long i = ITERATIONS + 1;
+    >         while (0 != --i) {
+    >             longs[arrayIndex].value = 0L;
+    >         }
+    >     }
+    > 
+    >     public final static class ValuePadding {
+    >         protected long p1, p2, p3, p4, p5, p6, p7;
+    >         protected volatile long value = 0L;
+    >         protected long p9, p10, p11, p12, p13, p14;
+    >         protected long p15;
+    >     }
+    >     
+    >     public final static class ValueNoPadding {
+    >         // protected long p1, p2, p3, p4, p5, p6, p7;
+    >         protected volatile long value = 0L;
+    >         // protected long p9, p10, p11, p12, p13, p14, p15;
+    >     }
+    > }
+    > ```
+
+注：在jdk1.8中，有专门的注解 `@Contended` 来避免伪共享，更优雅地解决问题
 
 ## 4、Disruptor(高性能无锁队列)
 
@@ -6526,6 +6698,16 @@ final void updateHead(Node<E> h, Node<E> p) {
 > - 当多个线程之间传递大量数据或对性能要求较高时，可以考虑使用 disruptor 代替 ArrayBlockingQueue
 
 ### (1) 三个核心组件
+
+Disruptor 解决队列速度慢的设计：
+
+- **环形数组结构**：避免垃圾回收，采用数组而非链表，同时数组对处理器的缓存机制更加友好
+
+- **元素位置定位**：数组长度 $2^n$，通过位运算，加快定位的速度，下标采取递增的形式，不用担心index溢出的问题
+
+    > index 是 long 类型，即使 100万QPS 的处理速度，也需要30万年才能用完
+
+- **无锁设计**：每个生产者或消费者线程，会先申请可以操作的元素在数组中的位置，申请到之后，直接在该位置写入或读取数据
 
 #### 1. CAS
 
@@ -6635,7 +6817,7 @@ public class CacheLineEffect {
 - **简介**： 
     - 是一个环(圆形，首尾相接)，可以当作缓存，用来在一个线程上下文与另一个线程上下文之间传递数据
 
-        <img src="../../pics/concurrent/concurrent_104.png" align=left>
+        <img src="../../pics/concurrent/concurrent_104.jpeg" align=left>
 
     - 拥有一个序号，用于指向数组中下一个可用元素的数组
 
@@ -6712,12 +6894,6 @@ public class CacheLineEffect {
         > <img src="../../pics/concurrent/concurrent_107.png" align=left>
 
 ### (2) 工作原理
-
-Disruptor 通过以下设计来解决队列速度慢的问题:
-
-- **环形数组结构**：避免垃圾回收、采用数组而非链表、数组对处理器的缓存机制更加友好
-- **元素位置定位**：数组长度 $2^n$，通过位运算加快定位速度；下标采取递增的形式，不用担心 index 溢出；index 是 long 类型，即使100万 QPS 的处理速度，也需要30万年才能用完
-- **无锁设计**：每个生产者或消费者线程会先申请可以操作的元素在数组中的位置，申请到之后直接在该位置写入或读取数据
 
 #### 1. 生产者
 

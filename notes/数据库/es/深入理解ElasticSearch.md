@@ -617,7 +617,18 @@ BM25 使用的数学公式：$bm25(d) = \sum_{t \in q,f_{t,d}>0}log[1+\frac{N-df
     >
     > bool查询的结构如下：
     >
-    > <img src="../../../pics/es/es_3.png" align=left width="300">
+    > ```json
+    > {
+    >     "query": {
+    >         "bool": {
+    >             "must": [{}],
+    >             "should": [{}],
+    >             "must_not": [{}],
+    >             "filter": [{}]
+    >         }
+    >     }
+    > }
+    > ```
     >
     > ---
     >
@@ -631,7 +642,31 @@ BM25 使用的数学公式：$bm25(d) = \sum_{t \in q,f_{t,d}>0}log[1+\frac{N-df
     >
     >     > 下述情况要禁用查询协调：当在文本字段中查找同义词 turmoil 和 riot 时，并不关心文档中出现了多少同义词，此时把 disable_coord 置为 true，以禁用查询协调，让相似的从句不影响分数的计算
     >     >
-    >     > <img src="../../../pics/es/es_4.png" align=left width="500">
+    >     > ```json
+    >     > {
+    >     >     "query": {
+    >     >         "bool": {
+    >     >             "disable_coord": true,
+    >     >             "should": [
+    >     >                 {
+    >     >                     "term": {
+    >     >                         "text": {
+    >     >                             "value": "turmoil"
+    >     >                         }
+    >     >                     }
+    >     >                 },
+    >     >                 {
+    >     >                     "term": {
+    >     >                         "text": {
+    >     >                             "value": "riot"
+    >     >                         }
+    >     >                     }
+    >     >                 }
+    >     >             ]
+    >     >         }
+    >     >     }
+    >     > }
+    >     > ```
 
 ---
 
@@ -750,7 +785,11 @@ BM25 使用的数学公式：$bm25(d) = \sum_{t \in q,f_{t,d}>0}log[1+\frac{N-df
 
 - 运行下面的命令将会使用给定的映射创建索引，并索引数据：
 
-    <img src="../../../pics/es/es_7.png" align=left width="700">
+    ```shell
+    curl -XPUT 'localhost:9200/library'
+    curl -XPUT 'localhost:9200/library/book/_mapping' -d @library.json
+    curl -s -XPOST 'localhost:9200/_bulk' --data-binary @books.json
+    ```
 
 - 将两份新文档添加到索引中的命令如下：
 
@@ -762,7 +801,19 @@ BM25 使用的数学公式：$bm25(d) = \sum_{t \in q,f_{t,d}>0}log[1+\frac{N-df
 
 - 案例：查出书籍本数在 `[1，3]` 区间内的查询如下所示：
 
-    <img src="../../../pics/es/es_9.png" align=left width="600">
+    ```shell
+    curl -XGET 'localhost:9200/library/_search?pretty' -d
+    '{
+    	"query": {
+    		"range": {
+    			"copies": {
+    				"gte": 1,
+    				"lte": 3
+    			}
+    		}
+    	}
+    }'
+    ```
 
 #### 3. 组合查询示例
 
@@ -770,43 +821,106 @@ BM25 使用的数学公式：$bm25(d) = \sum_{t \in q,f_{t,d}>0}log[1+\frac{N-df
 
 - **对多个词项的布尔查询**：用户要显示由查询条件决定的书的若干个标签，若用户提供的标签数超过3个，只要求匹配上查询条件中标签数的75%即可；若用户提供了 3 个或更少的标签，就要全部匹配
 
-    <img src="../../../pics/es/es_10.png" align=left width="700">
+    ```shell
+    curl -XGET "http://localhost:9200/library/_search?pretty" -d
+    '{
+    	"query": {
+    		"bool": {
+    			"should": [
+    				{"term": {"tags": {"value": "novel"}}},
+    				{"term": {"tags": {"value": "polish"}}},
+    				{"term": {"tags": {"value": "classics"}}},
+    				{"term": {"tags": {"value": "criminal"}}}
+    			]
+    		}
+    	}
+    }'
+    ```
 
 - **对匹配文档加权**：包含一个可选的加权片段的 bool 查询，来实现对部分文档的权重提升，如：需要找出所有至少有一本的书籍，并对 1950 年后出版的书籍进行加权，可以使用如下查询命令：
 
-    <img src="../../../pics/es/es_11.png" align=left width="700">
+    ```shell
+    curl -XGET "http://localhost:9200/library/_search?pretty" -d
+    '{
+    	"query": {
+    		"bool": {
+    			"must": [{"range": {"copies": {"gte": 1}}}],
+    			"should": [{"range": {"year": {"gt": 1950}}}]
+    		}
+    	}
+    }'
+    ```
 
 - **忽略查询的较低得分部分**：`dis_max` 查询可以控制查询中得分较低部分的影响，如：希望找出所有 title 字段匹配 Young Werther 或 characters 字段匹配 Werther 的文档，并在文档打分时仅考虑得分最高的查询片段，可以执行如下查询命令：
 
     - **执行完整查询**：
 
-        <img src="../../../pics/es/es_12.png" align=left width="700">
+        ```shell
+        curl -XGET "http://localhost:9200/library/_search?pretty" -d
+        '{
+        	"query": {
+        		"dis_max": {
+        			"tie_breaker": 0.0,
+        			"queries": [
+        				{"match": {"title": "Young Werther"}},
+        				{"match": {"characters": "Werther"}}
+        			]
+        		}
+        	},
+        	"_source": false
+        }'
+        ```
 
         结果如下：
 
         <img src="../../../pics/es/es_13.png" align=left width="500">
 
     - **分批执行查询**：
-
+    
         - **查询一**：
-
-            <img src="../../../pics/es/es_14.png" align=left width="700">
-
+    
+            ```shell
+            curl -XGET "http://localhost:9200/library/_search?pretty" -d
+            '{
+            	"query": {
+            		"match": {"title": "Young Werther"}
+            	},
+            	"_source": false
+            }'
+            ```
+        
             结果如下：
-
+        
             <img src="../../../pics/es/es_15.png" align=left width="400">
-
+        
         - **查询二**：
-
-            <img src="../../../pics/es/es_16.png" align=left width="700">
-
+        
+            ```shell
+            curl -XGET "http://localhost:9200/library/_search?pretty" -d
+            '{
+            	"query": {
+            		"match": {"characters": "Werther"}
+            	},
+            	"_source": false
+            }'
+            ```
+    
     > 结论：`dis_max` 查询返回的文档得分等于打分最高的查询片段的得分(上面的第一个查询片段)
 
 #### 4. 无分析查询示例
 
 需求：查找出所有 tags 字段包含 novel 值的书籍，执行如下查询命令
 
-<img src="../../../pics/es/es_17.png" align=left width="700">
+```shell
+curl -XGET "http://localhost:9200/library/_search?pretty" -d
+'{
+	"query": {
+		"term": {
+			"tags": "novel"
+		}
+	}
+}'
+```
 
 #### 5. 全文检索查询示例
 
@@ -3043,239 +3157,937 @@ curl -XPOST 'http://localhost:9200/_aliases' -d
 
 3. **运行时更新分配策略**：
 
-
-
-
-
-
-
-
-
-
-
-
+    > 可以通过更新 API 来实时更新这些设置：
+    >
+    > 1. 索引级更新：为了更新一个特定索引(如 mastering 索引)的设置
+    >
+    >     ```json
+    >     curl -XPUT 'localhost:9200/mastering/_settings' -d 
+    >     '{
+    >     	"index.routing.allocation.require.group": "groupA"
+    >     }'
+    >     ```
+    >
+    > 2. 集群级更新：更新整个集群的设置
+    >
+    >     ```json
+    >     //transient: 意味着在集群重启后属性将失效
+    >     curl -XPUT 'localhost:9200/_cluster/settings' -d 
+    >     '{
+    >     	"transient": {
+    >             "cluster.routing.allocation.require.group": "groupA"
+    >         }
+    >     }'
+    >     //persistent: 在重启后保留设置
+    >     curl -XPUT 'localhost:9200/_cluster/settings' -d 
+    >     '{
+    >     	"persistent": {
+    >             "cluster.routing.allocation.require.group": "groupA"
+    >         }
+    >     }'
+    >     ```
+    >
+    >     注：命令被发送至 `_cluster/_settings` 端点，可以在一次调用中包含多个属性
 
 ### (2) 确定每个节点允许的总分片数
 
+> 可以定义每个节点上允许分配给一个索引的分片总数(包括主分片和副本)
 
+需要给 `index.routing.allocation.total_shards_per_node` 属性设置一个期望值：
 
+```json
+curl -XPUT 'localhost:9200/mastering/_settings' -d 
+'{
+	"index.routing.allocation.total_shards_per_node": "4"
+}'
+```
 
-
-
+> 这会造成单个节点上最多为同一个索引分配4个分片
 
 ### (3) 确定每台物理服务器允许的总分片数
 
+`cluster.routing.allocation.same_shard.host` 默认为 `false`，设置为 `true` 会阻止 Elasticsearch 将主分片和副本部署在同一台物理主机上
 
+> 具体通过检查主机名和主机地址实现，若服务器性能很强大，且打算在一台物理主机上运行多个节点，建议设为 `true` 
+>
+> 前提：当在单台物理机器上运行多个 Elasticsearch 节点时
 
+1. **包含**：使用示例集群观察包含如何工作
 
+    - 首先，用下面的命令删除并重新创建 mastering 索引：
 
+        ```json
+        curl -XDELETE 'localhost:9200/mastering'
+        curl -XPUT 'localhost:9200/mastering' -d
+        '{
+        	"settings": {
+                "index": {
+                    "number_of_shards": 2,
+                    "number_of_replicas": 0
+                }
+            }
+        }'
+        ```
 
+    - 然后执行下面的命令：
 
+        ```json
+        curl -XPUT 'localhost:9200/mastering/_settings' -d
+        '{
+        	"index.routing.allocation.include.tag": "node1",
+        	"index.routing.allocation.include.group": "groupA",
+        	"index.routing.allocation.total_shards_per_node": 1
+        }'
+        ```
 
+    - 若把查询索引状态的命令响应可视化，就会看到与下面的图片很相似集群：
+
+        <img src="../../../pics/es/es_119.png">
+
+        > mastering 索引的分片被部署到了 tag 属性为 node1 或 group 属性为 groupA 的节点上了
+
+2. **必须**：
+
+    - 使用前面的示例集群，执行下面的命令：
+
+        ```json
+        curl -XPUT 'localhost:9200/mastering/_settings' -d
+        '{
+        	"index.routing.allocation.require.tag": "node1",
+        	"index.routing.allocation.require.group": "groupA"
+        }'
+        ```
+
+    - 若把查询索引状态的命令响应可视化，就会看到与下面的图片很相似的集群：
+
+        <img src="../../../pics/es/es_120.png">
+
+        > 由于 Elasticsearch 将 mastering 索引的分片仅分配到与两个 require 参数都匹配的节点上，本例的两个参数都匹配的只有第一个节点
+
+3. **排除**：
+
+    - 执行下面的命令：
+
+        ```json
+        curl -XPUT 'localhost:9200/mastering/_settings' -d
+        '{
+        	"index.routing.allocation.exclude.tag": "node1",
+        	"index.routing.allocation.require.group": "groupA"
+        }'
+        ```
+
+    - 再看看集群：
+
+        <img src="../../../pics/es/es_121.png">
+
+        要求 group 属性必须等于 groupA，同时希望排除 tag 等于 node1 的节点：导致 mastering 索引的分片被分配到了 IP 地址是192.168.2.2 的节点上
+
+4. **基于磁盘的分配**：默认开启，可将 `cluster.routing.allocation.disk.threshold_enabled` 设置为 `false` 
+
+    另外 3 个属性可以帮助配置基于磁盘的分片分配行为：
+
+    - `cluster.routing.allocation.disk.watermark.low`：可以让 Elasticsearch 在触发条件时不再在节点上分配新的分片
+
+        > 默认值是 85%，即当磁盘使用率大于等于85%之后，节点上将不再分配新的分片
+        >
+        > 可以设置为绝对值，如：1024MB 或 10GB
+
+    - `cluster.routing.allocation.disk.watermark.high`：可以让 Elasticsearch 在触发条件时尝试将分片从本节点上迁移出去
+
+        > 默认值是90%，即当磁盘使用率达到90%后，Elasticsearch 会尝试将部分分片从本节点上迁出
+        >
+        > 可以设置为绝对值，如：1024MB 或 10GB
+
+    - `cluster.info.update.interval`：默认每 30 秒巡查一遍各个节点的磁盘使用情况
 
 ## 4、查询执行偏好
 
 ### (1) preference 参数
 
+为了控制发送的查询(和其他操作)执行的地点，可以使用 preference 参数，可以被赋予下面这些值中的一个：
 
+- `_primary`：控制发送操作在主分片上执行，若向 mastering 索引发送一个查询请求，并将 preference 参数设置为`_primary`，则请求就会在node1和node2上执行
 
+    > 如：若主分片在某个机柜，副本在其他机柜，可能希望通过在主分片上执行操作来避免网络开销
 
+- `_primary_first`：具有自动故障恢复机制，若向 mastering 索引发送一个查询请求，并设置 preference 参数为 `_primary_fist`，则查询除在 node1 和 node2 上执行外，当一旦一个(或多个)主分片失效，查询就会在相应的副本上执行
 
+    > 该选项类似 `_primary`，只是当主分片由于某些原因不可用时会转而使用其副本
 
+- `_replica`：控制查询请求发往副本，而不会发往主分片
+
+- `_replica_first`：类似 `_primary_first`，当使用 `_replica_first` 时，查询会先发往副本分片，若副本分片不可用，就会发生切换，把查询发到主分片上执行
+
+- `_local`：设置 Elasticsearch 优先在本地节点上执行操作
+
+    > - 若发送一个查询请求给 node3 并同时将 preference 参数设为 `_local`，则查询就会在该节点上执行
+    >
+    > - 若将查询发送给 node2，则就会有一个查询在主分片 1 上执行(部署在节点node2上)，另一部分查询会在包含分片 0 的 node1 或 node3 上执行
+
+- `_prefer_node：Tg5Q7AX(节点的标识符)`：使 Elasticsearch 优先在指定的节点上执行查询，若该指定节点上的一些分片不可用时，会将恰当的查询内容发送给包含可用分片的节点
+
+    > 使用 `_prefer_node` 选项会优先选用某个特殊节点，不可用时再切换到其他节点
+
+- `_shards：0,1`：指定操作在哪个分片上执行，唯一可以和其他选项组合的偏好参数
+
+    > 如：为了在本地的 0 和 1 分片上执行查询，应该用分号连接 `0, 1和_local`，如：`0,1；_local`
+    >
+    > 作用：允许在单个分片上执行查询对于调试非常有用
+
+- `custom，string value`：把 `_preference` 参数值设置为一个自定义字符串，可以确保使用相同参数值的查询在相同的分片上执行
+
+    > - 若发送一个 `_preference` 参数值为 mastering_elasticsearch 的查询，则查询会在位于 node1 和 node2 节点的主分片上执行
+    >
+    > - 之后如果发送另一个有同样 `_preference` 参数值的查询，则第2个查询还是会在 node1 和 node2 节点上执行
+    >
+    > 该功能有不同的刷新频率，且不希望用户重复执行查询会看到不同结果。Elasticsearch 默认会在分片和副本之间随机执行操作，如果发送大量的请求，那么最终每个分片和副本上将会执行相同(或几乎相同)数量的查询
 
 ### (2) 使用查询执行偏好案例
 
+下面例子展示了在搜索请求中如何使用preference参数：
 
+```json
+curl -XGET "http://localhost:9200/documents/_search?preference=_primary&pretty" -d
+'{
+	"query": {
+        "match_all": {}
+    }
+}'
+```
 
+注：若传入了错误的 preference 值，Elasticsearch 会忽略并直接按默认的 preference 值执行，不会抛出任何错误
 
+## 5、索引类型——创建索引的改进方法
 
+- 过多创建索引或分片都会消耗过多的资源：因为在最底层每个索引或分片都其实是一个 Lucene 索引，其占用的内存、文件描述符和其他资源都特别多
+- 分片和索引数量过多也会带来搜索时的负担：分片越多，意味着查询要在更多的分片上执行，Elasticsearch 要把从所有分片返回的响应汇总在一起，然后再返回给客户端
 
+- 文档类型优势：通过特殊的 `_type` 字段来在索引内部将文档分类，使在不同类型间搜索，即使要涉及多个索引，代价也可忽略
 
+---
 
+在创建多个文档类型时必须知道两件事：
 
-## 5、将数据切分到多个路径中
+- 一是同一个字段名不能有多种不同的数据类型
 
+- 二是不能从索引中删除数据类型
 
-
-
-
-
-
-## 6、索引类型——创建索引的改进方法
-
-
-
-
-
-
-
-
+    > 唯一的解决方案：再创建一个新索引，然后重新索引数据
 
 # 七、底层索引控制
 
-## 1、改变 Lucene 评分方式
+## 1、可用的相似度模型
 
+> `TF-IDF` 是之前默认的相似度模型，但在 Lucene 6.0 时改成了 `BM25` 
 
+除了BM25，还有以下的相似度模型可用：
 
+- `TF-IDF(classic)` 模型：基于 `TF-IDF` 的相似度模型，在 Elasticsearch 5.0 之前一直是默认的相似度模型
 
+    > 注：为了在 Elasticsearch 中使用，要用 `classic` 这个名字
 
+- 随机偏离模型(Divergence From Randomness，`DFR`)：这是一种基于同名概率模型的相似度模型
 
+    > 注：为了在 Elasticsearch 中使用，需要使用该模型的名字 `DFR`，随机偏离模型在类似自然语言的文本上使用效果较好
 
-## 2、可用的相似度模型
+- 独立偏离模型(Divergence From Independence，`DFI`)：这是一种基于同名概率模型的相似度模型
 
+    > 注：要在 Elasticsearch 中使用该模型的名字 `DFI`
 
+- 基于信息的模型（information-based）：该模型与随机偏离模型类似
 
+    > 注：为了在 Elasticsearch 中使用，需要使用该模型的名字 `IB`，在类似自然语言的文本上使用也有较好的效果
 
+- LM Dirichlet模型：该相似度模型结合了狄利克雷先验与贝叶斯平滑
 
+    > 注：为了在 Elasticsearch 中使用，需要使用该模型的名字 `LM Dirichlet`
 
+- LM Jelinek Mercer模型：该相似度模型使用了Jelinek Mercer平滑方法
 
-## 3、为每个字段配置相似度模型
+    > 注：为了在 Elasticsearch 中使用，需要使用该模型的名字 `LMJelinekMercer` 
 
+## 2、为每个字段配置相似度模型
 
+Elasticsearch 从 0.90 以后允许用户在映射中为每个字段设置不同的相似度模型：
 
+- 假设有下面这个映射，用于索引博客的贴子：
 
+    ```json
+    {
+        "mappings": {
+            "post": {
+                "properties": {
+                    "id": {
+                        "type": "long",
+                        "store": "yes"
+                    },
+                    "name": {
+                        "type": "text",
+                        "store": "yes",
+                        "index": "analyzed"
+                    },
+                    "contents": {
+                        "type": "text",
+                        "store": "no",
+                        "index": "analyzed"
+                    }
+                }
+            }
+        }
+    }
+    ```
 
+- 在name字段和contents字段中使用classic相似度模型：需要扩展字段定义，并添加 `similarity` 属性，并将该字段的值设置为相应的相似度模型的名字
 
+    修改后的映射如下所示：
 
-## 4、相似度模型配置
+    ```json
+    {
+        "mappings": {
+            "post": {
+                "properties": {
+                    "id": {
+                        "type": "long",
+                        "store": "yes"
+                    },
+                    "name": {
+                        "type": "text",
+                        "store": "yes",
+                        "index": "analyzed",
+                        "similarity": "classic"
+                    },
+                    "contents": {
+                        "type": "text",
+                        "store": "no",
+                        "index": "analyzed",
+                        "similarity": "classic"
+                    }
+                }
+            }
+        }
+    }
+    ```
 
+## 3、相似度模型配置
 
+> 按需要为索引中的每个字段配置不同的相似度模型：在索引配置相关部分提供相应的相似度模型配置信息
 
+就像下面的代码这样：
 
+```json
+{
+    "settings":{
+        "index":{
+            "similarity":{
+                "mastering_similarity":{
+                    "type":"classic",
+                    "discount_overlaps":false
+                }
+            }
+        }
+    },
+    "mappings":{
+        "post":{
+            "properties":{
+                "id":{
+                    "type":"long",
+                    "store":"yes"
+                },
+                "name":{
+                    "type":"text",
+                    "store":"yes",
+                    "index":"analyzed",
+                    "similarity":"mastering_similarity"
+                },
+                "contents":{
+                    "type":"text",
+                    "store":"no",
+                    "index":"analyzed"
+                }
+            }
+        }
+    }
+}
+```
 
+## 4、选择默认的相似度模型
 
+- 为了设置默认的相似度模型，需要提供一份相似度模型的配置文件，由默认的相似度模型调用：
 
-## 5、选择默认的相似度模型
+    ```json
+    {
+        "settings":{
+            "index":{
+                "similarity":{
+                    "default":{
+                        "type":"classic",
+                        "discount_overlaps":false
+                    }
+                }
+            }
+        },
+        ...
+    }
+    ```
 
+- 由于所有的相似度模型都在全局范围内使用了 query norm和coordination 这两个评分因子，但在默认的相似度模型配置中被移除：用户需要定义另外一个名为 base 的相似度模型：
 
+    ```json
+    {
+        "settings":{
+            "index":{
+                "similarity":{
+                    "base":{
+                        "type":"classic",
+                        "discount_overlaps":false
+                    }
+                }
+            }
+        },
+        ...
+    }
+    ```
 
+    > 若 base 相似度模型出现在索引配置中，当 Elasticsearch 使用其他相似度模型计算文档得分时，则使用 base 相似度模型来计算query norm 和 coordination 评分因子
 
+---
 
+**配置被选用的相似度模型**：每个新增的相似度模型都可以根据用户需求进行配置
 
+> Elasticsearch允许用户不加配置而直接使用 default 和 classic 相似度模型，而 `DFR、DFI、IB` 模型则需要进一步配置才能使用
 
-## 6、选择合适的目录实现——store模块
+- **配置 TF-IDF 相似度模型**：在TF-IDF相似度模型中，只可以设置一个参数：discount_overlaps属性，其默认值为true。默认情况下，位置增量（position increment）为0（即该词条的position计数与前一个词条相同）的词条在计算评分时并不会被考虑进去。如果在计算文档时需要考虑这类词条，则需要将相似度模型的discount_overlaps属性值设置为false
 
+- **配置 BM25 相似度模型**：在Okapi BM25相似度模型中，有如下参数可以配置
 
+    - k1：该参数为浮点数，控制饱和度（saturation），即词频归一化中的非线性项
+    - b：该参数为浮点数，用于控制文档长度对词频的影响
+    - discount_overlaps：与TF-IDF相似度模型中的discount_overlaps参数作用相同
 
+- **配置 DFR 相似度模型**：在DFR相似度模型中，有如下参数可以配置。
 
+    - basic_model：该参数值可设置为be、d、g、if、in、ine或p
+    - after_effect：该参数值可设置为no、b或l
+    - normalization：该参数值可设置为no、h1、h2、h3或z
 
+    如果normalization参数值不是no，则需要设置归一化因子。归一化因子的设置依赖于选择的normalization参数值。参数值为h1时，使用normalization.h1.c属性；参数值为h2时，使用normalization.h2.c属性；参数值为h3时，使用normalization.h3.c属性；参数值为z时，使用normalization.z.z属性。这些属性值的类型均为浮点数。下面的代码片段展示了如何配置相似度模型：
 
+    ```json
+    "similarity": {
+        "esserverbook_dfr_similarity": {
+            "type": "DFR",
+            "basic_model": "g",
+            "after_effect": "l",
+            "normalization": "h2",
+            "normalization.h2.c": "2.0"
+        }
+    }
+    ```
 
-## 7、存储类型
+- **配置 IB 相似度模型**：在IB相似度模型中，有如下参数可以配置。
 
+    - distribution：该参数值可设置为ll或spl
+    - lambda：该参数值可设置为df或tff
 
+    此外，IB模型也需要配置归一化因子，配置方式与DFR模型相同，故不赘述。下面的代码片段展示了如何配置IB相似度模型：
 
+    ```json
+    "similarity": {
+        "esserverbook_ib_similarity": {
+            "type": "IB",
+            "distribution": "ll",
+            "lambda": "df",
+            "normalization": "z",
+            "normalization.z.z": "0.25"
+        }
+    }
+    ```
 
+- **配置 LM Dirichlet 相似度模型**：在LM Dirichlet相似度模型中，可以配置mu参数，该参数默认值为2000。
 
+    下面是该模型参数配置的例子：
 
+    ```json
+    "similarity": {
+        "esserverbook_lm_dirichlet_similarity": {
+            "type": "LMDirichlet",
+            "mu": "1000"
+        }
+    }
+    ```
 
-## 8、准实时、提交、更新及事务日志
+- **配置 LM Jelinek Mercer 相似度模型**：在LM Jelinek Mercer相似度模型中，可以配置lambda参数，该参数默认值为0.1
+
+    下面是该模型参数配置的例子：
+
+    ```json
+    "similarity": {
+        "esserverbook_lm_jelinek_mercer_similarity": {
+            "type": "LMJelinekMercer",
+            "lambda": "0.7"
+        }
+    }
+    ```
+
+> 一般来说，对于较短字段（如文档的title字段），lambda的值可设置在0.1左右；而对于较长字段，lambda值应该设置为0.7
+
+## 5、存储类型
+
+Elasticsearch 提供几种可用的存储类型，默认会根据操作系统的环境来自动选择最佳方案，也可以通过以下方法改变默认行为：
+
+- 方式一：通过在 elasticsearch.yml 文件中增加 `index.store.type` 属性来设置所有索引
+
+- 方式二：在创建索引时设置单个索引，如下所示：
+
+    ```json
+    curl -XPUT "http://localhost:9200/index_name" -d
+    '{
+    	"settings": {
+            "index.store.type": "niofs"
+        }
+    }'
+    ```
+
+---
+
+**Elasticsearch 存储类型**：
+
+- **简单文件系统 `simplefs`**：随机存取文件(Java 的 `RandomAccessFile`，对应 Lucene 的 `SimpleFSDirectory`)，对于简单的应用，该store 类型足够
+
+    > 可以设置 `index.store.type` 属性值为 `simplefs` 
+    >
+    > - **瓶颈**：多线程读写，可能会导致很糟糕的性能
+    > - 对 Elasticsearch 来说，通常使用基于 NIO 的 store 类型来替换简单文件系统 store 类型
+
+- **NIO 文件系统 `niofs`**：基于 java.nio 包中 `FileChannel` 类的实现(对应 Lucene 的 `NIOFSDirectory` 类)
+
+    > 需要将 `index.store.type` 属性值设置为 `niofs` 
+    >
+    > - **特点**：允许多线程并发操作同一个文件，同时不用担心性能下降
+
+- **MMap 文件系统 `mmapfs`**：使用 Lucene 的 `MMapDirectory` 类，其使用 mmap 系统调用处理读操作，使用随机读写文件处理写操作
+
+    - 读文件时，会将文件映射到同样大小的虚拟地址空间中，因为 mmap 没有加锁操作，因此在多线程读写时可扩展
+    - 当使用 mmap 读取索引文件时，不需要把文件加载到操作系统缓存中去，因此访问会更快(因为被映射到虚拟地址空间中)
+
+    > 将 `index.store.type` 属性值设置为 `mmap` 
+    >
+    > - **特点**：该 store 类型等价于允许 Lucene 或 Elasticsearch 直接访问 I/O 缓存，因此读写索引文件速度更快
+
+- **默认的混合文件系统 `fs`**：默认的文件系统实现，当设置成 `fs` 时，Elasticsearch 可以根据操作系统环境的不同而自动选用最佳实现
+
+    > 在32位 Windows 上是 `simplefs`，在其他32位系统上是 `niofs`，而在64位系统上是 `mmapfs` 
+
+## 6、准实时、提交、更新及事务日志
 
 ### (1) 索引更新及更新提交
 
+- **索引段都是独立的 Lucene 索引**：即查询可以与索引并行进行，只是不时有新增的索引段被添加至可被搜索的索引段集合之中
 
+- **提交**：Lucene 通过创建后续的(基于索引只写一次的特性)`segments_N` 文件来实现此功能，该文件列举了索引中的索引段
 
+    > Lucene 能确保索引更改以原子操作方式写入索引，即便有错误发生，也能保证索引数据的一致性
 
+- **刷新**：Searcher 重新打开的过程，若索引更新提交，但 `Searcher` 实例并没有重新打开，则觉察不到新索引段的加入
 
+    > 一次提交并不足以保证新索引的数据能被搜索到，因为 Lucene 使用 `Searcher` 抽象类来执行索引的读取，而该类需要被刷新
+    >
+    > 注：
+    >
+    > - Lucene 不会在每次新增一份文档(或每次批量增加文档)时刷新，但 Searcher 会每秒钟刷新一次
+    > - 上次刷新之后新增的数据在下一次刷新操作之前并不会被搜索到
 
+- Elasticsearch 提供了强制刷新的 API，如命令：
+
+    ```json
+    curl -XGET localhost:9200/test/_refresh
+    ```
 
 ### (2) 更改默认的刷新时间
 
+更改 `Searcher` 自动刷新的时间间隔：
 
+- 方式一：更改 Elasticsearch 配置文件中的 `index.refresh_interval` 参数值
 
+- 方式二：使用配置更新相关的API，如：
 
+    ```json
+    curl -XPUT localhost:9200/test/_settings -d 
+    '{
+    	"index": {
+            "refresh_interval": "5m"
+        }
+    }'
+    ```
 
-
+    > 上面的命令将 Searcher 的自动刷新时间间隔更改为 5 分钟
 
 ### (3) 事务日志
 
+Lucene 能保证索引的一致性和原子性，但问题：
 
+- **问题一**：不能保证当往索引中写数据失败时不丢失数据(如：磁盘空间不足、设备损坏、没有足够文件句柄供创建新索引文件使用)
 
+- **问题二**：频繁提交会导致严重的性能问题(因为每次提交会触发一个索引段的创建操作，同时也可能触发索引段的合并)
 
+**解决方案**：Elasticsearch 通过使用事务日志的方法来解决这些问题
 
+- 作用：事务日志用来保存所有的未提交的事务，Elasticsearch 会不时创建一个新的日志文件用于记录每个事务的后续操作
 
+- 能力：当有错误发生时，事务日志将会被检查，必要时会再次执行某些操作，以确保没有丢失任何更改
+
+- 事务日志刷新：将事务日志中的信息到步进存储介质(即 Lucene索引)，同时清空事务日志的时刻
+
+    > 事务日志刷新与 Searcher 刷新的区别：
+    >
+    > - Searcher 刷新是所期望的，即让最新的文档可以被搜索到
+    > - 事务日志刷新则用来保障数据已经正确地写入了索引，并可以清空事务日志
+    >
+    > ---
+    >
+    > 使用对应 API 手动强制执行事务日志刷新，即强制将事务日志中涉及的所有数据更改操作同步到索引中，并清空事务日志文件
+    >
+    > ```json
+    > curl -XGET localhost:9200/_flush
+    > ```
+    >
+    > 也可以使用 fush 命令对特定的索引进行事务日志刷新，如：当索引名为 library 时
+    >
+    > ```json
+    > curl -XGET localhost:9200/library/_flush
+    > curl -XGET localhost:9200/library/_reflush //在事务日志刷新之后，调用 Searcher 刷新操作
+    > ```
+
+---
+
+- **事务日志相关配置**：以下参数可以通过索引设置更新API进行配置，以控制事务日志的行为
+
+    - `index.translog.sync_interval`：默认5秒，控制事务日志多久同步到磁盘上一次，不能设置小于100毫秒的值
+
+    - `index.translog.durability`：控制在每次索引、删除、更新或批量请求操作之后，是否要同步并提交事务日志
+
+        > 可以设置成 `request` 或 `async`：
+        >
+        > - 当设置成 `request`(默认值)时，每次请求之后都会同步并提交，在出现硬件故障时，所有有响应的请求操作肯定都已经同步到了磁盘上
+        > - 当设置成 `async` 时，每经过 `sync_interval` 时长间隔，才会在后台做一次同步和提交操作，当出现硬件故障时，从最后一次提交之后的所有写入操作都会被丢弃
+
+    - `index.translog.fush_threshold_size`：默认 512MB，确定事务日志的最大容量，当容量超过该参数值时，就强制进行事务日志刷新操作
+
+    案例：将触发刷新操作的标准设置成 256MB
+
+    ```json
+    curl -XPUT localhost:9200/test/_settings -d
+    '{
+    	"index": {
+            "translog.flush_threshold_size": "256mb"
+        }
+    }'
+    ```
+
+- **处理崩溃的事务日志**：
+
+    - 事务日志崩溃：当 Elasticsearch 发现事务文件中的校验和不匹配时，就认为检测到了崩溃事件，然后会将那个分区标志为失效，不再把任何数据分配到那个节点
+
+        > 若有副本，请尝试从副本中恢复数据
+
+    - 若 Elasticsearch 无法进行数据恢复，用户可以恢复这个分片的部分数据，代价是事务日志中的数据全部丢失
+
+        > 用脚本 `elasticsearch-translog.sh` 可以很轻松地完成这项功能，在 Elasticsearch 的 bin 目录下
+        >
+        > 注：当 Elasticsearch 处于运行状态时不能运行 `elasticsearch-translog` 脚本，否则事务日志中的数据就会被丢弃
+        >
+        > ---
+        >
+        > 要运行elasticsearch-translog脚本，要输入truncate子命令，以及-d选项指定的崩溃事务日志的目录，如下所示：
+        >
+        > ```json
+        > sudo /usr/share/elasticsearch/bin/elasticsearch-translog truncate -d  /var/lib/elasticsearchdata/nodes/0/indices/my_index/0/translog
+        > ```
+        >
+        > 在上面的命令中，/var/lib/elasticsearchdata指向某个节点上的数据路径
 
 ### (4) 实时读取
 
+**实时读取操作**：提供返回文档各种版本(包括未提交版本)的可能，
 
+- 实时读取操作从索引中读取数据时，先检查事务日志中是否有可用的新版本
 
+- 若近期索引没有与事务日志同步，则索引中的数据将会被忽略，事务日志中的较新版本的文档将会被返回
 
+---
 
+演示实时读取的工作原理，用下面的命令替换示例中的搜索操作：
 
+```json
+curl -XGET localhost:9200/test/test/1?pretty
+```
 
+Elasticsearch将会返回类似下面的结果：
 
+```json
+{
+    "_index": "test",
+    "_type": "test",
+    "_id": "1",
+    "_version": 2,
+    "exists": true,
+    "_source": {
+        "title": "test2"
+    }
+}
+```
 
-## 9、控制段合并
+> 案例并没有使用刷新操作就得到了最新版本的文档
 
-### (1) Elasticsearch 合并策略的变化
+## 7、控制段合并
 
+### (1) 段合并简介
 
+- **段合并**：多个索引段的内容拷贝合并到一个更大的索引段里，而那些旧的索引段会被抛弃并从磁盘删除
 
+    > 注：Lucene 段和数据结构只会被写入一次，但会被读取多次，其中只有用于保存文档删除信息的文件会被多次更改
 
+- **段合并的原因**：
+    - 首先，索引段的个数越多，搜索性能越低且要耗费更多的内存
+    - 另外，由于索引段不可变，因此从索引中删除文档时，只是做删除标记，物理上并没有被删除。当段合并发生时，标记删除的文档不会再被拷贝到新的索引段中，即索引段会变小
+- **段合并的优点**：
+    - 当若干个索引段合并为一个索引段时，会减少索引段的数量并提高搜索速度
+    - 同时也会减少索引的容量(文档数)，因为在段合并时会真正删除被标记为已删除的那些文档
 
+- **段合并的缺点**：I/O 操作代价较大，在速度较慢的系统，段合并会显著影响性能
 
+    > 考虑到这个原因：Elasticsearch 允许用户选择段合并策略及存储级节流
 
 ### (2) 配置 tiered 合并策略
 
+`tiered` 合并策略是 Elasticsearch 5.0 的默认选项，合并大小相近的索引段，并考虑每层允许的索引段的最大个数
 
+> 读者需要区分单次可合并的索引段的个数与每层允许的索引段数量的区别
 
+- **阈值**：索引期间，`tiered` 计算索引中允许出现多少个索引段的数值
 
+- 若正在构建的索引中的段数超过了阈值，`tiered` 将先对索引段按容量降序排序，然后选择一个成本最低的合并
 
+    > 合并成本的计算方法倾向于回收更多已删除的文档，及产生更小的索引段
 
+- 若某次合并产生的索引段大小大于 `index.merge.policy.max_merged_segment` 参数值，`tiered` 会少选择一些索引段参与合并，使得生成的索引段的大小小于阈值
 
-### (3) 合并调度
+    > 即对于有较大分片的索引，默认的 `index.merge.policy.max_merged_segment` 会显得过小，会导致产生大量的索引段被创建，从而降低查询速度
+    >
+    > 用户应该根据自己的具体数据量，观察索引段的状况，不断调整合并策略以满足业务需求
 
+---
 
+`tiered` 合并策略的可配置选项：
 
+- `index.merge.policy.expunge_deletes_allowed`：默认值为 10，用于衡量段中已经被删除的文档所占的百分比
 
+    > 当执行 `expungeDeletes` 时，该参数值用于确定索引段是否被合并
 
+- `index.merge.policy.foor_segment`：用于阻止频繁刷新微小索引段，小于该参数值的索引段由索引合并机制处理，因为索引合并机制用的值和这个参数值大小相同，默认值为 `2MB` 
 
+- `index.merge.policy.max_merge_at_once`：默认值为10，确定索引期单次合并涉及的索引段数量的上限
 
-### (4) 强制合并
+    > 该参数值较大时，会一次合并更多数量的索引段，但会消耗更多的 I/O 资源
 
+- `index.merge.policy.max_merge_at_once_explicit`：默认值为 30，确定索引优化操作或 `expungeDeletes` 操作能参与的索引段数量的上限
 
+    > 该值对索引期参与合并的索引段数量的上限没有影响
 
+- `index.merge.policy.max_merged_segment`：默认值为 5GB，确定索引期段合并中产生的单个索引段大小的上限
 
+    > 这是一个近似值，因为合并后产生的索引段的大小是通过累加参与合并的索引段的大小减去被删除文档的大小而来
 
+- `index.merge.policy.segments_per_tier`：默认值为 10，确定每层允许出现的索引段数量的上限
 
+    > 值越小，就会导致越少的索引段数量，即更多的合并操作以及更差的索引性能
+    >
+    > 可以设置为大于等于 index.merge.policy.max_merge_at_once，否则会遇到很多与索引合并以及性能相关的问题
 
+- `index.reclaim_deletes_weight`：默认为 2.0，确定索引合并操作中清除被删除文档这个因素的权重
 
+    > 若设置为 0.0，则清除被删除文档对索引合并没有影响，该值越高，则清除越多被删除文档的合并越受合并策略青睐
 
-## 10、理解 Elasticsearch 缓存
+- `index.compund_format`：布尔类型，默认 false，确定索引是否存储为复合文件格式
+
+    > 若设置为 true，则 Lucene 将所有文件存储在一个文件中
+
+### (4) 合并调度
+
+> Elasticsearch 使用并发合并调度器 `ConcurrentMergeScheduler` 定制合并策略的执行方式
+
+**并发合并调度器**：
+
+- 使用多线程执行段合并操作，每次开启一个新线程，直到线程数达到上限
+
+    > 若达到线程数上限，而又必须开启新线程，则所有的索引操作都将被挂起，直到至少有一个索引合并操作完成
+
+- 可以通过修改 `index.merge.scheduler.max_thread_count` 属性来控制最大线程数
+
+    > 可以按如下公式来计算允许的最大线程数：
+    >
+    > `Math.max(1, Math.min(4, Runtime.getRuntime().availableProcessors() / 2))` 
+
+### (5) 强制合并
+
+Elasticsearch 提供了一个强制合并API，用于对一到多个索引进行强制合并
+
+> 这个操作是阻塞式的，直到合并结束，若 HTTP 连接断开，请求仍然会在后台继续执行，所有的新请求都将被堵塞，直到上一次强制合并完成
+
+强制合并 API 支持以下参数：
+
+- `max_num_segments`：合并结束后的段的数量，默认检查是否需要执行合并操作，若需要就执行
+
+    > 要把索引完全合并起来，就设置成 1
+
+- `only_expunge_deletes`：控制合并操作是否只涉及有删除操作的段，允许只合并包含已删除数据的段，默认为 false
+
+    > - 当一个文档被从 Lucene 中删除时，并没有真正地被从段中删除，而只是被标记为“已删除”
+    > - 在段合并操作中，会创建一个新的不包含这些已删除数据的段
+
+- `fush`：控制在强制合并操作结束之后，Elasticsearch 是否要执行刷新操作，默认为 true
+
+## 8、理解 Elasticsearch 缓存
 
 ### (1) 节点查询缓存
 
+- 查询缓存用于缓存查询的结果。每个节点上都有一个查询缓存，供节点上的所有分片共用
 
+    > 查询缓存使用的淘汰策略是 LRU(最近最少使用)：当缓存满时，最近最少被使用的数据将被淘汰，为新数据腾出空间
 
+- 查询缓存只缓存过滤器上下文中使用的查询
 
+- **配置节点查询缓存**：
 
+    - `indices.queries.cache.size`：控制过滤器缓存所使用的内存大小，默认 10%
 
+        > - 可以接受百分比的值(如 5%)或具体值(如 512MB)
+        > - 这是一个节点级的参数，必须配置在集群中每个数据节点的 elasticsearch.yml 文件中
+
+    - `index.queries.cache.enabled`：默认为true，控制是否启用查询缓存
+
+        > 这是一个索引级的参数，可以针对每个索引进行配置，即可以在创建索引时配置，也可以用更新设置 API 动态地在线修改
+
+---
+
+注：
+
+- 查询缓存默认只会缓存 `size=0` 的查询结果，即不缓存命中结果，只缓存 `hits.total、aggregations、suggestions` 的响应
+
+- 若请求大小大于 0，就不会被缓存，即使在索引设置中启用了请求缓存
+
+- 对于缓存起来的请求，键就是完整的 JSON 请求，使用者要保证 JSON 请求的键内容按相同顺序发送
 
 ### (2) 分片查询缓存
 
+- 当 Elasticsearch 针对一个或多个索引执行查询时，协调节点在接收到查询请求后，会将请求转发给所有相关的数据结点，然后每个结点上的相关分片都会在本地执行查询，并将本地结果返回给协调节点，再由协调节点将这些分片级的结果合并成一个完整的结果集
 
+- 分片请求缓存模块负责将每个分片上的结果缓存起来，由此可以快速地响应查询次数最多(通常也是代价最大)的请求
 
+- 通过这个缓存，经常使用的汇聚结果就可以被缓存起来，让响应更快
 
+    > 无论是否缓存，得到的汇聚结果都是相同的，不会得到过期数据
 
+- 若只有最新的索引上的数据会经常被更新，就非常适合使用这个缓存，旧索引上的结果在缓存中就可以直接得到
 
+---
+
+1. **启用和禁用分片查询缓存**
+
+    - `index.requests.cache.enable` 参数用于启用或禁用查询缓存，默认启用，但在创建索引时可以用如下方式禁用：
+
+        ```json
+        curl -XPUT "http://localhost:9200/library" -d
+        '{
+        	"settings": {
+                "index.requests.cache.enable": false
+            }
+        }'
+        ```
+
+    - 也可以用更新设置 API 启用或禁用：
+
+        ```json
+        curl -XPUT "http://localhost:9200/library/_settings" -d
+        '{
+        	"index.requests.cache.enable": true
+        }'
+        ```
+
+    - 还允许根据每个请求来启用或禁用查询缓存：
+
+        ```json
+        curl -XGET "http://localhost:9200/library/_search?request_cache=true" -d
+        '{
+        	"size": 0,
+        	"aggs": {
+                "popular_tags": {
+                    "terms": {
+                        "field": "tags"
+                    }
+                }
+            }
+        }'
+        ```
+
+2. **查询缓存设置**：缓存是在节点级管理的，默认最大会占用堆的 1%，可以在 elasticsearch.yml 文件中用如下方式修改：
+
+    ```json
+    indices.requests.cache.size: 2%
+    ```
+
+3. **缓存失效**：当分片刷新或分片中的数据被更新时，缓存结果就会自动失效
+
+    - 刷新间隔越长，缓存内容的有效期就越长
+
+    - 若缓存满了，最近最少使用的缓存键将被淘汰
+
+    - 可以用 _cache API 清除缓存：
+
+        ```json
+        curl -XPOST "http://localhost:9200/library/_cache/clear?request_cache=true"
+        ```
 
 ### (3) 字段数据缓存
 
+- **字段数据缓存及使用时机**：当查询涉及非倒排数据操作时，Elasticsearch 将相关字段的全部数据加载到内存中
+- **作用**：可以被 Elasticsearch 用于聚合和脚本计算，以及基于字段值的排序等场景
+- **场景**：当第一次执行非倒排数据操作时，Elasticsearch 会把所有相关字段的数据加载入内存，默认这些给定字段的数据不会被移除，因此可以快速用基于文档的方法访问索引文档中给定字段的值
+- **弊端**：从硬件角度看，构建字段数据缓存代价通常很高，因为相关字段的所有数据都要加载到内存中，消耗 I/O 操作和CPU资源
 
+- **使用**：在集群的每个节点上通过 `indices.fielddata.cache.size` 参数控制字段数据缓存，默认不设限制
 
+    > 这个参数值是字段数据缓存的最大值，如：节点堆空间的 30% 或 12GB 的绝对值
 
+- **替代品(`doc values`)**：对于 `not_analyzed`(关键字类型字段)默认启用，在索引期会进行计算，并按列格式存储在磁盘上
 
-
+    > `Doc values` 的速度与字段数据缓存不相上下，而且需要的内存更少
 
 ### (4) 使用 circuit breaker
 
+**`circuitbreaker`(断路器)**：用于限制某些特定功能使用过多的内存，Elasticsearch会估算内存使用量，当内存使用量到达某个阈值，会拒绝执行查询，可用的 circuit breaker 分类：
 
+> 注：所有 circuit breaker 都可以在生产集群上通过集群更新设置 API 动态修改
 
+- **父亲 `circuit breaker`**：参数 `indices.breaker.total.limit` 设置，一般默认是 JVM 堆的 70%
 
+- **字段数据 `circuit breaker`**：若某个查询的内存使用估算值高于预定值，字段数据 circuit breaker 将拒绝该查询执行
 
+    > 默认 `indices.breaker.fielddata.limit` 设为 `60%`，即 JVM 堆内存最多有 60% 能用于字段数据缓存
+    >
+    > 可以结合 `indices.breaker.fielddata.overhead` 估算内存使用量，默认该系数为 `1.03` 
 
+- **`request circuit breaker`**：允许用户配置当总体内存使用的估计量高于 `indices.breaker.request.limit` 属性值时，拒绝执行查询(阈值设置为 JVM 默认配置的总堆内存的 60%)
 
+- **`In-fight request circuit breaker`**：允许 Elasticsearch 限制所有正在到来的或 HTTP 级请求的内存使用，以避免超过节点上某内存标准，内存的使用与请求本身的内容长度有关
 
+    > 通过参数 `network.breaker.infight_requests.limit` 配置，默认是 JVM 堆的 100%
+    >
+    > `network.breaker.infight_requests.overhead` 默认为 1，所有 `in-fight` 估计值都会与它相乘，得到一个最终的估计值
+
+- **脚本编译 `circuit breaker`**：当脚本第一次输入Elasticsearch 时，会编译并在缓存中保存编译后的版本
+
+    > 作用为限制内部脚本编译的时长，可以用 `script.max_compilations_per_minute` 参数设置一分钟内允许编译多少份不同的脚本，默认值是 15
 
 # 八、管理 Elasticsearch
 
@@ -3283,315 +4095,1308 @@ curl -XPOST 'http://localhost:9200/_aliases' -d
 
 ### (1) 数据节点
 
+- **数据节点作用**：负责保存数据、段合并和执行查询
 
+    > 数据节点是集群中真正承担工作任务的地方，因此服务器的配置应该比集群中的其他节点高
 
+- **指定数据节点好处**：可以做到主节点与数据节点之间的分离
 
+- 每个节点都可以成为数据节点，可以在 `/etc/elasticsearch/elasticsearch.yml` 文件中增加如下配置来专门指定数据节点：
 
-
+    ```json
+    node.data: true
+    node.master: false
+    node.ingest: false
+    ```
 
 ### (2) 主节点
 
+- **主节点作用**：负责管理整个集群，即管理所有节点的状态并周期性地将集群状态同步到集群中的所有其他节点
+- **工作方式**：主节点定期向所有其他节点发送 ping 消息，以此判断它们是否正常存活(别的节点也会向主节点发送ping消息)
+- **主节点的任务**：配置管理，即管理着全部元数据及集群中所有索引的映射，若主节点下线，会从所有候选主节点中选出新的主节点
 
+- 配置方式：可以在 `/etc/elasticsearch/elasticsearch.yml` 文件中增加如下行来专门指定主节点：
 
-
-
-
+    ```json
+    node.data: false
+    node.master: true
+    node.ingest: false
+    ```
 
 ### (3) lngest 节点
 
+- 数据处理管道由一到多个 `ingest` 节点组成，由 `ingest` 节点负责每个环节的处理
 
+    > 依 ingest 节点要处理的任务不同，可能会需要很多资源，因此有时要在集群中指定专用的 ingest 节点
 
+- 可以在 `/etc/elasticsearch/elasticsearch.yml` 文件中增加如下行来专门指定 ingest 节点
 
-
-
+    ```json
+    node.data: false
+    node.master: false
+    node.ingest: true
+    ```
 
 ### (4) 部落节点
 
-
-
-
-
-
+- 部落节点是一种特殊类型的协调节点，可以连接多个集群，并在连上的所有集群中执行查询或其他操作
 
 ### (5) 协调节点/客户端节点
 
+Elasticsearch 的查询过程分为两个阶段：分散阶段和集中阶段
 
+> 两个阶段都由接收查询请求的协调节点来管理，同时也是集群中的负载均衡器
 
+- 在分散阶段，协调节点将查询请求转发给保存数据的数据节点，每个数据节点都在本地执行查询，再将结果返回给协调节点
 
+- 在集中阶段，协调节点将所有数据节点返回的结果合并成一个总结果集
 
+> 在大型集群中，指定协调节点可以将负载从数据节点和主节点分离出来
 
+可以通过在文件 `/etc/elasticsearch/elasticsearch.yml` 中增加如下行来指定协调节点：
 
+```json
+node.data: false
+node.master: false
+node.ingest: false
+```
 
+注：增加过多的协调节点会加重集群的负担，因为主节点必须关注集群中所有节点的状态更新，并把相应信息推送给集群中的每个节点
 
 ## 2、发现和恢复模块
 
+- 当一个 Elasticsearch 节点启动时，会先找到可能成为主节点的服务器列表，完成发现集群中其他节点的过程
+
+    > - 成为主节点的服务器配置为 `["127.0.0.1"，"[::1]"]`，即每个 Elasticsearch 节点都只能发现自己，不会发现别的节点
+    > - Elasticsearch 2.0 之前的默认行为：由拥有相同集群名称并可以用多播相互通信的节点自动形成集群
+
+- 形成集群和发现节点的过程称为发现，负责发现的模块有两个作用：**选主节点和发现集群的新节点**
+
+- 集群建立后，开始恢复过程，即 Elasticsearch 从网关读取元数据和索引，并准备好保存需要使用的分片
+
+    > - 主分片恢复完成之后，Elasticsearch 就可以响应外部请求
+    > - 若存在副本，则 Elasticsearch 将继续恢复其他的副本
+
 ### (1) 发现模块的配置
 
+发现模块的多种实现：
 
+- **Zen 发现(默认)**：默认使用单播来发现集群中的其他节点
 
+    > 单播发现中：
+    >
+    > - 集群之外的节点会向配置文件中的 `discovery.zen.ping.unicast.hosts` 参数指定的所有服务器发送 ping 请求
+    >
+    >     > 通过这种方式，告诉所有指定的节点已经做好了组成集群的准备，可以加入现有的集群，也可以形成新的集群
+    >
+    > - 加入集群之后就会收到整个集群的拓扑信息，但最早期只会与指定列表中的服务器建立连接
+    >
+    >     > 注：单播 Zen 发现机制要求相同集群中的所有节点有相同的集群名
+    >
+    > - 单播发现的节点列表不必包括集群中全部的节点，因为一旦连上了列表中的任意节点，就会得到集群中所有节点的信息
 
+    - 单播 Zen 发现配置：
 
+        - `discovery.zen.ping.unicast.hosts`：集群初始节点列表或数组，每个节点可配置名字或 IP 地址，还可以加上一个端口号或端口范围，但列表中的所有节点都必须是候选主节点
 
+            > 格式案例：`["master1"，"master2：9300"，"master3[9300-9305]"]` 
+
+        - `discovery.zen.minimum_master_nodes`(默认 1)：最大并发连接数，若初始连接会连向很多节点，则建议调大这个默认值，同时这个属性也可用于防止集群的脑裂
+
+    - 主节点选举的相关配置：
+
+        - **脑裂**：产生两个同名的集群和两个主节点
+
+            > 假设一个集群由 10 个候选主节点组成，若有 3 个节点从集群中断开连接，但这 3 个节点可以相互访问，由于 Zen 发现和主节点选举进程的存在，这些脱离集群的节点会选举出一个新的主节点，于是就产生了两个同名的集群和两个主节点
+
+        - **脑裂问题**：若脑裂期间索引数据，则当集群从脑裂中恢复时，会出现数据丢失和不可恢复的情况
+
+        - **避免脑裂**：`discovery.zen.minium_master_nodes` 定义了要组建集群至少需要有多少个候选主节点相互处于已连接状态
+
+            > 当 `discovery.zen.minium_master_nodes` 值为集群中一半的节点数加 1 时(如为 6)，则当有3个节点断开时(3小于6)，这3个节点无法重新选举出一个新的主节点，会等待重新连接上最初的那个集群
+
+    - Zen 发现故障检测和配置：
+
+        - Elasticsearch 的两个检测进程：
+
+            - 第1个进程：由主节点发送 ping 请求到集群中的其他全部节点，检测它们是否可用
+            - 第 2 个进程是相反的过程：每个节点都发送 ping 请求到主节点，检测主节点是否在运行并履行其职责
+
+        - 检测配置：
+
+            - `discovery.zen.fd.ping_interval`：定义节点多久向目标节点发送一次 ping 请求，默认 1 秒
+
+            - `discovery.zen.fd.ping_timeout`：定义节点在接到 ping 请求的响应之前会等待多久，默认 30 秒
+
+                > 若节点负载经常达到 100% 或网络速度较慢，可以考虑增加等待时间
+
+            - `discovery.zen.fd.ping_retires`：定义在目标节点被认为不可用前最大的 ping 请求重试次数，默认 3 次
+
+                > 若网络丢包严重，可以调高重试次数或解决网络问题
+
+        - 主节点是唯一可以改变集群状态的节点：
+            - 为保证集群状态更新按正确的次序进行，Elasticsearch 的主节点每次只处理一个集群状态更新请求，先在本地更新，然后再把请求发送给其他节点，以使这些节点能够同步状态
+            - 主节点会在指定的时间内等待其他节点的响应，若超时或全部节点都返回确认信息，才会继续执行下一个更新集群状态的请求
+            - `discovery.zen.publish_timeout` ：默认 30 秒，修改主节点等待回应的时间
+
+    - 无主节点块：`discovery.zen.no_master_block` 可设置无主节点时，仍执行某些操作，其包含两种取值：
+
+        - `all`：不管是读还是写，节点上的所有操作都将被拒绝
+
+            > 通过 API 发起的集群状态读写操作也是这样，包括获得索引设置、设置映射和集群状态API等
+
+        - `write`(默认)：只有写操作会被拒绝，读操作会基于最后更新的集群配置来回复
+
+            > 问题：导致对遗留数据的部分读问题，因为这个节点可能已经与集群中的其他节点隔离开
+
+- **亚马逊 EC2 发现**：仅限亚马逊弹性计算云(EC2)上运行的 Elasticsearch 集群
+
+- **其他节点发现方式**：
+
+    - Azure发现：https://www.elastic.co/guide/en/elasticsearch/plugins/5.0/discovery-azure-classic.html
+    - 谷歌计算引擎发现：https://www.elastic.co/guide/en/elasticsearch/plugins/5.0/discovery-gce.html
+    - 基于文件的发现：https://www.elastic.co/guide/en/elasticsearch/plugins/5.0/discovery-file.html
 
 ### (2) 网关和恢复模块的配置
 
+- **网关作用**：
 
+    - 网关模块允许存储 Elasticsearch 正常运行所需要的全部数据，即存储 Lucene 索引数据和所有元数据，以及每个索引的映射信息
 
+    - 集群状态改变时，会通过网关模块持久化
 
+    - 当集群启动时，集群的状态就会从网关模块加载并应用在集群上
 
+- **通过网关来恢复的过程**：
 
+    - 恢复过程加载通过网关模块存储的数据以使 Elasticsearch 正常工作：
+        - 每当集群整体重启发生时，恢复过程就会启动，加载所有提到的相关信息：元数据、映射和全部索引
+        - 当恢复过程启动时，主分片会首先初始化，然后副本可能使用网关数据，也可能与主分片不同步时使用拷贝自主分片数据
+    - Elasticsearch 允许配置何时需要使用网关模块恢复集群数据：
+        - 可以设置 Elasticsearch 在开始恢复过程前等待一定数量的候选主节点或数据节点加入集群
+        - 注意：在集群完成恢复前，其上的所有操作都不被允许，目的是防止修改冲突
+
+- **相关配置属性**：可以修改的网关配置
+
+    > Elasticsearch 节点可以是数据节点(只持有数据)，可以是主节点，或请求处理节点(既不持有数据，也不是主节点)
+
+    - `gateway.recovery_after_nodes`：数字类型，控制集群中存在多少个节点之后才启动恢复过程
+
+        > 如：设为5时，则至少需要5个节点加入集群之后才会开始恢复过程，无论是数据节点还是主节点
+
+    - `gateway.recovery_after_data_nodes`：数字类型，控制集群中存在多少个数据节点之后才启动恢复过程
+
+    - `gateway.recovery_after_master_nodes`：数字类型，控制集群中存在多少个主节点之后才启动恢复过程
+
+    - `gateway.recovery_after_time`：默认为 5分钟，当前面的条件满足后，再等待多少时间才开始恢复过程
+
+        > 如：设置为 5m，当定义好的前提条件满足后，再过5分钟才会开始恢复过程
+
+- **本地网关**：本地网关使用节点上的本地可用存储来保存元数据、映射和索引。发往网关的写操作同步完成，以保证写入过程中不会发生数据丢失
+
+    - `gateway.expected_nodes`：默认为 0，集群存在的节点数量(包括数据节点和主节点)，当所需数量的节点加入集群后，本地分片的恢复会立刻开始
+    - `gateway.expected_master_nodes`：默认为 0，集群存在的主节点数量，当所需数量的主节点加入集群之后，本地分片的恢复就会立刻开始
+    - `gateway.expected_data_nodes`：默认为 0，集群存在的数据节点数量，所需数量的数据节点加入集群之后，本地分片的恢复就会立刻开始
+    - `gateway.recover_after_time`：若要求的节点数量得不到满足时，超过该等待时间，恢复过程就会开始
+
+- **恢复过程的底层配置**(集群级别的恢复配置)：恢复过程的配置多数都在集群级别设定，允许设置恢复模块工作时遵守的通用规则
+
+    - `indices.recovery.max_types_per_sec`：默认为40MB，在恢复分片时每秒可以传输的最大数据量，若 不需要限制数据传输，可以设置为0
+
+        > 可以用来控制恢复过程对网络的使用，设置更高的值可以带来更高的网络利用率和更短的恢复时间
+
+    - `indices.recovery.compress`：默认为 true，恢复过程在传输数据时是否压缩数据，设为 false 可以降低CPU的压力，但是会造成网络传输数据量的加大
+
+    - `indices.recovery.translog_ops`：默认为1000，恢复过程的一次请求在分片间传输的事务日志的行数
+
+    - `indices.recovery.translog_size`：从源分片拷贝事务日志时使用的数据块的大小，默认为 512KB
+
+        > 当开启了压缩选项 `indices.recovery.compress` 时，数据块会被压缩
 
 ### (3) 索引恢复 API
 
+- 向 `_recovery` 端点发送 HTTTP GET 请求(查询全部索引或指定索引)，可以得到索引恢复的状态：
 
+    ```shell
+    curl -XGET 'localhost:9200/_recovery?pretty'
+    ```
 
+- 添加 `active_only=true` 参数来限制只返回正在恢复中的分片的信息：
 
+    ```shell
+    curl -XGET 'localhost:9200/_recovery?active_only=true&pretty'
+    ```
 
+- 添加 `detailed=true` 参数获得更详细的信息：
 
-
-
+    ```shell
+    curl -XGET 'localhost:9200/_recovery?detailed=true&pretty'
+    ```
 
 ## 3、使用对人类友好的 Cat API
 
+> Cat API 以简单的文本、表格的形式来返回数据，并且还提供无需对数据的进一步处理的聚合结果
+
 ### (1) Cap API 的基础知识
 
-
-
-
-
-
+- 基础命令：`curl -XGET 'localhost:9200/_cat'`
+- 允许使用 Cat API 来获取的信息：
+    - `/_cat/tasks`：集群中正在运行的任务
+    - `/_cat/segments`：段的统计信息
+    - `/_cat/segments/{index}`：段的统计信息(限定为特定的索引)
+    - `/_cat/allocation`：与分片分配相关的信息
+    - `/_cat/fielddata`：字段数据缓存大小
+    - `/_cat/fielddata/{fields}`：针对单个字段的字段数据缓存大小
+    - `/_cat/recovery`：恢复信息
+    - `/_cat/recovery/{index}`：恢复信息(限定为特定的索引)
+    - `/_cat/repositories`：注册到集群中的快照仓库信息
+    - `/_cat/nodeattrs`：关于定制节点属性的信息
+    - `/_cat/indices`：索引的统计信息
+    - `/_cat/indices/{index}`：索引的统计信息(限定为特定的索引)
+    - `/_cat/snapshots/{repository}`：属于特定仓库的关于所有快照的信息
+    - `/_cat/plugins`：安装在每个节点上的插件
+    - `/_cat/aliases`：索引别名与给定别名的索引
+    - `/_cat/nodes`：节点信息，包括选主意向
+    - `/_cat/master`：主节点信息
+    - `/_cat/health`：集群健康状态
+    - `/_cat/pending_tasks`：被挂起执行的任务
+    - `/_cat/thread_pool`：集群内每个节点的线程池信息
+    - `/_cat/count`：集群内每个节点上的单个或多个线程池信息
+    - `/_cat/shards`：整个集群或单个索引的文档数量
+    - `/_cat/shards/{index}`：所有分片相关的信息(限定为特定的索引)
 
 ### (2) 使用 Cat API
 
+- **Cat API 参考案例**：
 
+    - 执行命令：`curl -XGET 'localhost:9200/_cat/health'` 
 
+        响应内容：
 
+        <img src="../../../pics/es/es_122.png">
 
+    - 添加参数 `v` 的命令：`curl -XGET 'localhost:9200/_cat/health?v'` 
 
+        响应内容：
 
+        <img src="../../../pics/es/es_123.png">
 
+- **Cat API 通用参数**：
+    - `v`：给响应添加一个表头，标明每列数据的名称
+    - `h`：限制只显示选定的列
+    - `help`：显示某个特定端点可以显示的所有可能的列，显示这个特定端点的参数名、参数缩写和其描述信息
+    - `bytes`：呈现字节量信息的格式，允许给所有的数字设置基数，如：`bytes=b` 表示以 byte 为单位，`bytes=k` 表示以 KB 为单位
+
+- **Cat API 的例子**：
+
+    - 获取关于主节点的信息：`curl -XGET 'localhost:9200/_cat/master?v'`
+
+        <img src="../../../pics/es/es_124.png">
+
+    - 获得关于节点的信息：`curl -XGET 'localhost:9200/_cat/nodes?v&h=name,node.role,load,uptime'` 
+
+        <img src="../../../pics/es/es_125.png" width=600 align=left>
 
 ## 4、备份
 
-### (1) 快照 API
+- Elasticsearch 通过 `_snapshot` 端点提供快照API，允许在远端仓库中为单个索引或整个集群创建快照
 
+    > 集群中的每个节点都可以访问仓库并拥有读写权限
 
+- Elasticsearch 允许在共享文件系统、HDFS 或云上创建快照
 
+**在文件系统中保存备份**：
 
+- 要在文件系统仓库中创建快照，只能用共享文件系统创建
+- 集群中所有数据和主节点都要能访问这个仓库，可以用网络文件系统 `NFS` 创建
 
+---
 
+**创建快照的步骤**：
 
-### (2) 在文件系统中保存备份
+1. **注册仓库路径**：在所有主节点和数据节点的 `elasticsearch.yml` 文件中增加一行 `path.repo: ["/mnt/nfs"]`，然后依次重启所有节点，重新加载配置
 
+2. **在 Elasticsearch 中注册共享文件系统仓库**：用 `es-backup` 这个名字注册共享文件系统仓库
 
+    ```shell
+    curl -XPUT 'http://localhost:9200/_snapshot/es-backup' -d 
+    '{
+    	"type": "fs",
+    	"settings": {
+    		"location": "/mnt/nfs/es-backup",
+    		"compress": true
+    	}
+    }'
+    ```
 
+    以下参数可用于仓库注册：
 
+    - `location`(必需)：快照位置
 
+    - `compress`：默认 true，对快照文件启用压缩，但压缩只适用于元数据文件(包括索引映射和设置)，数据文件不会被压缩
 
+    - `chunk_size`：在生成快照时大文件会被拆成多个块，默认为 null，即不限制块的大小
 
-### (3) 在云中保存备份
+        > 块的大小可以用字节描述，也可以用其他单位，如1g，10m，5k等
 
+    - `max_restore_bytes_per_sec`：限制每个节点的恢复速度，默认是每秒 40mb
 
+    - `max_snapshot_bytes_per_sec`：限制每个节点的快照速度，默认是每秒 40mb
 
+    - `readonly`：让仓库只读，默认值为 false
 
+3. **生成快照**：在一个仓库中为同一个集群生成多个快照，如：在 es-snapshot 仓库中创建一个名为 snapshot_1 的快照
 
+    ```shell
+    # wait_for_completion 参数设置在快照初始化之后，请求是立即返回(默认 true)，还是等快照结束
+    curl -XPUT 'http://localhost:9200/_snapshot/es-backup/snapshot_1?wait_for_completion=true'
+    ```
 
+    默认集群所有状态为 open 和 started 的索引都会被打入快照。要改变这个行为，可以在快照请求的消息体中指定具体的索引列表：
+
+    ```shell
+    curl -XPUT 'http://localhost:9200/_snapshot/es-backup/snapshot_1?wait_for_completion=true' -d
+    '{
+    	"indices": "index_1,index_2",
+    	"ignore_unavailable": "true",
+    	"include_global_state": false
+    }'
+    ```
+
+    创建快照时可以在请求消息中使用以下设置：
+
+    - `indices`：要打入快照的索引列表
+
+    - `ignore_unavailable`：设为 true 表示创建快照的过程会忽略不存在的索引，若没有设置且索引不存在，则快照请求会失败
+
+    - `include_global_state`：设为 false 表示集群的全局状态可能不会被保存为快照的一部分；设为 true 时，若快照中要包含的一或多个索引的主分区不是全部可用，则整个快照不会失败
+
+        > 除了为每个索引都创建一份拷贝，快照也会保存整个集群的元数据，包括持久化的集群设置和模板
+
+4. **获得快照信息**：
+
+    - 获得一个快照的详细信息：`curl -XPUT 'http://localhost:9200/_snapshot/es-backup/snapshot_1'`
+    - 获取多个快照的信息，用逗号分隔快照名
+    - 用 `_all` 关键字可以获得全部快照的详细信息：`curl -XPUT 'http://localhost:9200/_snapshot/es-backup/_all`
+
+5. **删除快照**：把已有的快照删除，也会将执行中的快照进程中止
+
+    ```shell
+    curl -XDELETE 'http://localhost:9200/_snapshot/es-backup/snapshot_1'
+    ```
 
 ## 5、快照恢复
 
+**恢复快照的过程**：
 
+1. **恢复多个索引**：只恢复快照中的部分索引
 
+    ```shell
+    curl -XPOST "http://localhost:9200/_snapshot/es-backup/snapshot_1/_restore" -d
+    '{
+    	"indices": "index_1,index_2",
+    	"ignore_unavailable": "true"
+    }'
+    ```
 
+2. **重命名索引**：快照恢复时，重命名索引(注：索引一旦创建就无法改名，只可以创建别名)
 
+    ```shell
+    curl -XPOST "http://localhost:9200/_snapshot/es-backup/snapshot_1/_restore" -d
+    '{
+    	"indices": "index_1",
+    	"ignore_unavailable": "true",
+    	"rename_replacement": "restored_index"
+    }'
+    ```
 
+3. **部分恢复**：避免部分分片无法生成快照导致整个恢复过程的失败
 
+    ```shell
+    #恢复过程结束后，缺失的分片会被创建成空
+    curl -XPOST "http://localhost:9200/_snapshot/es-backup/snapshot_1/_restore" -d
+    '{
+    	"partial": true
+    }'
+    ```
 
+4. **在恢复过程中修改索引设置**：索引设置可以在恢复过程中修改，如：副本数、刷新间隔等
 
-# 九、数据转换与联盟搜索
+    将索引 my_index 的副本数设置为0，并使用默认的刷新间隔
 
-## 1、用 ingest 节点在 Elasticsearch 中对数据进行预处理
+    ```shell
+    #indices 参数可以包含多个用逗号分隔的索引名
+    curl -XPOST "http://localhost:9200/_snapshot/es-backup/snapshot_1/_restore" -d
+    '{
+    	"indices": "my_index",
+    	"index_settings": {
+    		"index.number_of_replicas": 0
+    	},
+    	"ignore_index_settings": [
+    		"index.refresh_interval"
+    	]
+    }'
+    ```
 
-### (1) 使用 ingest 管道
+    恢复过程结束后，可以用如下命令增加副本：
 
+    ```shell
+    curl -XPUT "http://localhost:9200/my_index/_settings" -d
+    '{
+    	"index": {
+    		"number_of_replicas": 1
+    	}
+    }'
+    ```
 
+5. **恢复到其他集群**：把快照恢复的目标改写成一个新集群的注意点
 
-
-
-
-
-### (2) 处理管道中的错误
-
-
-
-
-
-
-
-### (3) 使用 ingest 处理器
-
-
-
-
-
-
-
-
-
-## 2、联盟搜索
-
-### (1) 测试集群
-
-
-
-
-
-
-
-### (2) 建立部落节点
-
-
-
-
-
-
-
-### (3) 通过部落节点读取数据
-
-
-
-
-
-
-
-### (4) 主节点级别的读操作
-
-
-
-
-
-
-
-### (5) 通过部落节点写入数据
-
-
-
-
-
-
-
-### (6) 主节点级别的写操作
-
-
-
-
-
-
-
-### (7) 处理索引冲突
-
-
-
-
-
-
-
-### (8) 屏蔽写操作
-
-
-
-
-
-
-
-
+    - 与生成快照的集群相比，新集群的版本必须相等或更高(但大版本也只能多1)
+
+        > 如：可以将 1.x 的快照恢复到 2.x 的集群中，但不能将 1.x 的快照恢复到 5.x 的集群中
+
+    - 快照恢复的过程中可以应用索引设置
+
+    - 新集群的大小(节点数量等)不一定要与旧集群相同
+
+    - 恢复过程中要保证有充足的磁盘空间和内存
+
+    - 所有节点设置必须相同(如：同义词、hunspell 文件等)，生成快照时所有节点上已有的插件(如：attachment插件)也必须相同
+
+    - 若原集群中的索引用分片分配过滤机制指定到了特定节点上，那在新集群中必须也使用相同的规则
+
+        > 若新集群没有节点能提供合适的配置属性让将要恢复的索引分配在上面，则这个索引不能被成功恢复，除非在恢复的过程中修改了这些索引的分配设置
+
+# 九、ingest 节点
+
+> ingest 节点：可以在索引数据之前，就先进行预处理
+
+## 1、ingest 管道结构
+
+ingest 管道的结构定义：
+
+```json
+{
+    "description": "",
+    "processors": []
+}
+```
+
+- `description`：包含一段文本，描述管道是什么
+- `processors`：一到多个处理器组成的列表，且处理器的执行顺序就是被声明的顺序
+
+## 2、ingest API
+
+- **创建或更改管道**：
+
+    ```shell
+    curl -XPUT "localhost:9200/_ingest/pipeline/pipeline-id" -d
+    '{
+    	"description": "pipeline description",
+    	"processors": [
+    		{
+    			"set": {
+    				"field": "foo",
+    				"value": "bar"
+    			}
+    		}
+    	]
+    }'
+    ```
+
+- **获取管道细节**：`curl -XGET "localhost:9200/_ingest/pipeline/pipeline-id?pretty"`
+
+    > 可以用逗号间隔的 ID 列表来通过一个请求获得多个管道的信息，在ID中也可以使用通配符
+
+- **删除管道**：`curl -XDELETE "localhost:9200/_ingest/pipeline/pipeline-id"` 
+
+    > 可以用逗号间隔的 ID 列表来通过一个请求获得多个管道的信息，在ID中也可以使用通配符
+
+- **模拟管道用于调试**：除了`_ingest API`，Elasticsearch还提供了`_simulate API` 来调试管道
+
+    > 模拟 API 可用于对一个输入文档的集合运行管道，这些输入文档不会真正被索引，只会被用于测试管道
+
+    ```shell
+    curl -XPOST "localhost:9200/_ingest/pipeline/_simulate" -d
+    '{
+    	"pipeline": {},
+    	"docs": []
+    }'
+    ```
+
+    - `pipeline` 参数包含对管道的定义
+    - `docs` 参数包含着 JSON 文档的数组，用于对给定的管道进行测试
+
+    ---
+
+    案例：
+
+    - 通过 `set` 处理器来给文档增加一个新的名为 category 的字段，值为 search engine：
+
+        ```shell
+        curl -XPOST "localhost:9200/_ingest/pipeline/_simulate?pretty" -d
+        '{
+        	"pipeline": {
+        		"description": "adding a new field and value to the each document",
+            	"processors": [
+            		{
+            			"set": {
+        					"field": "category",
+        					"value": "search engine"
+        				}
+            		}
+            	]
+        	},
+        	"docs": [
+        		{
+        			"_index": "index",
+        			"_type": "type",
+        			"_id": "id",
+        			"_source": {
+        				"name": "lucene"
+        			}
+        		},
+        		{
+        			"_index": "index",
+        			"_type": "type",
+        			"_id": "id",
+        			"_source": {
+        				"name": "elasticsearch"
+        			}
+        		}
+        	]
+        }'
+        ```
+
+    - 使用 `verbose` 参数了解当文档经过管道时，每个处理器如何处理，案例：每个处理器都会对每份输入的文档增加一个新字段
+
+        ```shell
+        curl -XPOST "localhost:9200/_ingest/pipeline/_simulate?pretty&verbose" -d
+        '{
+        	"pipeline": {
+        		"description": "adding a new field and value to the each document",
+            	"processors": [
+            		{
+            			"set": {
+        					"field": "category",
+        					"value": "search engine"
+        				}
+            		},
+            		{
+            			"set": {
+        					"field": "field3",
+        					"value": "value3"
+        				}
+            		}
+            	]
+        	},
+        	"docs": [
+        		{
+        			"_index": "index",
+        			"_type": "type",
+        			"_id": "id",
+        			"_source": {
+        				"name": "lucene"
+        			}
+        		},
+        		{
+        			"_index": "index",
+        			"_type": "type",
+        			"_id": "id",
+        			"_source": {
+        				"name": "elasticsearch"
+        			}
+        		}
+        	]
+        }'
+        ```
+
+    - 对一个已有的管道使用模拟 API，则可以直接使用下面的请求：
+
+        ```shell
+        curl -XPOST "localhost:9200/_ingest/pipeline/my-pipeline/_simulate" -d
+        '{
+        	"docs": [
+        		{/** first document**/},
+        		{/** second document**/},
+        		//...
+        	]
+        }'
+        ```
+
+## 3、处理管道中的错误
+
+> ingest 管道就是一系列的处理器，按被定义的顺序逐个执行，并会在第一次出异常时中止
+
+参数 `on_failure`：定义一系列在出错的处理器之后立刻执行的处理器，在管道级和在处理器级都可以指定这个参数
+
+- 若处理器使用 `on_failure` 配置，即使内容是空的，处理器中抛出的异常也会被捕获，然后管道会继续执行其他剩下的处理器。
+- 在 `on_failure` 声明内可以进一步定义处理器，因此可以嵌套进行错误处理
+
+具体使用：
+
+- **在同一份文档和索引中标记错误**：要将文档中的 name 字段重命名为 technology_name，若文档中不包含 name 字段，处理器会给文档附上一条出错消息，用于在 Elasticsearch 中做后续分析
+
+    - 注册一个管道：
+
+        ```shell
+        curl -XPUT "http://localhost:9200/_ingest/pipeline/pipeline1" -d
+        '{
+        	"description": "my first pipeline with handled exceptions",
+            "processors": [
+                {
+                    "rename": {
+                        "field": "name",
+                        "target_field": "technology_name",
+                        "on_failure": [
+                        	{
+                        		"set": {
+                        			"field": "error",
+                        			"value": "field "name" does not exist, cannot rename to "technology_name""
+                        		}
+                        	}
+                        ]
+                    }
+                }
+            ]
+        }'
+        ```
+
+    - 用这个管道索引一份文档：
+
+        ```shell
+        curl -XPOST "http://localhost:9200/my_index/doc/1?pipeline=pipeline1" -d
+        '{
+        	"message": "learning ingest APIs"
+        }'
+        ```
+
+    - 当用下面的命令从Elasticsearch中获取这份文档时，会看到它多包含了一个error字段，value是提供的出错消息：
+
+        ```shell
+        curl -XGET "http://localhost:9200/my_index/doc/1"
+        ```
+
+- **在另一个索引中索引容易出错的文档**：把所有容易出错的文档都保存到另一个索引中，可以这样定义on_failure的内容
+
+    ```json
+    "on_failure": [
+        {
+            "set": {
+                "field": "_index",
+                "value": "failed-{{_index}}"
+            }
+        }
+    ]
+    ```
+
+    > 上面的语法会创建一个名为failed-my_index的新索引，并会索引所有抛出了错误的文档
+
+- **直接忽略错误**：若不想对错误进行处理，也不想索引操作被中断，则可以直接忽略错误，只需将 `ignore_failure` 参数设为 true
+
+    ```json
+    {
+    	"description": "pipeline which ignore errors",
+        "processors": [
+            {
+                "rename": {
+                    "field": "name",
+                    "target_field": "technology_name",
+                    "ignore_failure": true
+                }
+            }
+        ]
+    }
+    ```
+
+## 4、使用 ingest 处理器
+
+- **Append 处理器**：可以接受一个值，也可以接受值的数组
+
+    - 若字段已存在且是数组，则处理器可以将一到多个值追加到数组中
+    - 若字段已存在且是一个 scalar，也可以将一个 scalar 转换成数组，并将一到多个值追加进去
+    - 另外在字段不存在时，也可以用提供的值创建一个数组
+
+    ```shell
+    {
+    	"append": {
+    		"field": "tags",
+    		"value": ["tag1", "tag2", "tag3"]
+    	}
+    }
+    ```
+
+- **Convert 处理器**：用于将一个字段的值转换成另一种不同类型，如：将字符串格式的整数转换为整型
+
+    ```json
+    //将字符串类型的"33"转换为数字类型的33
+    {
+        "convert": {
+            "field": "field1",
+            "type": "integer"
+        }
+    }
+    ```
+
+    可选参数：
+
+    - `target_field`：用于保存转换后的值的字段，默认在原字段中更新
+    - `ignore_missing`：默认 false，若设为 true 而字段又不存在或为null，则处理器就会直接退出，不会对文档进行改动
+
+- **Grok 处理器**：可以从文档的一个文本型字段中提取出结构化的字段
+
+    > 可以指定从哪个字段中提取内容出来，以及准备匹配的 grok 模式
+    >
+    > grok 模式和正则表达式一样，支持可重用的别名化的表达式
 
 # 十、提升性能
 
 ## 1、查询验证与分析器
 
+查询的两个重要特性：
 
+- **查询验证**：用于确认查询是可以正确执行还是有问题
 
+    > 用 `validate API` 来避免将不希望的、有问题的查询发往 Elasticsearch
 
+- **查询的全部执行时间信息**：通过 `profile API` 确认查询的各个环节各自占用了多少时间，从而最终解决查询慢问题
 
+### (1) 执行前验证代价大的查询
 
+> 在写新的查询语句时，最好能确认查询语句语法都正确，而且不会有任何数据类型与字段定义相冲突之类的问题
+
+Elasticsearch 提供了专门的 `_validate` REST 端点来验证查询，并且不会真正执行，案例：
+
+- 首先，创建索引并索引一些示例文档：
+
+    ```shell
+    curl -XPUT "http://localhost:9200/elasticsearch_books/books/_bulk?refresh" -d
+    '{
+    	"index": {
+    		"_id": 1
+    	}
+    }
+    {
+    	"author": "d_bharvi", 
+    	"publishing_date": "2009-11-15T14:12:12",
+    	"title": "Elasticsearch Essentials"
+    }
+    {
+    	"index": {
+    		"_id": 2
+    	}
+    }
+    {
+    	"author": "d_bharvi", 
+    	"publishing_date": "2009-11-15T14:12:13",
+    	"title": "Mastering Elasticsearch 5.0"
+    }'
+    ```
+
+- 然后，写一条简单的查询，并在新创建的索引上验证：
+
+    ```shell
+    curl -XGET "http://localhost:9200/elasticsearch_books/books/_validate/query?explain=true" -d
+    '{
+    	"query": {
+    		"bool": {
+    			"must": [
+    				{
+    					"query_string": {
+    						"default_field": "title",
+    						"query": "elasticsearch AND essentials"
+    					}
+    				}
+    			],
+    			"filter": {
+    				"term": {
+    					"author": "d_bharvi"
+    				}
+    			}
+    		}
+    	}
+    }'
+    ```
+
+- 响应中有3个值得注意的主要属性：
+
+    - `valid`：true 表示查询语句正确，可以在索引上执行，否则为 false
+
+    - `_shards`：valid API 是随机在某个分片上执行的，因此里面的总分片数总是1
+
+    - `explanations`：包含着底层重写过的查询，若查询正确，则真正执行的就是这个语句，否则里面是查询不正确的详细解释
+
+    ```json
+    {
+        "valid": true,
+        "_shards": {
+            "total": 1,
+            "successful": 1,
+            "failed": 0
+        },
+        "explanations": [
+            {
+                "index": "elasticsearch_books",
+                "valid": true,
+                "explanation": "+(+(+title:elasticsearch +title:#author:d_bharvi) #(#_type:books)"
+            }
+        ]
+    }
+    ```
+
+### (2) 获得详细查询执行报告的查询分析器
+
+```shell
+curl -XGET "http://localhost:9200/elasticsearch_books/_search" -d
+'{
+	"profile": true,
+	"query": {
+		"match": {
+			"title": "mastering elasticsearch"
+		}
+	}
+}'
+```
+
+`profile` 响应对象的结构：
+
+- `profile.shard.id`：响应中包含的每个分片的唯一 ID
+- `profile.shard.searches`：包含查询执行详细信息的数组
+- `profile.shard.rewrite_time`：一次完整的查询改写过程所花费的总时间(单位纳秒)
+- `profile.shard.collector`：这一部分是关于运行查询的 Lucene 收集器的内容
 
 ## 2、热点线程
 
+### (1) 简介
 
+**热点线程 API**：
 
+> 热点线程是一个 Java 线程，会占用大量 CPU，并且会执行相当长的一段时间
 
+- **应用场景**：当集群比平时执行得慢或消耗大量 CPU 资源
 
+- **目的**：提供查找问题根源所必需的信息
 
+- **使用**：通过使用 `/_nodes/hot_threads` 或 `/_nodes/{nodeornodes}/hot_threads` 端点，可以检查所有的节点、其中的一部分节点或其中一个节点
 
+- **案例**：查看所有节点上的热点线程
 
+    ```shell
+    curl 'localhost:9200/_nodes/hot_threads'
+    ```
+
+- **API 支持的参数**：
+
+    - `threads`：需要分析的线程数，默认3个，Elasticsearch 通过查看由 type 参数决定的信息来选取指定数量的热点线程
+
+    - `interval`：定义两次检查的间隔时间，默认 500ms
+
+        > 为了计算线程在某项操作(由 `type` 参数指定)上花费的时间百分比，Elasticsearch 会对线程做二次检查
+
+    - `type`：需要检查的线程状态类型，默认 cpu
+
+        > 可以检查某个线程消耗的CPU时间(cpu)、线程处于阻塞状态的时间(block)、线程处于等待状态的时间(wait)
+
+    - `snapshots`：需要生成的堆栈(某一时刻方法嵌套调用的序列)的快照数量，默认是 10个
+
+    案例：以 1s 为周期查看所有节点上处于等待状态的热点线程
+
+    ```shell
+    curl 'localhost:9200/_nodes/hot_threads?type=wait&interval=1s'
+    ```
+
+### (2) 热点线程的使用说明
+
+- 大多数的 Elasticsearch API 返回 JSON 格式，而热点线程 API 会返回格式化的、包含若干个部分的文本
+
+- **响应的产生逻辑**：
+
+    - Elasticsearch 选取所有运行着的线程，并收集每个线程的各种信息
+
+        > 如：花费的 CPU 时间、线程被阻塞或处于等待状态的次数、被阻塞或处于等待状态持续了多长时间等
+
+    - 然后会等待一段时间(由 `interval` 参数指定)，之后再次收集同样的信息
+
+    - 当这些完成后，基于线程消耗的时间进行降序排序，这样消耗最多时间的线程就排在列表的顶部
+
+        > 时间是通过由 `type` 参数指定的操作类型来衡量
+
+    - 之后，前 N 个线程(N是由 `threads` 参数指定的线程数)被 Elasticsearch 用来分析
+
+        > **Elasticsearch 的工作**：每隔几毫秒，对上一步选择的线程获取一些堆栈的快照(快照的数量由 `snapshot` 参数指定)
+
+    - 最后，将堆栈信息组合起来，以可视化的方式展示线程状态的变化，然后将响应返回给调用者
 
 ## 3、扩展 Elasticsearch 集群
 
+### (1) 垂直扩展
 
+垂直扩展，即向运行 Elasticsearch 的服务器增加更多的资源：
 
+- 可以添加内存
+- 可以更换到有着更佳的 CPU 或更快的磁盘存储的机器上
 
+垂直扩展的限制：当数据量够大、查询够复杂时，就会碰到内存问题，增加更多的内存也于事无补
 
+### (2) 水平扩展
 
+**水平扩展**：若一台机器容纳不下数据，会把索引分成多个分片 `shard`，并把它们分散到集群中
 
+> 当没有足够的计算能力来处理查询时，总是可以为分片增加更多的副本
 
+- **自动创建副本**：Elasticsearch 允许在集群足够大时自动扩展副本，设置 `index.auto_expand_replicas` 为 `0-all` 
+
+    > - 假设小索引名称是 mastering_meta，并且让 Elasticsearch 自动扩展它的副本，可以使用以下的命令来创建索引：
+    >
+    >     ```shell
+    >     curl -XPUT 'localhost:9200/mastering_meta/' -d
+    >     '{
+    >     	"settings": {
+    >     		"index": {
+    >     			"auto_expand_replicas": "0-all"
+    >     		}
+    >     	}
+    >     }'
+    >     ```
+    >
+    > - 若索引已存在，可以使用下面的命令来更新索引的配置：
+    >
+    >     ```shell
+    >     curl -XPUT 'localhost:9200/mastering_meta/_settings' -d
+    >     '{
+    >     	"index": {
+    >             "auto_expand_replicas": "0-all"
+    >         }
+    >     }'
+    >     ```
+
+- **冗余和高可用**：Elasticsearch 的副本机制不仅可以处理更高的查询吞吐量，同时也给了冗余和高可用
+
+- **成本和性能的适应性**：Elasticsearch 的分布式特征和能够水平扩展的能力可以解决运行时的性能和成本问题
+
+### (3) 高负载下的 es
+
+- **Elasticsearch 优化的一般建议**：
+
+    - **索引刷新频率**：指文档需要多长时间才能出现在搜索结果中，刷新频率默认是 1s，即索引查询器每隔1秒重新打开一次
+
+        > 规则非常简单：刷新频率越高，查询越慢，且索引文档的吞吐量越低。
+        >
+        > - 若能接受一个较低的刷新频率，如 10s 或 30s，会减轻 Elasticsearch 压力
+        > - 因为内部对象重新打开时速度会比较慢，这样会有更多可用的资源来处理索引和查询请求
+
+    - **线程池调优**：调整默认线程池配置的场景，即节点队列已填满，但仍有计算能力剩余，而且这些计算能力可以被指定用于处理等待中的操作
+
+        > 例：若做性能测试时发现 Elasticsearch 实例并不是 100% 饱和，但却收到了拒绝执行的错误，则需要调整 Elasticsearch 线程池
+        >
+        > - 既可以增加同时执行的线程数，也可以增加队列的长度
+        > - 并发执行的线程数增加到一个很大的数值时，会产生大量的CPU上下文切换，进而导致性能下降
+
+    - **数据分布**：Elasticsearch 的每个索引都可以被分成多个分片，且每个分片都会有多个副本，当有若干个 Elasticsearch 节点，而且索引被分割成多个分片时，数据的均匀分布对于平衡集群的负载十分重要，不要让某些节点做了比其他节点多太多的工作
+
+        > - 使用更多的分片，可以降低单个服务器上的负载
+        >
+        >     > 适用场景：
+        >     >
+        >     > - 高索引量的使用场景，即把索引分散到多个分片上来降低服务器的CPU和I/O子系统的压力
+        >     > - 复杂查询的场景
+        >
+        > - 增加 Elasticsearch 节点和副本数量，来解决节点无法处理查询带来的负载
+        >
+        >     > 主分片的物理拷贝会被部署到这些节点上，会使得文档索引慢一些，但是会给同时处理更多查询的能力
+
+- **高查询频率场景下的建议**：
+
+    - **节点查询缓存和分片查询缓存**：
+
+        - 节点查询缓存：有助于查询性能(当查询使用过滤器时)，即缓存会在一个节点上的全部索引间共享
+
+            > - `indices.queries.cache.size`：控制缓存大小，表示给定节点能被节点查询缓存使用的全部内存数量，默认10%
+            > - 若查询已使用过滤器，就应该监控缓存的大小和逐出，若逐出过多，则缓存可能太小，应该考虑增加缓存大小
+
+        - 分片查询缓存：目的是缓存聚合、建议器结果和命中数(不会缓存返回文档，只在查询 size=0 时起作用)
+
+            > - 当查询使用聚合或建议时，最好启用这个缓存(默认关闭)
+            >
+            > - `index.requests.cache.enable` 设为 `true` 表示开启分片查询缓存
+            >
+            >     ```shell
+            >     #开启 mastering 索引的缓存
+            >     curl -XPUT 'localhost:9200/mastering/_settings' -d
+            >     '{
+            >     	"index.requests.cache.enable": true
+            >     }'
+            >     ```
+            >
+            > - `indices.requests.cache.size` 设置分片查询缓存默认使用的内存量，默认不会超过分配给 Elasticsearch 节点的JVM 堆栈的 1%
+            >
+            > - `indices.requests.cache.expire` 可以指定缓存的过期时间
+            >
+            > 注：若不使用聚合或建议器，则分片查询缓存就毫无意义
+
+    - **使用路由**：有着相同路由值的数据会保存到相同的分片上，可以避免在请求特定数据时查询所有的分片
+
+    - **将查询并行起来**：适用场景为集群中有一打节点，但索引只在一个分片上
+
+    - **掌控 `size` 和 `shard_size`**：在处理使用聚合的查询时，对于某些查询可以使用这两个属性
+
+        - `size` 参数：定义最后的聚合结果会返回多少组数据
+
+            > 聚合最终结果的节点会从每个返回结果的分片获取靠前的结果，并且只会返回前 size 个结果给客户端
+
+        - `shard_size` 参数：具有相同含义，只是作用在分片层次上
+
+            > - 增加 shard_size 会让聚合结果更加准确(如对重点词的聚合)，代价是更大的网络开销和内存使用
+            > - 降低这个参数会让聚合的结果不那么精确，但却有着网络开销小和内存使用低的好处
+
+- **高索引吞吐量场景与 Elasticsearch**：
+
+    - **批量索引**：批量索引的线程池大小默认等于 CPU 核数，另有一个大小为 50 的请求队列
+
+        > - 不要向 Elasticsearch 发送过多的超出其处理能力的批量索引请求，若 Elasticsearch 不能及时处理，先是请求会排队，然后很快就会开始看到请求被拒绝执行的异常，并且数据不会被索引
+        >
+        > - 同时，不要让批量请求太大，否则 Elasticsearch 会需要大量的内存来处理
+
+    - **掌控文档的字段**：要让存储的字段尽可能少或完全不使用，大多数情况下需要存储的字段只是 `_source` 
+
+        > Elasticsearch 会默认索引 `_all` 字段(Elasticsearch 用来从其他文本字段收集数据)
+        >
+        > - 在索引生成阶段，关闭 `_all` 字段，在类型映射中添加如下一条：`"_all": {"enabled": false}` 
+        >
+        >     ```shell
+        >     #缩小文档的大小和减少其内文本字段的数量会让索引操作稍快一些
+        >     curl -XPUT 'localhost:9200/disabling_all' -d
+        >     '{
+        >     	"mappings": {
+        >     		"test_type": {
+        >     			"_all": {
+        >     				"enabled": false
+        >     			},
+        >     			"properties": {
+        >     				"name": {
+        >     					"type": "text"
+        >     				},
+        >     				"tag": {
+        >     					"type": "keyword"
+        >     				}
+        >     			}
+        >     		}
+        >     	}
+        >     }'
+        >     ```
+        >
+        > - 禁用 `_all` 字段时，可考虑设置一个新的默认搜索字段，通过设置 `index.query.default_field` 属性来指定
+        >
+        >     ```shell
+        >     curl -XPUT 'localhost:9200/disabling_all' -d
+        >     '{
+        >     	"mappings": {
+        >     		"test_type": {
+        >     			"_all": {
+        >     				"enabled": false
+        >     			},
+        >     			"properties": {
+        >     				"name": {
+        >     					"type": "text"
+        >     				},
+        >     				"tag": {
+        >     					"type": "keyword"
+        >     				}
+        >     			}
+        >     		}
+        >     	},
+        >     	"settings": {
+        >     		"index.query.default_field": "name"
+        >     	}
+        >     }'
+        >     ```
+
+    - **索引的结构和副本**：在设计索引结构时，需要考虑索引的分片和副本的数量，同时也需要考虑 Elasticsearch 节点上的数据分布、性能优化、可用性、可靠性等
+
+        - 首先，考虑把索引的主分片部署到所有节点上，这样就可以并行地索引文档，加快索引速度
+        - 然后是数据复制，即过多的副本会导致索引速度下降，原因：
+            - 首先，要在主分片和副本之间传递数据
+            - 其次，通常主分片和其他主分片的副本会被混合部署在相同的节点上
+
+    - **调整预写日志**：内部模块 `translog` 是一个基于分片的结构，用来实现预写日志，让 Elasticsearch 的 GET 请求可以获得最新的数据，确保数据的持久性，以及优化 Lucene 索引的写入
+
+        > - Elasticsearch 默认在事务日志中保留最多 5000 个操作或最多占用 512MB 空间：
+        >
+        >     > `index.translog.fush_threshold_ops` 和 `index.translog.fush_threshold_size`：可以设置事务日志保存的最大操作数量和最大体积，两者都是在索引级别生效，并能通过 Elasticsearch 的 API 实时更新
+        >
+        > - 一旦发生故障，对于拥有大量事务日志的节点来说，分片的初始化会慢一些
+        >
+        >     > 因为 Elasticsearch 需要在分片生效前处理完全部的事务日志
+
+    - **索引期间的内存缓存**：可供索引缓存使用的内存越多(`indices.memeory.index_buffer_size` 设置节点)，Elasticsearch 在内存中容纳的文档就越多，默认 10%
+
+        > 建议：每个在索引期间生效的分片分配 512MB 内存，即若给 Elasticsearch 节点分配 20GB 的堆空间且节点上有 10 个活动分片，则 Elasticsearch 默认会给每个分片大约 200MB 内存用作索引缓存(20GB的10%，再除以10个分片)
 
 ## 4、用 shrink 和 rollover API 高效管理基于时间的索引
 
+**索引分片的基本知识**：
 
+- 创建索引时要先定义分片的数量，在索引创建完之后将无法增加或减少分片的数量
+- 分片数越多，索引吞吐量越大，查询速度越慢，需要的资源越多
 
+### (1) shrink API
 
+`_shrink REST` 端点：让用户可以将一个现有索引的主分片数减少，最终生成一个新索引
 
+- **收缩的过程如下**：
 
+    - 首先，创建一个与源索引有相同定义的目标索引，但主分片数会更少
 
+    - 然后，创建硬连接，将源索引中的段连接到目标索引
 
+        > 若文件系统不支持硬连接，就把所有段拷贝到新索引中，这样的过程当然会更耗时
 
+    - 最后，对目标索引执行恢复流程，就好像它是一个已经关闭了的索引，现在刚刚被再次打开一样
 
+- **对要收缩的索引的要求**：
 
-# 十一、开发 Elasticsearch 插件
+    - 目标索引不能存在于集群中
 
-## 1、创建 Maven 的项目架构
+    - 在收缩请求中，目标索引的主分片数量必须是源索引分片数量的因子
 
+        > 假如索引有6个主分片，那可以收缩成3个、2个或1个主分片
+        >
+        > 假如源索引有10个主分片，就可以收缩成5个、2个或1个
 
+    - 源索引的主分片数一定要比目标索引多
 
+    - 目标索引的主分片数量必须是源索引的主分片数量的因子
 
+    - 假如源索引的几个分片要收缩成目标索引的一个分片，那这几个分片中的文档数量总和不能超过2147483519份，因为这是Elasticsearch的一个分片所能容纳的最大文档数
 
+    - 处理收缩操作的节点必须有足够的剩余磁盘空间，足够将现有的索引再复制一份
 
+- **收缩索引案例**：
 
+    - 创建一个名为 `source_index` 的索引：
 
+        ```shell
+        curl -XPUT "http:/localhost:9200/source_index"
+        ```
 
-## 2、创建自定义 REST 行为插件
+    - 收缩操作前的注意点：只有处于只读状态的索引才能被收缩；所有主分片都必须分配到同一个节点上，同样所有副本分片也都要被分配到一个节点上
 
+        ```shell
+        curl -XPUT "http:/localhost:9200/source_index/_settings" -d
+        '{
+        	"settings": {
+        		"index.routing.allocation.require._name": "shrink_node_name",
+        		"index.bolcks.write": true
+        	}
+        }'
+        ```
 
+    - 收缩成一个名为 `target_index` 的新索引：
 
+        ```shell
+        curl -XPOST "http:/localhost:9200/source_index/_shrink/target_index?pretty"
+        ```
 
+        执行收缩请求时不能指定映射，但可以添加别名：
 
+        ```shell
+        curl -XPOST "http:/localhost:9200/source_index/_shrink/target_index" -d
+        '{
+        	"settings": {
+        		"index.number_of_replicas": 1,
+        		"index.number_of_shards": 1
+        	},
+        	"aliases": {
+        		"search_index": {}
+        	}
+        }'
+        ```
 
+    - 用 cat API 监控索引收缩过程：
 
+        ```shell
+        curl -XGET 'localhost:9200/_cat/recovery'
+        ```
 
+### (2) rollover API
 
-## 3、创建自定义分析插件
+`rollover API`：用于生成一个新索引，并将现有的别名从旧索引切换到新索引
 
+案例：讲解 `rollover API` 怎么工作
 
+1. 创建一个带别名的索引：
 
+    ```shell
+    curl -XPUT "http://localhost:9200/myindex-000001" -d
+    '{
+    	"aliases": {
+    		"index_alisa": {}
+    	}
+    }'
+    ```
 
+2. 索引一份文档，来测试一下切换条件：
 
+    ```shell
+    curl -XPUT "http://localhost:9200/myindex-000001/doc/1" -d
+    '{
+    	"content": "testing rollover concepts"
+    }'
+    ```
 
+3. 创建一个条件来把别名切换到新索引上：
 
+    > 若 myindex-000001 已经创建一天或包含一份文档，会指定创建一个新索引，并把 myindex-000001 的 index_alias 加到新创建的索引上
+    >
+    > ```shell
+    > curl -XPOST "http://localhost:9200/index_alias/_rollover" -d
+    > '{
+    > 	"conditions": {
+    > 		"max_age": "1d",
+    > 		"max_docs": 1
+    > 	}
+    > }'
+    > ```
 
+4. 用 `_cat/indices` API  查看索引，就会看到新创建的名为 `myindex-000002` 的索引，并且别名也已经自动切换到新索引上
 
-# 十二、介绍 Elastic Stack 5.0
+    - 在 rollover 请求中传递更多设置
 
-## 1、Elastic Stack 5.0 简介
+        ```shell
+        curl -XPOST "http://localhost:9200/index_alias/_rollover" -d
+        '{
+        	"conditions": {
+        		"max_docs": 1
+        	},
+        	"settings": {
+        		"index.number_of_shards": 2
+        	}
+        }'
+        ```
 
+    - 创建新索引名的模式：若现有的索引名以“–数字”的模式结尾，如：logs-000001，那新的索引名也会遵循相同的模式，即将数字递增形成logs-000002。数字部分长度为6，中间以0填充，与旧索引的名字无关
 
+        - 若旧索引的名字不满足这个模式，则必须用下面的方法指定新索引的名字
 
+            ```shell
+            #先创建别名，因为这些命令会使用别名，本例别名为 index_alias
+            curl -XPOST "http://localhost:9200/index_alias/_rollover/new_index_name" -d
+            '{
+            	"conditions": {
+            		"max_age": "7d",
+            		"max_docs": 10000
+            	}
+            }'
+            ```
 
+        - 若索引名满足要求的模式：
 
-
-
-
-
-## 2、介绍 Logstash、Beats、Kibana
-
-
-
+            ```shell
+            curl -XPOST "http://localhost:9200/index_alias/_rollover" -d
+            '{
+            	"conditions": {
+            		"max_age": "7d",
+            		"max_docs": 10000
+            	}
+            }'
+            ```
