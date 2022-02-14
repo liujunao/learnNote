@@ -106,7 +106,9 @@
 
 # 二、Bean
 
-## 1. 生命周期
+## 1、生命周期与创建过程
+
+### (1) 生命周期
 
 - **实例化 Bean**：
 
@@ -138,7 +140,101 @@
 
 ![](../../pics/spring/spring_18.png)
 
-## 2. 作用域
+---
+
+1. 根据 BeanDefinition 信息实例化对象，Constructor 构造方法
+
+2. 根据 BeanDefinition 信息配置 Bean 的所有属性(将 bean 的引用注入到 bean 对应的属性，可能存在循环依赖问题)
+
+3. 若 Bean 实现了 BeanNameAware 接口，工厂调用 Bean 的 setBeanName，参数为 Bean 的 Id
+
+4. 若 Bean 实现 BeanFactoryAware 接口，Spring 将调用 setBeanFactory() 方法，将 BeanFactory 容器实例传入
+
+5. 若 Bean 实现 ApplicationContextAware 接口，Spring 将调用 setApplicationContext() 方法，传入 bean 所在的应用上下文的引用
+6. 若存在类实现 BeanPostProcessor 接口，执行实现类的 postProcessBeforeInitialization 方法，即在 Bean 初始化之前插入逻辑
+7. 如果Bean实现InitializingBean接口， 执行 afterPropertiesSet 方法
+8. 如果Bean指定了init-method方法，就会调用该方法，例：`<bean init-method="init">`
+9. 如果存在类实现了BeanPostProcessor接口，执行这些实现类的postProcessAfterInitialization方法，这相当于在Bean初始化之后插入逻辑
+10. 这个阶段Bean已经可以使用了，scope为singleton的Bean会被缓存在IOC容器中  
+11. 如果Bean实现了DisposableBean接口， 在容器销毁的时候执行destroy方法
+12. 如果配置了destory-method方法，就调用该方法。例：`<bean destroy-method="customerDestroy">`
+
+### (2) Bean 实例化顺序
+
+<img src="../../pics/spring/spring_24.png" width=800>
+
+---
+
+1. 解析内部类，查看内部类是否应该被定义成一个Bean，如果是，递归解析
+2. 解析@PropertySource，也就是解析被引入的Properties文件
+3. 解析配置类上是否有@ComponentScan注解，如果有则执行扫描动作，通过扫描得到的Bean Class会被立即解析成BeanDefinition，添加进beanDefinitionNames属性中。之后查看扫描到的Bean Class是否是一个配置类（大部分情况是，因为标识@Component注解），如果是则递归解析这个Bean Class
+4. 解析@Import引入的类，如果这个类是一个配置类，则递归解析
+5. 解析@Bean标识的方法，此种形式定义的Bean Class不会被递归解析
+6. 解析父类上的@ComponentScan，@Import，@Bean，父类不会被再次实例化，因为其子类能够做父类的工作，不需要额外的Bean
+
+### (3) Bean 的创建过程
+
+<img src="../../pics/spring/spring_23.png" width=1000>
+
+### (4) Bean 的实例化角度分析
+
+**IOC 容器中 Bean 的生命周期**： 在 Bean 的声明里设置 `init-method 和 destroy-method` 属性，为 Bean 指定初始化和销毁方法
+
+- 对应注解： `@PostConstruct, @PreDestroy` 
+- bean 生命周期方法
+    - `setup`： 在容器加载 bean时调用
+    - `teardown`： 在容器卸载类时调用
+
+---
+
+Spring IOC 容器对 Bean 的生命周期进行**管理的过程**： 
+
+- **创建 Bean**： 通过构造器或工厂方法创建 Bean 实例
+- **赋值 Bean**： 设置 Bean 的属性值，引用其他 Bean
+- **初始化 Bean**：调用 Bean 的初始化方法
+- **使用 Bean** 
+- **销毁 Bean**： 当容器关闭时, 调用 Bean 的销毁方法
+
+---
+
+**详细过程**：
+
+- Spring 容器从 XML 文件中读取 bean 并实例化 bean
+- Spring 根据 bean 的定义填充所有的属性
+- 如果 bean 实现 BeanNameAware 接口，Spring 传递 bean 的ID 到 setBeanName方法
+- 如果 Bean 实现了 BeanFactoryAware 接口， Spring 传递 beanfactory 给 setBeanFactory 方法
+- 如果有任何与bean相关联的BeanPostProcessors，Spring会在postProcesserBeforeInitialization()方法内调用它们
+- 如果 bean 实现 IntializingBean，调用它的afterPropertySet方法，如果bean声明了初始化方法，调用此初始化方法
+- 如果有BeanPostProcessors 和bean 关联，bean的postProcessAfterInitialization() 方法将被调用
+- 如果bean实现了 DisposableBean，它将调用destroy()方法
+
+---
+
+**创建 Bean 后置处理器**： 
+
+- Bean 后置处理器允许在调用初始化方法前后对 Bean 进行额外处理
+
+- Bean 后置处理器对 IOC 容器里的所有 Bean 实例逐一处理
+
+    > 典型应用： 检查 Bean 属性的正确性或根据特定的标准更改 Bean 的属性
+
+- Bean 后置处理器需要实现 `BeanPostProcessor` 接口，在初始化方法被调用前后，Spring 将把每个 Bean 实例分别传递给上述接口的以下两个方法： `postProcessorBeforeInitialization 和 postProcessorAfterInitialization ` 
+
+**添加 Bean 后置处理器后 Bean 的生命周期**： 
+
+- **创建 Bean**： 通过构造器或工厂方法创建 Bean 实例
+- **赋值 Bean**： 设置 Bean 的属性值，引用其他 Bean
+- 将 Bean 实例传递给 Bean 后置处理器的 postProcessBeforeInitialization 方法
+- **初始化 Bean**：调用 Bean 的初始化方法
+- 将 Bean 实例传递给 Bean 后置处理器的 postProcessAfterInitialization 方法
+- **使用 Bean** 
+- **销毁 Bean**： 当容器关闭时，调用 Bean 的销毁方法
+
+<img src="../../pics/spring/spring_10.png" align=left width=900>
+
+<img src="../../pics/spring/spring_9.png" align=left width=850>
+
+## 2、作用域
 
 - `singleton`：默认，每个容器中只有一个 bean 实例，由 BeanFactory 自身来维护
 - `prototype`：为每一个 bean 请求提供一个实例
@@ -146,7 +242,7 @@
 - `session`：与request范围类似，确保每个 session 有一个 bean 实例，session 过期后，bean 会随之失效
 - `global-session`：全局作用域，与 Portlet 应用相关，所有 Portlet 可以共用存储在 global-session 中的全局变量，全局作用域与Servlet中的session作用域效果相同
 
-## 3. 循环依赖问题
+## 3、循环依赖问题
 
 推荐阅读： [Spring-bean的循环依赖以及解决方式](https://blog.csdn.net/chejinqiang/article/details/80003868)  
 
@@ -212,75 +308,13 @@
   >   >
   >   > **加入 singletonFactories 三级缓存的前提是执行了构造器**，所以**构造器的循环依赖没法解决**
 
-## 4. 配置
+## 4、依赖注入方式
 
-### 1. XML 文件方式
+### (1) SET 注入
 
-#### 1. 配置方式
+> 通过 setter 方法注入 Bean 的属性值或依赖的对象
 
-- **通过全类名方式配置 Bean**： 
-
-  ```xml
-  <!-- 通过全类名方式来配置 bean -->
-  <bean id="helloWorld" class="com.spring.helloworld.HelloWorld"></bean>
-  <!-- 
-  	id: Bean 的名称
-  		1. 在 IOC 容器中必须唯一
-  		2. 若 id 没有指定，Spring 自动将类名作为 Bean 的名字
-  		3. id 可以指定多个名字，名字之间可用逗号、分号、或空格分隔
-   -->
-  ```
-
-- **通过工厂方法配置 Bean**： 不需要关心对象的创建细节
-
-  - **静态工厂方法**：将对象创建的过程封装到静态方法中，使用时只需简单地调用静态方法
-
-    > 通过静态方法创建 Bean： 
-    >
-    > - 在 Bean 的 class 属性里指定拥有该工厂的方法的类
-    > - 在 `factory-method` 属性里指定工厂方法的名称
-    > - 使用 `<constrctor-arg>` 元素为该方法传递方法参数
-
-    ```xml
-    <!-- 在 class 中指定静态工厂方法的全类名,在 factory-method 中指定静态工厂方法的方法名 -->
-    <bean id="dateFormat" class="java.text.DateFormat" factory-method="getDateInstance">
-        <!-- 可以通过 constructor-arg 子节点为静态工厂方法指定参数 -->
-        <constructor-arg value="2"></constructor-arg>
-    </bean>
-    ```
-    
-- **实例工厂方法**： 将对象创建过程封装到另外一个对象实例的方法里，当客户端请求对象时，只需简单的调用该实例方法
-  
-  > **通过实例工厂方法创建 Bean**： 
-    >
-    > - 在 bean 的 `factory-bean` 属性里指定拥有该工厂方法的 Bean
-    > - 在 `factory-method` 属性里指定该工厂方法的名称
-    > - 使用 `construtor-ar`g 元素为工厂方法传递方法参数
-  
-  ```xml
-    <!-- 实例工厂方法: 先需要创建工厂对象, 再调用工厂的非静态方法返回实例(了解) -->
-    <!-- ①. 创建工厂对应的 bean -->
-    <bean id="simpleDateFormat" class="java.text.SimpleDateFormat">
-        <constructor-arg value="yyyy-MM-dd hh:mm:ss"></constructor-arg>
-    </bean>
-    
-    <!-- ②. 有实例工厂方法来创建 bean 实例 -->
-    <!-- factory-bean 指向工厂 bean, factory-method 指定工厂方法(了解) -->
-    <bean id="datetime" factory-bean="simpleDateFormat" factory-method="parse">
-        <!-- 通过 constructor-arg 执行调用工厂方法需要传入的参数 -->
-        <constructor-arg value="1990-12-12 12:12:12"></constructor-arg>
-    </bean>
-    ```
-  
-- **实现 FactoryBean 接口在 Spring IOC 容器中配置 Bean**： Spring 中 Bean 的类型： **普通 Bean 和工厂Bean(FactoryBean)** 
-
-  > 工厂 Bean 返回的是该工厂 Bean 的 getObject 方法所返回的对象
-
-#### 2. 依赖注入方式
-
-- **依赖注入的方式**： 属性注入、构造器注入、工程方法注入(很少使用)
-
-  - **属性注入**： 即通过 setter 方法注入Bean 的属性值或依赖的对象，最常用的注入方式
+- **方式一**：
 
     ```xml
     <!-- 
@@ -295,7 +329,21 @@
     </bean>
     ```
 
-  - **构造器注入**： 通过构造方法注入 Bean 的属性值或依赖对象，保证 Bean 在实例化后就可以使用
+- **方式二**：a 类持有 b 类的引用，且 a 类有 b 的 set 方法，在 bean 中添加 `<property>` 标签即可注入
+
+    > 实质是将 b 实例化，然后调用 set 方法注入
+
+    ```xml
+    <bean id="a" class="com.qunar.pojo.StudentA" scope="singleton">
+        <property name="studentB" ref="b"></property>
+    </bean>
+    ```
+
+### (2) 构造器注入
+
+> 通过构造方法注入 Bean 的属性值或依赖对象，保证 Bean 在实例化后就可以使用
+
+- 方式一：
 
     ```xml
     <!-- 构造器注入在 <constructor-arg> 元素里声明属性 -->
@@ -320,7 +368,106 @@
     </bean>
     ```
 
-#### 3. 引用 Bean
+- 方式二：a 类持有 b 类的引用，且 a 的构造函数参数中有 b，实质就是通过构造函数注入，创建 a 对象时要把 b 对象传进去
+
+    ```xml
+    <bean id="a" class="com.qunar.pojo.StudentA">
+        <constructor-arg index="0" ref="b"></constructor-arg>
+    </bean>
+    ```
+
+### (3) 静态工厂
+
+> 在 bean 属性中对应类指向静态工厂，对应方法指向返回实例的方法
+>
+> 即将对象创建的过程封装到静态方法中，使用时只需简单地调用静态方法
+
+通过静态方法创建 Bean： 
+
+- 在 Bean 的 class 属性里指定拥有该工厂的方法的类
+- 在 `factory-method` 属性里指定工厂方法的名称
+- 使用 `<constrctor-arg>` 元素为该方法传递方法参数
+
+<img src="../../pics/spring/spring_22.jpeg" align=left>
+
+### (4) 实例工厂
+
+> 如果工厂不是静态，需要实例化，就实例化对应工厂
+>
+> 将对象创建过程封装到另外一个对象实例的方法里，当客户端请求对象时，只需简单的调用该实例方法
+
+**通过实例工厂方法创建 Bean**： 
+
+- 在 bean 的 `factory-bean` 属性里指定拥有该工厂方法的 Bean
+- 在 `factory-method` 属性里指定该工厂方法的名称
+- 使用 `construtor-arg` 元素为工厂方法传递方法参数
+
+```xml
+<!-- 实例工厂方法: 先需要创建工厂对象, 再调用工厂的非静态方法返回实例(了解) -->
+<!-- ①. 创建工厂对应的 bean -->
+<bean id="simpleDateFormat" class="java.text.SimpleDateFormat">
+  <constructor-arg value="yyyy-MM-dd hh:mm:ss"></constructor-arg>
+</bean>
+
+<!-- ②. 有实例工厂方法来创建 bean 实例 -->
+<!-- factory-bean 指向工厂 bean, factory-method 指定工厂方法(了解) -->
+<bean id="datetime" factory-bean="simpleDateFormat" factory-method="parse">
+  <!-- 通过 constructor-arg 执行调用工厂方法需要传入的参数 -->
+  <constructor-arg value="1990-12-12 12:12:12"></constructor-arg>
+</bean>
+```
+
+## 5、Bean 配置参数
+
+- `id`：bean的唯一标识
+
+- `class`：类的完全限定名
+
+- `parent`：父类 bean 定义的名字
+
+    > 若没有任何声明，会使用父 bean，但也可以重写父类
+    >
+    > - 重写父类时，子 bean 必须与父 bean 兼容，即接受父类的属性值和构造器声明的值      
+    >
+    > - 子 bean 会继承父 bean 构造器声明的属性值，并且重写父 bean 的方法
+    >
+    > - 若 init 与 destroy 方法已声明，会覆盖父 bean 相应的设置，而保留的设置会直接从子 bean 获取
+
+- `abstract`：声明 bean 是否是抽象的，决定该类是否会实例化。默认是 false
+
+    > 注：abstract 属性不会被子 bean 继承，因此 abstract=true 需要对每个 bean 显示声明
+
+- `lazy-init`：决定是否延迟实例化，默认是 false，即启动时会立即实例化单例模式的 bean
+
+    > 注：lazy-init 属性不会被子 bean 继承
+
+- `autowire`：决定是否自动装配 bean，该属性不会被子 bean 继承
+
+    > autowire 的四种模式：
+    >
+    > 1. `no`：默认模式，即 bean 的引用必须在 XML 文件中通过 `<ref/>` 元素或 `ref` 属性显示定义
+    > 2. `byName`：通过属性名使用自动装配，即若 Cat 类拥有 dog 属性，则会根据名字 dog 寻找 bean
+    > 3. `byType`：通过属性类自动装配，当有多个该属性类型的 bean 时会报错
+    > 4. `constructor`：针对构造器引用，类似 byType，参考：[Spring中的自动装配](https://www.jianshu.com/p/2f1c9fad1d2d)
+
+- `depends-on`：该 bean 初始化时依赖的其他 bean
+
+    > 注：depends-on 属性不会被子 bean 继承
+
+- `scope`：bean的作用域
+
+    > - `singleton`：单例模式，默认选项
+    > - `prototype`：非单例模式
+    > - `request`：对于 web 应用，每一个请求产生一个新的实例
+    > - `session`：对于 web 应用，一个 session 产生一个实例，参考：[Spring Bean的scope](https://blog.csdn.net/w_linux/article/details/80069039)
+
+- `init-method`：bean 创建时的初始化方法
+
+- `destroy-method`：bean 销毁时调用的方法，仅仅在 singleton 模式下起作用
+
+## 6、配置方式
+
+### (1) XML 文件方式
 
 - **引用 Bean**： 可以通过 `<ref>` 元素或 ref  属性为 Bean 的属性或构造器参数指定对 Bean 的引用
 
@@ -347,8 +494,6 @@
   </bean>
   ```
 
-#### 4. 注入 null 值
-
 - **注入 null 值**：使用专用的 `<null/>` 标签为 Bean 的字符串或其它对象类型的属性注入 null 值
 
   ```xml
@@ -357,8 +502,6 @@
       <property name="dataSource"><null/></property>
   </bean>
   ```
-
-#### 5. 属性
 
 - **级联属性**： 当两个 bean 关联时，从一个 bean 给 另一个 bean 赋值
 
@@ -385,16 +528,12 @@
 
   - `java.util.Properties` 属性对应 `<props>` 标签，使用多个 `<prop>` 作为子标签，`<prop>` 标签必须定义 key 属性
 
-#### 6. p命名空间
-
 - **p 命名空间**： 可以通过 `<bean>` 元素属性的方式配置 Bean 的属性，简化 XML 的配置
 
   ```xml
   <bean id="user3" class="com.spring.helloworld.User" p:cars-ref="cars" 
         p:userName="Titannic"></bean>
   ```
-
-#### 7. 自动装配
 
 - **bean 装配**： 指在 Spring 容器中把 bean 组装到一起
 
@@ -448,8 +587,6 @@
   - **基本数据类型**： 不能自动装配简单的属性，如基本数据类型，String字符串，和类
   - **模糊特性：**自动装配不如显式装配精确，如果有可能，建议使用显式装配
 
-#### 8. bean 之间的关系
-
 - **bean 之间的关系**：继承和依赖
 
   - **继承 Bean**： Spring 允许继承 bean 的配置
@@ -474,15 +611,13 @@
     <bean id="user2" parent="user" p:userName="Bob"></bean>
     ```
 
-  - **依赖 Bean**： Spring 允许通过 `depends-on` 属性设定 Bean 前置依赖的 Bean，前置依赖的 Bean 会在本 Bean 实例化之前创建好
+  - **依赖 Bean**： Spring 允许通过 `depends-on` 属性设定 Bean 前置依赖的 Bean，前置依赖的 Bean 会在本 Bean 实例化前创建
 
     > 如果前置依赖于多个 Bean，则可以通过逗号，空格的方式配置 Bean 的名称
 
     ```xml
     <bean id="user5" parent="user" p:userName="Backham" depends-on="user2"></bean>
     ```
-
-#### 9. bean 的作用域
 
 - **bean 的作用域**：可以通过 `<bean>` 中的 `scope` 标签来配置，默认是 singleton
 
@@ -509,8 +644,6 @@
     <!-- 等价于(<beans> 中添加 context Schema 定义) -->
     <context:property-placeholder location="classpath:jdbc.properties"/>
     ```
-
-#### 10. SpEL
 
 - **Spring表达式语言(SpEL)**： 支持运行时查询和操作对象的表达式语言，语法为 `#{}` 
 
@@ -560,57 +693,9 @@
   >   - if-else 运算符：`?: (ternary), ?: (Elvis)`
   > - **正则表达式的匹配**
 
-#### 11. IOC 生命周期
+### (2) 注解方式
 
-- **IOC 容器中 Bean 的生命周期**： 在 Bean 的声明里设置 `init-method 和 destroy-method` 属性，为 Bean 指定初始化和销毁方法
-
-  > - 对应注解： `@PostConstruct, @PreDestroy` 
-  > - bean 生命周期方法
-  >   - `setup`： 在容器加载 bean时调用
-  >   - `teardown`： 在容器卸载类时调用
-
-  Spring IOC 容器对 Bean 的生命周期进行**管理的过程**： 
-
-  - **创建 Bean**： 通过构造器或工厂方法创建 Bean 实例
-  - **赋值 Bean**： 设置 Bean 的属性值，引用其他 Bean
-  - **初始化 Bean**：调用 Bean 的初始化方法
-  - **使用 Bean** 
-  - **销毁 Bean**： 当容器关闭时, 调用 Bean 的销毁方法
-
-  > - Spring 容器从 XML 文件中读取 bean 并实例化 bean
-  > - Spring 根据 bean 的定义填充所有的属性
-  > - 如果 bean 实现 BeanNameAware 接口，Spring 传递 bean 的ID 到 setBeanName方法
-  > - 如果 Bean 实现了 BeanFactoryAware 接口， Spring 传递 beanfactory 给 setBeanFactory 方法
-  > - 如果有任何与bean相关联的BeanPostProcessors，Spring会在postProcesserBeforeInitialization()方法内调用它们
-  > - 如果 bean 实现 IntializingBean，调用它的afterPropertySet方法，如果bean声明了初始化方法，调用此初始化方法
-  > - 如果有BeanPostProcessors 和bean 关联，bean的postProcessAfterInitialization() 方法将被调用
-  > - 如果bean实现了 DisposableBean，它将调用destroy()方法
-
-- **创建 Bean 后置处理器**： 
-
-  - Bean 后置处理器允许在调用初始化方法前后对 Bean 进行额外处理
-
-  - Bean 后置处理器对 IOC 容器里的所有 Bean 实例逐一处理
-
-    > 典型应用： 检查 Bean 属性的正确性或根据特定的标准更改 Bean 的属性
-
-  - Bean 后置处理器需要实现 `BeanPostProcessor` 接口，在初始化方法被调用前后，Spring 将把每个 Bean 实例分别传递给上述接口的以下两个方法： `postProcessorBeforeInitialization 和 postProcessorAfterInitialization ` 
-
-  **添加 Bean 后置处理器后 Bean 的生命周期**： 
-
-  - **创建 Bean**： 通过构造器或工厂方法创建 Bean 实例
-  - **赋值 Bean**： 设置 Bean 的属性值，引用其他 Bean
-  - 将 Bean 实例传递给 Bean 后置处理器的 postProcessBeforeInitialization 方法
-  - **初始化 Bean**：调用 Bean 的初始化方法
-  - 将 Bean 实例传递给 Bean 后置处理器的 postProcessAfterInitialization 方法
-  - **使用 Bean** 
-  - **销毁 Bean**： 当容器关闭时，调用 Bean 的销毁方法
-
-![](../../pics/spring/spring_10.png)
-
-![](../../pics/spring/spring_9.png)
-
-### 2. 注解方式
+==[Spring常用注解](https://www.cnblogs.com/xingzc/p/5777814.html)== 
 
 - **在 classpath 中扫描组件**： Spring 能够从 classpath 下自动扫描、侦测和实例化具有特定注解的组件
 
@@ -670,7 +755,7 @@
 
   - `@Inject`：  和 @Autowired 注解一样也是按类型匹配注入的 Bean， 但没有 reqired 属性
 
-### 3. 泛型依赖注入
+### (3) 泛型依赖注入
 
 > **泛型依赖注入**： 可以为子类注入子类对应的泛型类型的成员变量的引用
 
@@ -738,7 +823,7 @@ public class Main {
 <context:component-scan base-package="com.spring.annotation.generic"/>
 ```
 
-##  5. 自动装配
+##  7、自动装配
 
 - spring 中，对象无需自己查找或创建与其关联的其他对象，由容器负责把需要相互协作的对象引用赋予各个对象，使用 `autowire` 来配置自动装载模式
 

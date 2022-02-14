@@ -3,7 +3,7 @@
 
 # 一、入门
 
-## 1. 基本构成
+## 1、基本构成
 
 MyBatis 核心组件： 
 
@@ -179,7 +179,7 @@ try{
   > configuration.addMapper(RoleMapper2.class);
   > ```
 
-## 2. 生命周期
+## 2、生命周期
 
 - `SqlSessionFactoryBuilder`：只存在于方法的局部，用于生成 SessionFactory 对象
 
@@ -1338,13 +1338,17 @@ INSERT 主键回填：
 
 # 五、原理解析
 
-![](../../pics/MyBatis/mybatis_4.png)
+## 1、基本概念
 
-**工作原理**： 
+### (1) 架构图
+
+<img src="../../pics/MyBatis/mybatis_4.png" align=left width=800>
+
+### (2) 执行流程图
 
 ![](../../pics/MyBatis/mybatis_5.png)
 
-## 1. 构建 sqlSessionFactory
+## 3、构建 sqlSessionFactory
 
 **采用构造模式去构造 sqlSessionFactory**： 
 
@@ -1358,7 +1362,7 @@ INSERT 主键回填：
 
    > MyBatis 提供了默认的实现类： `DefaultSqlSessionFactory`
 
-### 1. 构建 Configuration
+### (1) 构建 Configuration
 
 `Configuration` 作用： 
 
@@ -1380,7 +1384,7 @@ INSERT 主键回填：
 - 然后，将这些信息保存到 Configuration 类的单例中
 - 最后，进行 MyBatis 配置的初始化，如： properties...
 
-### 2. 映射器的内部组成
+### (2) 映射器的内部组成
 
 映射器的组成： 
 
@@ -1396,7 +1400,7 @@ INSERT 主键回填：
 
 ![](../../pics/MyBatis/mybatis_11.png)
 
-## 2. sqlSession 运行过程
+## 3、sqlSession 运行过程
 
 > 旧版使用 SqlSession，新版使用 Mapper
 
@@ -1438,7 +1442,7 @@ SqlSession 的四大对象：
 >
 >     > query/update 通过 resultHandler 进行处理结果的封装
 
-## 3. 总结
+## 4、总结
 
 源码运行过程：
 
@@ -1452,9 +1456,66 @@ SqlSession 的四大对象：
 
 <img src="../../pics/MyBatis/mybatis_9.png" style='zoom: 10'>
 
-# 六、插件
+# 六、缓存原理
 
-## 1. 插件理解
+## 1、一级缓存
+
+**一级缓存**：当在一次数据库会话中，执行多次查询条件完全相同的 SQL 时，MyBatis 提供了一级缓存的方案优化，如果是相同的SQL语句，会优先命中一级缓存，避免直接对数据库进行查询，提高性能
+
+> 每个 SqlSession 中持有了 Executor，每个 Executor 中有一个LocalCache
+>
+> - `Executor`： 虽然 SqlSession 向用户提供了操作数据库的方法，但真正和数据打交道的是 Executor
+> - `Cache`： MyBatis 中的 Cache 接口提供了和缓存相关的最基本的操作
+
+---
+
+**执行流程解析**：
+
+- 当用户发起查询时，MyBatis 根据当前执行的语句生成 MappedStatement，在 Local Cache 进行查询，如果缓存命中的话，直接返回结果给用户
+
+    <img src="../../pics/MyBatis/mybatis_14.png" style='zoom: 10'>
+
+- 若缓存没有命中，则查询数据库，结果写入Local Cache，最后返回结果给用户
+
+    <img src="../../pics/MyBatis/mybatis_15.jpeg" style='zoom: 10'>
+
+> 注：
+>
+> 1. 会话 `Session` 级别的一级缓存设计的比较简单，仅使用 HashMap 维护，并没有对 HashMap 的容量和大小进行限制
+> 2. 一级缓存是一个粗粒度的缓存，没有更新缓存和缓存过期的概念
+>
+> 即：**一级缓存的共享范围就是在一个 SqlSession 内部**
+
+## 2、二级缓存
+
+**二级缓存**：实现在多个 SqlSession 间共享缓存，且使用 CachingExecutor 装饰 Executor，进入一级缓存的查询流程前，先在CachingExecutor 进行二级缓存的查询
+
+<img src="../../pics/MyBatis/mybatis_16.png" style='zoom: 10'>
+
+二级缓存开启后，同一个 namespace 下的所有 SQL 语句都是共用同一个 Cache，即二级缓存被多个 SqlSession 共享：
+
+> 当开启缓存后，查询数据会经过`二级缓存 -> 一级缓存 -> 数据库`
+
+1. 二级缓存实现了 SqlSession 间缓存数据的共享，同时能到 namespace 粒度，通过 Cache 接口实现类不同的组合，对Cache的可控性也更强
+
+2. 当需要多表查询时，使用 MyBatis 的二级缓存极大可能会造成脏数据
+
+    > 二级缓存基于 namespace 且每次 update 都会更新缓存，当其他 namespace 中有语句对所在表进行修改时，多表查询语句所在的 namspace 无法感应到这些修改，就会造成脏数据
+
+3. 在分布式环境下，由于默认的MyBatis Cache实现都是基于本地的，分布式环境下必然会出现读取到脏数据，需要使用集中式缓存将MyBatis的Cache接口实现，有一定的开发成本，直接使用Redis、Memcached等分布式缓存可能成本更低，安全性也更高
+
+## 3、判断两次查询是否是相同的查询
+
+判断条件：
+
+- 传入的 statementId 
+- 查询时要求的结果集中的结果范围 （结果的范围通过rowBounds.offset和rowBounds.limit表示）
+- 这次查询所产生的最终要传递给JDBC java.sql.Preparedstatement的Sql语句字符串
+- 传递给java.sql.Statement要设置的参数值 
+
+# 七、插件
+
+## 1、插件理解
 
 在 MyBatis 中使用插件，必须实现 `Interceptor` 接口：
 
@@ -1482,7 +1543,7 @@ SqlSession 的四大对象：
 
 > 作用： 让每个在责任链上的角色都有机会去拦截这个对象
 
-## 2. 插件开发
+## 2、插件开发
 
 - **确定需要拦截的签名**： 
 
@@ -1566,7 +1627,7 @@ SqlSession 的四大对象：
   </plugins>
   ```
 
-## 3. 实例
+## 3、实例
 
 **功能要求**：对 MySQL 数据库查询返回的数据量需要有限制 
 
@@ -1649,9 +1710,9 @@ SqlSession 的四大对象：
   </plugins>
   ```
 
-# 七、实用场景
+# 八、实用场景
 
-## 1. 读写 BLOB 字段
+## 1、读写 BLOB 字段
 
 > MyBatis 提供的默认类型处理器：
 >
@@ -1715,7 +1776,7 @@ SqlSession 的四大对象：
   }
   ```
 
-## 2. 批量更新
+## 2、批量更新
 
 开启批量更新： 
 
@@ -1744,7 +1805,7 @@ SqlSession 的四大对象：
   </bean>
   ```
 
-## 3. 分表
+## 3、分表
 
 > MyBatis 允许把表名作为参数传递到 SQL 中
 
@@ -1764,7 +1825,7 @@ SqlSession 的四大对象：
   </select>
   ```
 
-## 4. 分页
+## 4、分页
 
 ### 1. RowBounds 分页
 
