@@ -619,8 +619,7 @@ switch (str) {
 //反编译后的结果
 String str = "world";
 String s;
-switch((s = str).hashCode())
-{
+switch((s = str).hashCode()) {
     default:
         break;
     case 99162322:
@@ -733,7 +732,7 @@ SubClass2(int n):200
 
   - **单一职责原则**： 一个类只负责一项职责，防止职责扩散
 
-  - **里氏替换原则**： 类 B 继承类 A 时，除添加新的方法完成新增功能外，尽量不要重写父类 A 的方法，也尽量不要重载父类 A 的方法
+  - **里氏替换原则**： 类 B 继承类 A 时，除添加新的方法完成新增功能外，尽量不要重写父类 A 的方法，也不要重载父类 A 的方法
 
   - **依赖倒置原则**： 高层模块不依赖低层模块，二者都应该依赖其抽象；抽象不应该依赖细节，细节应该依赖抽象
 
@@ -1996,7 +1995,7 @@ Class 和 java.lang.reflect 一起对反射提供了支持，java.lang.reflect �
 
 ```java
 @Test
-public void test3(){
+public void test3() {
     Person p = new Person();
     Class clazz = p.getClass();//通过运行时类的对象，调用其getClass()，返回其运行时类。
     System.out.println(clazz);
