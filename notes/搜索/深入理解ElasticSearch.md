@@ -87,7 +87,7 @@
 
 分析阶段由 `Lucene` 经过一系列步骤完成，如下图：
 
-<img src="../../../pics/es/es_2.png" align=left width="700">
+<img src="../../pics/es/es_2.png" align=left width="700">
 
 **文本分析过程**：由分析器来执行，分析器包含一个分词器、零到多个词条过滤器、零到多个字符过滤器
 
