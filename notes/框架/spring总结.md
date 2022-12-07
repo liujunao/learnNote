@@ -244,7 +244,9 @@ Spring IOC 容器对 Bean 的生命周期进行**管理的过程**：
 
 ## 3、循环依赖问题
 
-推荐阅读： [Spring-bean的循环依赖以及解决方式](https://blog.csdn.net/chejinqiang/article/details/80003868)  
+推荐阅读： [Spring-bean的循环依赖以及解决方式](https://blog.csdn.net/chejinqiang/article/details/80003868)、
+
+详细解读：[spring循环依赖及三级缓存的原因](https://www.cnblogs.com/daimzh/p/13256413.html) 
 
 - 简介： 循环依赖就是循环引用，即两个或以上的 bean 互相持有对方，最终形成闭环
 
