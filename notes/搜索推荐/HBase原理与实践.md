@@ -3156,37 +3156,238 @@ HBase集群只要对每个Region都维护一个Barrier列表和LastPushedSequenc
 
 ## 1、Snapshot 概述
 
+### (1) HBase 备份与恢复工具的发展过程
+
+HBase备份与恢复功能从无到有经历了多个发展阶段，从最早使用distcp进行关机全备份，到0.94版本使用copyTable工具在线跨集群备份，再到0.98版本推出在线Snapshot备份，每次备份与恢复功能的发展都极大地丰富了用户的备份与恢复体验。
 
 
 
+- 使用distcp进行关机全备份。HBase的所有文件都存储在HDFS上，因此只要使用Hadoop提供的文件复制工具distcp将HBASE目录复制到同一HDFS或者其他HDFS的另一个目录中，就可以完成对源HBase集群的备份工作。但这种备份方式需要关闭当前集群，不提供所有读写操作服务，在现在看来这是不可接受的
+- 使用copyTable工具在线跨集群备份。copyTable工具通过MapReduce程序全表扫描待备份表数据并写入另一个集群。这种备份方式不再需要关闭源集群，但依然存在很多问题：
+    - 全表扫描待备份表数据会极大影响原表的在线读写性能
+    - 备份时间长，不适合做频繁备份
+    - 备份数据不能保证数据的一致性，只能保证行级一致性。
 
+- 使用Snapshot在线备份。Snapshot备份以快照技术为基础原理，备份过程不需要拷贝任何数据，因此对当前集群几乎没有任何影响，备份速度非常快而且可以保证数据一致性。笔者推荐在0.98之后的版本都使用Snapshot工具来完成在线备份任务
 
+### (2) 在线Snapshot备份能实现什么功能
+
+Snapshot是HBase非常核心的一个功能，使用在线Snapshot备份可以满足用户很多需求，比如增量备份和数据迁移。
+
+- 全量/增量备份。任何数据库都需要具有备份的功能来实现数据的高可靠性，Snapshot可以非常方便地实现表的在线备份功能，并且对在线业务请求影响非常小。使用备份数据，用户可以在异常发生时快速回滚到指定快照点。
+    - 使用场景一：通常情况下，对于重要的业务数据，建议每天执行一次Snapshot来保存数据的快照记录，并且定期清理过期快照，这样如果业务发生严重错误，可以回滚到之前的一个快照点
+    - 使用场景二：如果要对集群做重大升级，建议升级前对重要的表执行一次Snapshot，一旦升级有任何异常可以快速回滚到升级前。
+
+- 数据迁移。可以使用ExportSnapshot功能将快照导出到另一个集群，实现数据的迁移。
+    - 使用场景一：机房在线迁移。比如业务集群在A机房，因为A机房机位不够或者机架不够需要将整个集群迁移到另一个容量更大的B集群，而且在迁移过程中不能停服。基本迁移思路是，先使用Snapshot在B集群恢复出一个全量数据，再使用replication技术增量复制A集群的更新数据，等待两个集群数据一致之后将客户端请求重定向到B机房
+    - 使用场景二：利用Snapshot将表数据导出到HDFS，再使用Hive\Spark等进行离线OLAP分析，比如审计报表、月度报表等
+
+### (3) 在线Snapshot备份与恢复的用法
+
+在线Snapshot备份与恢复最常用的4个工具是snapshot、restore_snapshot、clone_snapshot以及ExportSnapshot。
+
+- snapshot，可以为表打一个快照，但并不涉及数据移动。例如为表'sourceTable'打一个快照'snapshotName'，可以在线完成：
+
+    ```
+    hbase> snapshot 'sourceTable', 'snapshotName'
+    ```
+
+- restore_snapshot，用于恢复指定快照，恢复过程会替代原有数据，将表还原到快照点，快照点之后的所有更新将会丢失，例如：
+
+    ```
+    hbase> restore_snapshot 'snapshotName'
+    ```
+
+- clone_snapshot，可以根据快照恢复出一个新表，恢复过程不涉及数据移动，可以在秒级完成，例如：
+
+    ```
+    hbase> clone_snapshot 'snapshotName', 'tableName'
+    ```
+
+- ExportSnapshot，可以将A集群的快照数据迁移到B集群。ExportSnapshot是HDFS层面的操作，需使用MapReduce进行数据的并行迁移，因此需要在开启MapReduce的机器上进行迁移。Master和RegionServer并不参与这个过程，因此不会带来额外的内存开销以及GC开销。唯一的影响是DataNode在拷贝数据的时候需要额外的带宽以及IO负载，ExportSnapshot针对这个问题设置了参数bandwidth来限制带宽的使用，示例代码如下：
+
+    ```
+    hbase org.apache.hadoop.hbase.snapshot.ExportSnapshot \
+           			-snapshot MySnapshot -copy-from hdfs://srv2:8082/hbase \
+                    -copy-to hdfs://srv1:50070/hbase -mappers 16-bandwidth   1024
+    ```
+
+    
 
 ## 2、Snapshot 创建
 
+### (1) Snapshot技术基础原理
+
+Snapshot是很多存储系统和数据库系统都支持的功能。一个Snapshot是全部文件系统或者某个目录在某一时刻的镜像。实现数据文件镜像最简单粗暴的方式是加锁拷贝（之所以需要加锁，是因为镜像得到的数据必须是某一时刻完全一致的数据），拷贝的这段时间不允许对原数据进行任何形式的更新删除，仅提供只读操作，拷贝完成之后再释放锁。这种方式涉及数据的实际拷贝，在数据量大的情况下必然会花费大量时间，长时间的加锁拷贝会导致客户端长时间不能更新删除，这是生产线上不能容忍的。
 
 
 
+Snapshot机制并不会拷贝数据，可以理解为它是原数据的一份指针。在HBase的LSM树类型系统结构下是比较容易理解的，我们知道HBase数据文件一旦落到磁盘就不再允许更新删除等原地修改操作，如果想更新删除只能追加写入新文件。这种机制下实现某个表的Snapshot，只需为当前表的所有文件分别新建一个引用（指针）。对于其他新写入的数据，重新创建一个新文件写入即可。Snapshot基本原理如图11-1所示。
+
+<img src="../../pics/hbase/hbase_79.png" align=left width=800>
+
+Snapshot流程主要涉及2个步骤：
+
+1）将MemStore中的缓存数据f lush到文件中
+
+2）为所有HFile文件分别新建引用指针，这些指针元数据就是Snapshot。
+
+
+
+### (2) 在线Snapshot的分布式架构——两阶段提交
+
+HBase为指定表执行Snapshot操作，实际上真正执行Snapshot的是对应表的所有Region。这些Region分布在多个RegionServer上，因此需要一种机制来保证所有参与执行Snapshot的Region要么全部完成，要么都没有开始做，不能出现中间状态，比如某些Region完成了，而某些Region未完成。
+
+#### 1. 两阶段提交基本原理
+
+HBase使用两阶段提交（Two-Phase Commit，2PC）协议来保证Snapshot的分布式原子性。2PC一般由一个协调者和多个参与者组成，整个事务提交分为两个阶段：prepare阶段和commit阶段（或abort阶段）。整个过程如图11-2所示。
+
+<img src="../../pics/hbase/hbase_80.png" align=left width=800>
+
+1）prepare阶段协调者会向所有参与者发送prepare命令
+
+2）所有参与者接收到命令，获取相应资源（比如锁资源），执行prepare操作确认可以执行成功。一般情况下，核心工作都是在prepare操作中完成
+
+3）返回给协调者prepared应答
+
+4）协调者接收到所有参与者返回的prepared应答（表明所有参与者都已经准备好提交），在本地持久化committed状态
+
+5）持久化完成之后进入commit阶段，协调者会向所有参与者发送commit命令
+
+6）参与者接收到commit命令，执行commit操作并释放资源，通常commit操作都非常简单
+
+7）返回给协调者。
+
+#### 2. Snapshot两阶段提交实现
+
+HBase使用2PC协议来构建Snapshot架构，基本步骤如下。
+
+##### prepare阶段：
+
+1）Master在ZooKeeper创建一个/acquired-snapshotname节点，并在此节点上写入Snapshot相关信息（Snapshot表信息）
+
+2）所有RegionServer监测到这个节点，根据/acquired-snapshotname节点携带的Snapshot表信息查看当前RegionServer上是否存在目标表，如果不存在，就忽略该命令。如果存在，遍历目标表中的所有Region，针对每个Region分别执行Snapshot操作，注意此处Snapshot操作的结果并没有写入最终文件夹，而是写入临时文件夹
+
+3）RegionServer执行完成之后会在/acquired-snapshotname节点下新建一个子节点/acquired-snapshotname/nodex，表示nodex节点完成了该RegionServer上所有相关Region的Snapshot准备工作。
+
+##### commit阶段：
+
+1）一旦所有RegionServer都完成了Snapshot的prepared工作，即都在/acquired-snapshotname节点下新建了对应子节点，Master就认为Snapshot的准备工作完全完成。Master会新建一个新的节点/reached-snapshotname，表示发送一个commit命令给参与的RegionServer
+
+2）所有RegionServer监测到/reached-snapshotname节点之后，执行commit操作。commit操作非常简单，只需要将prepare阶段生成的结果从临时文件夹移动到最终文件夹即可
+
+3）在/reached-snapshotname节点下新建子节点/reached-snapshotname/nodex，表示节点nodex完成Snapshot工作。
+
+##### abort阶段：
+
+如果在一定时间内/acquired-snapshotname节点个数没有满足条件（还有RegionServer的准备工作没有完成），Master认为Snapshot的准备工作超时。Master会新建另一新节点/abort-snapshotname，所有RegionServer监听到这个命令之后会清理Snapshot在临时文件夹中生成的结果。
+
+可以看到，在这个系统中Master充当了协调者的角色，RegionServer充当了参与者的角色。Master和RegionServer之间的通信通过ZooKeeper来完成，同时，事务状态也记录在ZooKeeper的节点上。Master高可用情况下主Master发生宕机，从Master切换成主后，会根据ZooKeeper上的状态决定事务是否继续提交或者回滚。
+
+
+
+### (3) Snapshot核心实现
+
+Snapshot使用两阶段提交协议实现分布式架构，用以协调一张表中所有Region的Snapshot。那么，每个Region是如何真正实现Snapshot呢？ Master又是如何汇总所有Region Snapshot结果呢？
+
+#### 1. Region实现Snapshot
+
+<img src="../../pics/hbase/hbase_81.png" align=left width=800>
+
+#### 2. Master汇总所有Region Snapshot的结果
+
+Master会在所有Region完成Snapshot之后执行一个汇总操作（consolidate），将所有region snapshot manifest汇总成一个单独manifest，汇总后的Snapshot文件可以在HDFS目录下看到的，路径为：/hbase/.hbase-snapshot/snapshotname/data.manifest。Snapshot目录下有3个文件，如下所示：
+
+```
+        hadoop@hbase19:～/cluster-data/hbase/logs$  ./hdfs  dfs  -ls  /hbase/.hbase-
+    snapshot/music_snapshot
+        Found 3 items
+        -rw-r--r--                3    hadoop hadoop       02017-08-18 17:47 /hbase/.hbase-
+    snapshot/music_snapshot/.inprogress
+        -rw-r--r--                3    hadoop hadoop      342017-08-18 17:47 /hbase/.hbase-
+    snapshot/music_snapshot/.snapshotinfo
+        -rw-r--r--                3    hadoop hadoop      342017-08-18 17:47 /hbase/.hbase-
+    snapshot/music_snapshot/data.manifest
+```
+
+其中.snapshotinfo为Snapshot基本信息，包含待Snapshot的表名称以及Snapshot名。data. manifest为Snapshot执行后生成的元数据信息，即Snapshot结果信息。可以使用hadoop dfs-cat /hbase/.hbase-snapshot/snapshotname/data.manifest查看具体的元数据信息。
 
 
 
 ## 3、Snapshot 恢复
 
+Snapshot可以实现很多功能，比如restore_snapshot可以将当前表恢复到备份的时间点，clone_snapshot可以使用快照恢复出一个新表，ExportSnapshot可以将备份导出到另一个集群实现数据迁移等。那这些功能是如何基于Snapshot实现的呢？本节以clone_snapshot功能为例进行深入分析。clone_snapshot可以概括为如下六步：
+
+1）预检查。确认当前目标表没有执行snapshot以及restore等操作，否则直接返回错误
+
+2）在tmp文件夹下新建目标表目录并在表目录下新建.tabledesc文件，在该文件中写入表schema信息
+
+3）新建region目录。根据snapshot manifest中的信息新建Region相关目录以及HFile文件
+
+4）将表目录从tmp文件夹下移到HBase Root Location
+
+5）修改hbase:meta表，将克隆表的Region信息添加到hbase:meta表中，注意克隆表的Region名称和原数据表的Region名称并不相同（Region名称与table名称相关，table名不同，Region名则肯定不同）
+
+6）将这些Region通过round-robin方式均匀分配到整个集群中，并在ZooKeeper上将克隆表的状态设置为enabled，正式对外提供服务。
 
 
 
+在使用clone_snapshot工具克隆表的过程中并不涉及数据的移动，克隆出来的HFile文件没有任何内容。那么克隆出的表中是什么文件？与原表中数据文件如何建立对应关系？
+
+在实现中HBase借鉴了类似于Linux系统中软链接的概念，使用一种名为LinkFile的文件指向了原文件。LinkFile文件本身没有任何内容，它的所有核心信息都包含在它的文件名中。LinkFile的命名方式为'table=region-origin_hf ile'，通过这种方式就可以很容易定位到原始文件的具体路径：/${hbase-root}/table/region/origin_hf ile。所有针对新表的读取操作都会转发到原始表执行，因此就不需要移动数据了。如下是一个LinkFile示例：
+
+```
+        hadoop@hbase19:～/hbase-current/bin  ./hdfs  dfs  -ls  /hbase/data/default/music/
+    fec3584ec3ea8766ffda5cb8ed0d7/cf
+        Found 1 items
+        -rw-r-r-r- -    3    hadoop hadoop        02017-08-23 07:27 /hbase/data/default/
+    music/fec3584ec3ea8766ffda5cb8ed0d7/cf/music=5e54d8620eae123761e5290e618d556b-f928
+    e045bb1e41ecbef6fc28ec2d5712
+```
+
+其 中，LinkFile文 件 名 为music=5e54d8620eae123761e5290e618d556b-f928e045bb1e 41ecbef6fc28ec2d5712，根据定义可以知道，music为原始文件的表名，与引用文件所在的Region、引用文件名的关系如图11-4所示。
+
+<img src="../../pics/hbase/hbase_82.png" align=left width=800>
 
 
 
+## 4、在线Snapshot原理深入解析
+
+Snapshot实际上是一系列原始表的元数据，主要包括表schema信息、原始表所有Region的region info信息、Region包含的列簇信息，以及Region下所有的HFile文件名、文件大小等。
+
+如果原始表发生了Compaction导致HFile文件名发生了变化或者Region发生了分裂，甚至删除了原始表，Snapshot是否就失效了？如果不失效，HBase又是如何实现的？
 
 
-## 4、Snapshot 进阶
+
+HBase的实现方案比较简单，在原始表发生Compaction操作前会将原始表数据复制到archive目录下再执行compact（对于表删除操作，正常情况也会将删除表数据移动到archive目录下），这样Snapshot对应的元数据就不会失去意义，只不过原始数据不再存在于数据目录下，而是移动到了archive目录下。
+
+可以做个实验：1）使用Snapshot工具给一张表做快照：snapshot 'test','test_snapshot'
+
+2）查看archive目录，确认不存在这个目录：hbase-root-dir/archive/data/default/test
+
+3）对表test执行major_compact操作：major_compact 'test'
+
+4）再次查看archive目录，就会发现test原始表移动到了该目录，/hbase-root-dir/archive/data/default/test存在。
 
 
 
+同理，如果对原始表执行delete操作，比如delete 'test'，也会在archive目录下找到该目录。这里需要注意的是，和普通表删除的情况不同，普通表一旦删除，刚开始是可以在archive中看到删除表的数据文件，但是等待一段时间后archive中的数据就会被彻底删除，再也无法找回。这是因为Master上会启动一个定期清理archive中垃圾文件的线程（HFileCleaner），定期对这些被删除的垃圾文件进行清理。但是Snapshot原始表被删除之后进入archive，并不可以被定期清理掉，上节说过clone出来的新表并没有clone真正的文件，而是生成了指向原始文件的链接，这类文件称为LinkFile，很显然，只要LinkFile还指向这些原始文件，它们就不可以被删除。这里有两个问题：
 
+1）什么时候LinkFile会变成真实的数据文件？ HBase会在新表执行compact的时候将合并后的文件写到新目录并将相关的LinkFile删除，理论上讲是借着compact顺便做了这件事
 
+2）系统在删除archive中原始表文件的时候怎么知道这些文件还被LinkFile引用着？HBase使用back-reference机制完成这件事情。HBase会在archive目录下生成一种新的back-reference文件，来帮助原始表文件找到引用文件。back-reference文件表示如下：
 
+- 原始文件：/hbase/data/table-x/region-x/cf/f ile-x
+- clone生成的LinkFile：/hbase/data/table-cloned/region-y/cf/{table-x}={region-x}-{f ile-x}
+- back-reference文 件：/hbase/archive/data/table-x/region-x/cf/.links-{f ile-x}/{region-y}.{table-cloned}。
+
+可以看到，back-reference文件路径前半部分是原文件信息，后半部分是新文件信息，如图11-5所示。
+
+<img src="../../pics/hbase/hbase_83.png" align=left width=800>
+
+back-reference文件第一部分表示该文件所在目录为{hbase-root}/archive/data。第二部分表示原文件路径，其中非常重要的子目录是.links-{f ile-x}，用来标识该路径下的文件为back-reference文件。这部分路径实际上只需要将原始文件路径（/table-x/region-x/cf/f ile-x）中的文件名f ile-x改为.link-f ile-x。第三部分表示新文件路径，新文件的文件名可以根据原文件得到，因此只需要得到新文件所在的表和Region即可，可以用{region-y}.{table-cloned}表征。
+
+可见，在删除原文件的时候，只需要简单地拼接就可以得到back-reference目录，查看该目录下是否有文件就可以判断原文件是否还被LinkFile引用，进一步决定是否可以删除。
 
 # 第十二章 HBase 运维
 
@@ -3198,59 +3399,1222 @@ HBase集群只要对每个Region都维护一个Barrier列表和LastPushedSequenc
 
 # 第十三章 HBase 系统调优
 
+## 1、HBase-HDFS调优策略
+
+HDFS作为HBase最终数据存储系统，通常会使用三副本策略存储HBase数据文件以及日志文件。从HDFS的角度看，HBase是它的客户端。实际实现中，HBase服务通过调用HDFS的客户端对数据进行读写操作，因此对HDFS客户端的相关优化也会影响HBase的读写性能。这里主要关注如下三个方面。
 
 
 
+### (1) Short-Circuit Local Read
+
+当前HDFS读取数据都需要经过DataNode，客户端会向DataNode发送读取数据的请求，DataNode接收到请求后从磁盘中将数据读出来，再通过TCP发送给客户端。对于本地数据，Short Circuit Local Read策略允许客户端绕过DataNode直接从磁盘上读取本地数据，因为不需要经过DataNode而减少了多次网络传输开销，因此数据读取的效率会更高。
+
+开启Short Circuit Local Read功能，需要在hbase-site.xml或者hdfs-site.xml配置文件中增加如下配置项：
+
+```
+        <configuration>
+          <property>
+          <name>dfs.client.read.shortcircuit</name>
+          <value>true</value>
+        </property>
+        <property>
+          <name>dfs.domain.socket.path</name>
+          <value>/home/stack/sockets/short_circuit_read_socket_PORT</value>
+        </property>
+          <property>
+          <name>dfs.client.read.shortcircuit.buffer.size</name>
+          <value>131072</value>
+          </property>
+        </configuration>
+```
+
+需要注意的是，dfs.client.read.shortcircuit.buffer.size参数默认是1M，对于HBase系统来说有可能会造成OOM，详见HBASE-8143 HBase on Hadoop 2with local short circuit reads (ssr) causes OOM。
+
+
+
+### (2) Hedged Read
+
+HBase数据在HDFS中默认存储三个副本，通常情况下HBase会根据一定算法优先选择一个DataNode进行数据读取。然而在某些情况下，有可能因为磁盘问题或者网络问题等引起读取超时，根据Hedged Read策略，如果在指定时间内读取请求没有返回，HDFS客户端将会向第二个副本发送第二次数据请求，并且谁先返回就使用谁，之后返回的将会被丢弃。
+
+
+
+开启Hedged Read功能，需要在hbase-site.xml配置文件中增加如下配置项：
+
+```
+        <property>
+          <name>dfs.client.hedged.read.threadpool.size</name>
+          <value>20</value><!--20 threads -->
+        </property>
+        <property>
+          <name>dfs.client.hedged.read.threshold.millis</name>
+          <value>10</value><!--10 milliseconds -->
+        </property>
+```
+
+其中，参数dfs.client.hedged.read.threadpool.size表示用于hedged read的线程池线程数量，默认为0，表示关闭hedged read功能；参数dfs.client.hedged.read.threshold.millis表示HDFS数据读取超时时间，超过这个阈值，HDFS客户端将会再发起一次读取请求。
+
+
+
+### (3) Region Data Locality
+
+Region Data Locality，即数据本地率，表示当前Region的数据在Region所在节点存储的比例。举个例子，假设HBase集群有Node1～Node5总计5台机器，每台机器上部署了RegionServer进程和DataNode进程。RegionA位于Node1节点，数据a写入RegionA后对应的HDFS三副本数据分别位于（Node1，Node2，Node3），数据b写入RegionA后对应的HDFS三副本数据分别位于（Node1，Node4，Node5），同理，数据c写入RegionA后对应的HDFS三副本数据分别位于（Node1，Node3，Node5）。
+
+可以看出数据写入RegionA之后，本地Node1肯定会写一份，因此所有落到RegionA上的读请求都可以在本地直接读取到数据，数据本地率就是100%。
+
+现在假设RegionA被迁移到了Node2上，此时只有数据a在该节点上，其他数据（b和c）只能远程跨节点读取，本地率仅为33.3%（假设a、b和c的数据大小相同）。
+
+显然，数据本地率太低会在数据读取时产生大量的跨网络IO请求，导致读请求延迟较高，因此提高数据本地率可以有效优化随机读性能。
+
+数据本地率低通常是由于Region迁移（自动balance开启、RegionServer宕机迁移、手动迁移等）导致的，因此可以通过避免Region无故迁移来维护高数据本地率，具体措施有关闭自动balance，RegionServer宕机及时拉起并迁回飘走的Region等。另外，如果数据本地率很低，还可以在业务低峰期通过执行major_compact将数据本地率提升到100%。
+
+执行major_compact提升数据本地率的理论依据是，major_compact本质上是将Region中的所有文件读取出来然后写到一个大文件，写大文件必然会在本地DataNode生成一个副本，这样Region的数据本地率就会提升到100%。
+
+
+
+## 2、HBase读取性能优化
+
+HBase系统的读取优化可以从三个方面进行：服务器端、客户端、列簇设计，如图13-21所示。
+
+<img src="../../pics/hbase/hbase_84.png" align=left width=800>
+
+### (1) HBase服务器端优化
+
+#### 1. 读请求是否均衡？
+
+- 优化原理：假如业务所有读请求都落在集群某一台RegionServer上的某几个Region上，很显然，这一方面不能发挥整个集群的并发处理能力，另一方面势必造成此台RegionServer资源严重消耗（比如IO耗尽、handler耗尽等），导致落在该台RegionServer上的其他业务受到波及。也就是说读请求不均衡不仅会造成本身业务性能很差，还会严重影响其他业务。
+- 观察确认：观察所有RegionServer的读请求QPS曲线，确认是否存在读请求不均衡现象。
+- 优化建议：Rowkey必须进行散列化处理（比如MD5散列），同时建表必须进行预分区处理。
+
+#### 2. BlockCache设置是否合理？
+
+- 优化原理：BlockCache作为读缓存，对于读性能至关重要。默认情况下BlockCache和MemStore的配置相对比较均衡（各占40%），可以根据集群业务进行修正，比如读多写少业务可以将BlockCache占比调大。另一方面，BlockCache的策略选择也很重要，不同策略对读性能来说影响并不是很大，但是对GC的影响却相当显著，尤其在BucketCache的offheap模式下GC表现非常优秀。
+- 观察确认：观察所有RegionServer的缓存未命中率、配置文件相关配置项以及GC日志，确认BlockCache是否可以优化。
+- 优化建议：如果JVM内存配置量小于20G，BlockCache策略选择LRUBlockCache；否则选择BucketCache策略的offheap模式。
+
+#### 3. HFile文件是否太多？
+
+- 优化原理：HBase在读取数据时通常先到MemStore和BlockCache中检索（读取最近写入数据和热点数据），如果查找不到则到文件中检索。HBase的类LSM树结构导致每个store包含多个HFile文件，文件越多，检索所需的IO次数越多，读取延迟也就越高。文件数量通常取决于Compaction的执行策略，一般和两个配置参数有关：hbase.hstore. compactionThreshold和hbase.hstore.compaction.max.size，前者表示一个store中的文件数超过阈值就应该进行合并，后者表示参与合并的文件大小最大是多少，超过此大小的文件不能参与合并。这两个参数需要谨慎设置，如果前者设置太大，后者设置太小，就会导致Compaction合并文件的实际效果不明显，很多文件得不到合并，进而导致HFile文件数变多。
+- 观察确认：观察RegionServer级别以及Region级别的HFile数，确认HFile文件是否过多。
+- 优化建议：hbase.hstore.compactionThreshold设置不能太大，默认为3个。
+
+#### 4. Compaction是否消耗系统资源过多？
+
+- 优化原理：Compaction是将小文件合并为大文件，提高后续业务随机读性能，但是也会带来IO放大以及带宽消耗问题（数据远程读取以及三副本写入都会消耗系统带宽）。正常配置情况下，Minor Compaction并不会带来很大的系统资源消耗，除非因为配置不合理导致Minor Compaction太过频繁，或者Region设置太大发生Major Compaction。
+- 观察确认：观察系统IO资源以及带宽资源使用情况，再观察Compaction队列长度，确认是否由于Compaction导致系统资源消耗过多。
+- 优化建议：对于大Region读延迟敏感的业务（100G以上）通常不建议开启自动Major Compaction，手动低峰期触发。小Region或者延迟不敏感的业务可以开启Major Compaction，但建议限制流量。
+
+#### 5. 数据本地率是不是很低？
+
+- 优化原理：13.4节详细介绍了HBase中数据本地率的概念，如果数据本地率很低，数据读取时会产生大量网络IO请求，导致读延迟较高。
+- 观察确认：观察所有RegionServer的数据本地率（见jmx中指标PercentFileLocal，在Table Web UI可以看到各个Region的Locality）。
+- 优化建议：尽量避免Region无故迁移。对于本地率较低的节点，可以在业务低峰期执行major_compact。
+
+### (2) HBase客户端优化
+
+#### 1. scan缓存是否设置合理？
+
+- 优化原理：HBase业务通常一次scan就会返回大量数据，因此客户端发起一次scan请求，实际并不会一次就将所有数据加载到本地，而是分成多次RPC请求进行加载，这样设计一方面因为大量数据请求可能会导致网络带宽严重消耗进而影响其他业务，另一方面因为数据量太大可能导致本地客户端发生OOM。在这样的设计体系下，用户会首先加载一部分数据到本地，然后遍历处理，再加载下一部分数据到本地处理，如此往复，直至所有数据都加载完成。数据加载到本地就存放在scan缓存中，默认为100条数据。
+
+通常情况下，默认的scan缓存设置是可以正常工作的。但是对于一些大scan（一次scan可能需要查询几万甚至几十万行数据），每次请求100条数据意味着一次scan需要几百甚至几千次RPC请求，这种交互的代价无疑是很大的。因此可以考虑将scan缓存设置增大，比如设为500或者1000条可能更加合适。笔者之前做过一次试验，在一次scan 10w+条数据量的条件下，将scan缓存从100增加到1000条，可以有效降低scan请求的总体延迟，延迟降低了25%左右。
+
+- 优化建议：大scan场景下将scan缓存从100增大到500或者1000，用以减少RPC次数。
+
+#### 2. get是否使用批量请求？
+
+- 优化原理：HBase分别提供了单条get以及批量get的API接口，使用批量get接口可以减少客户端到RegionServer之间的RPC连接数，提高读取吞吐量。另外需要注意的是，批量get请求要么成功返回所有请求数据，要么抛出异常
+- 优化建议：使用批量get进行读取请求。需要注意的是，对读取延迟非常敏感的业务，批量请求时每次批量数不能太大，最好进行测试
+
+#### 3. 请求是否可以显式指定列簇或者列？
+
+- 优化原理：HBase是典型的列簇数据库，意味着同一列簇的数据存储在一起，不同列簇的数据分开存储在不同的目录下。一个表有多个列簇，如果只是根据rowkey而不指定列簇进行检索，不同列簇的数据需要独立进行检索，性能必然会比指定列簇的查询差很多，很多情况下甚至会有2～3倍的性能损失。
+- 优化建议：尽量指定列簇或者列进行精确查找。
+
+#### 4. 离线批量读取请求是否设置禁止缓存？
+
+- 优化原理：通常在离线批量读取数据时会进行一次性全表扫描，一方面数据量很大，另一方面请求只会执行一次。这种场景下如果使用scan默认设置，就会将数据从HDFS加载出来放到缓存。可想而知，大量数据进入缓存必将其他实时业务热点数据挤出，其他业务不得不从HDFS加载，进而造成明显的读延迟毛刺。
+- 优化建议：离线批量读取请求设置禁用缓存，scan.setCacheBlocks (false)。
+
+### (3) HBase列簇设计优化
+
+#### 布隆过滤器是否设置？
+
+- 优化原理：布隆过滤器主要用来过滤不存在待检索rowkey的HFile文件，避免无用的IO操作。
+
+布隆过滤器取值有两个——row以及rowcol，需要根据业务来确定具体使用哪种。如果业务中大多数随机查询仅仅使用row作为查询条件，布隆过滤器一定要设置为row；如果大多数随机查询使用row+column作为查询条件，布隆过滤器需要设置为rowcol。如果不确定业务查询类型，则设置为row。
+
+- 优化建议：任何业务都应该设置布隆过滤器，通常设置为row，除非确认业务随机查询类型为row+column，则设置为rowcol。
+
+
+
+## 3、HBase写入性能调优
+
+HBase系统主要应用于写多读少的业务场景，通常来说对系统的写入吞吐量要求都比较高。而在实际生产线环境中，HBase运维人员或多或少都会遇到写入吞吐量比较低、写入比较慢的情况。碰到类似问题，可以从HBase服务器端和业务客户端两个角度分析，确认是否还有提高的空间。根据经验，笔者分别针对HBase服务端以及客户端列出了可能的多个优化方向，如图13-22所示。
+
+<img src="../../pics/hbase/hbase_85.png" align=left width=800>
+
+### (1) HBase服务器端优化
+
+#### 1. Region是否太少？
+
+- 优化原理：当前集群中表的Region个数如果小于RegionServer个数，即Num (Region of Table) < Num (RegionServer)，可以考虑切分Region并尽可能分布到不同的RegionServer上以提高系统请求并发度。
+- 优化建议：在Num (Region of Table) < Num (RegionServer)的场景下切分部分请求负载高的Region，并迁移到其他RegionServer。
+
+#### 2. 写入请求是否均衡？
+
+- 优化原理：写入请求如果不均衡，会导致系统并发度较低，还有可能造成部分节点负载很高，进而影响其他业务。分布式系统中特别需要注意单个节点负载很高的情况，单个节点负载很高可能会拖慢整个集群，这是因为很多业务会使用Mutli批量提交读写请求，一旦其中一部分请求落到慢节点无法得到及时响应，会导致整个批量请求超时。
+- 优化建议：检查Rowkey设计以及预分区策略，保证写入请求均衡。
+
+#### 3. Utilize Flash storage for WAL
+
+该特性会将WAL文件写到SSD上，对于写性能会有非常大的提升。需要注意的是，该特性建立在HDFS 2.6.0+以及HBase 1.1.0+版本基础上，以前的版本并不支持该特性。
+
+使用该特性需要两个配置步骤：
+
+1）使用HDFS Archival Storage机制，在确保物理机有SSD硬盘的前提下配置HDFS的部分文件目录为SSD介质
+
+2）在hbase-site.xml中添加如下配置：
+
+```
+        <property>
+            <name>hbase.wal.storage.policy</name>
+            <value>ONE_SSD</value>
+        </property>
+```
+
+hbase.wal.storage.policy默认为none，用户可以指定ONE_SSD或者ALL_SSD
+
+- ONE_SSD ：WAL在HDFS上的一个副本文件写入SSD介质，另两个副本写入默认存储介质
+- ALL_SSD：WAL的三个副本文件全部写入SSD介质。
+
+### (2) HBase客户端优化
+
+#### 1. 是否可以使用Bulkload方案写入？
+
+Bulkload是一个MapReduce程序，运行在Hadoop集群。程序的输入是指定数据源，输出是HFile文件。HFile文件生成之后再通过LoadIncrementalHFiles工具将HFile中相关元数据加载到HBase中。
+
+Bulkload方案适合将已经存在于HDFS上的数据批量导入HBase集群。相比调用API的写入方案，Bulkload方案可以更加高效、快速地导入数据，而且对HBase集群几乎不产生任何影响。
+
+#### 2. 是否需要写WAL? WAL是否需要同步写入？
+
+- 优化原理：数据写入流程可以理解为一次顺序写WAL+一次写缓存，通常情况下写缓存延迟很低，因此提升写性能只能从WAL入手。HBase中可以通过设置WAL的持久化等级决定是否开启WAL机制以及HLog的落盘方式。WAL的持久化分为四个等级：SKIP_WAL，ASYNC_WAL，SYNC_WAL以及FSYNC_WAL。如果用户没有指定持久化等级，HBase默认使用SYNC_WAL等级持久化数据。
+
+在实际生产线环境中，部分业务可能并不特别关心异常情况下少量数据的丢失，而更关心数据写入吞吐量。比如某些推荐业务，这类业务即使丢失一部分用户行为数据可能对推荐结果也不会构成很大影响，但是对于写入吞吐量要求很高，不能造成队列阻塞。这种场景下可以考虑关闭WAL写入。退而求其次，有些业务必须写WAL，但可以接受WAL异步写入，这是可以考虑优化的，通常也会带来一定的性能提升。
+
+- 优化推荐：根据业务关注点在WAL机制与写入吞吐量之间做出选择，用户可以通过客户端设置WAL持久化等级。
+
+#### 3. Put是否可以同步批量提交？
+
+- 优化原理：HBase分别提供了单条put以及批量put的API接口，使用批量put接口可以减少客户端到RegionServer之间的RPC连接数，提高写入吞吐量。另外需要注意的是，批量put请求要么全部成功返回，要么抛出异常。
+- 优化建议：使用批量put写入请求。
+
+#### 4. Put是否可以异步批量提交？
+
+- 优化原理：如果业务可以接受异常情况下少量数据丢失，可以使用异步批量提交的方式提交请求。提交分两阶段执行：用户提交写请求，数据写入客户端缓存，并返回用户写入成功；当客户端缓存达到阈值（默认2M）后批量提交给RegionServer。需要注意的是，在某些客户端异常的情况下，缓存数据有可能丢失。
+- 优化建议：在业务可以接受的情况下开启异步批量提交，用户可以设置setAutoFlush (false)
+
+#### 5. 写入KeyValue数据是否太大？
+
+KeyValue大小对写入性能的影响巨大。一旦遇到写入性能比较差的情况，需要分析写入性能下降是否因为写入KeyValue的数据太大。KeyValue大小对写入性能影响曲线如图13-23所示。
+
+<img src="../../pics/hbase/hbase_86.png" align=left width=800>
+
+图13-23中横坐标是写入的一行数据（每行数据10列）大小，左纵坐标是写入吞吐量，右纵坐标是写入平均延迟（ms）。可以看出，随着单行数据不断变大，写入吞吐量急剧下降，写入延迟在100K之后急剧增大。
 
 
 
 # 第十四章 HBase 运维案例分析
 
+## 1、RegionServer宕机
+
+RegionServer异常宕机是HBase集群运维中最常遇到的问题之一。集群中一旦Region Server宕机，就会造成部分服务短暂的不可用，随着不可用的Region全部迁移到集群中其他RegionServer并上线，就又可以提供正常读写服务。
+
+触发RegionServer异常宕机的原因多种多样，主要包括：长时间GC导致RegionServer宕机，HDFS DataNode异常导致RegionServer宕机，以及系统严重Bug导致RegionServer宕机等。
+
+### (1) 案例一：长时间GC导致RegionServer宕机
+
+长时间Full GC导致RegionServer宕机是HBase入门者最常遇到的问题，也是RegionServer宕机最常见的原因。分析这类问题，可以遵循如下排错过程。
+
+#### 现象：
+
+- 收到RegionServer进程退出的报警。
+
+#### 宕机原因定位
+
+- 步骤1：通常在监控上看不出RegionServer宕机最直接的原因，而需要到事发RegionServer对应的日志中进行排查。排查日志可以直接搜索两类关键字—— a long garbage collecting pause或者ABORTING region server。对于长时间Full GC的场景，搜索第一个关键字肯定会检索到如下日志：
+
+```
+          2017-06-14T17:22:02.054 WARN [JvmPauseMonitor] util.JvmPauseMonitor: Detected pause
+      in JVM or host machine (eg GC): pause of approximately 20542ms
+          GC pool 'ParNew' had collection(s): count=1 time=0ms
+          GC pool 'ConcurrentMarkSweep' had collection(s): count=2 time=20898ms
+          2017-06-14T17:22:02.054 WARN   [regionserver60020.periodicFlusher] util.Sleeper:
+      We slept 20936ms instead of 100ms, this is likely due to a long garbage collecting pause
+      and it's usually bad, see http://hbase.apache.org/book.html#trouble.rs.runtime.zkexpired
+```
+
+当然反过来，如果在日志中检索到上述内容，基本就可以确认这次宕机和长时间GC有直接关系。需要结合RegionServer宕机时间继续对GC日志进行进一步的排查。
 
 
 
+- 步骤2：通常CMS GC策略会在两种场景下产生严重的Full GC，一种称为Concurrent Mode Failure，另一种称为Promotion Failure。同样，可以在GC日志中搜索相应的关键字进行确认：concurrent mode failure或者promotion failed。本例中在GC日志中检索到如下日志：
+
+```
+          2017-06-14T17:22:02.054+0800:  21039.790:  [Full  GC20172017-06-14T17:22:02.054+0800:
+      21039.790: [CMS2017-06-14T17:22:02.054+0800: 21041.477:[CMS-concurrent-mark: 1.767/1.782
+      sec] [Times: user=14.01 sys=0.00 real=1.79 secs] (concurrent mode failure): 25165780K-
+      >25165777K(25165824K),  18.4242160  secs]  26109489K->26056746K(26109568K),  [CMS  Perm  :
+      48563K->48534K(262144K), 18.4244700 secs] [Times: user=28.77 sys=0.00 real=18.42 secs]]
+          2017-06-14T17:22:20.473+0800:  21058.215:  Total  time  for  which  application
+      threads were stopped: 18.4270530 seconds
+```
+
+现在基本可以确认是由于concurrent mode failure模式的Full GC导致长时间应用程序暂停。
+
+
+
+#### 故障因果分析
+
+先是JVM触发了concurrent mode failure模式的Full GC，这种GC会产生长时间的stop the world，造成上层应用的长时间暂停。应用长时间暂停会导致RegionServer与ZooKeeper之间建立的session超时。session一旦超时，ZooKeeper就会认为此RegionServer发生了“宕机”，通知Master将此RegionServer踢出集群。
+
+什么是concurrent mode failure模式的GC ？为什么会造成长时间暂停？假设HBase系统正在执行CMS回收老年代空间，在回收的过程中恰好从年轻代晋升了一批对象进来，不巧的是，老年代此时已经没有空间再容纳这些对象了。这种场景下，CMS收集器会停止继续工作，系统进入stop-the-world模式，并且回收算法会退化为单线程复制算法，整个垃圾回收过程会非常漫长。
+
+
+
+#### 解决方案
+
+分析出问题的根源是concurrent mode failure模式的Full GC之后，就可以对症下药。既然是因为老年代来不及GC导致的问题，那只需要让CMS收集器更早一点回收就可以大概率避免这种情况发生。JVM提供了参数XX:CMSInitiatingOccupancyFraction=N来设置CMS回收的时机，其中N表示当前老年代已使用内存占总内存的比例，可以将该值修改得更小使回收更早进行，比如改为60。
+
+另外，对于任何GC时间太长导致RegionServer宕机的问题，一方面建议运维人员检查一下系统BlockCache是否开启了BucketCache的offheap模式，如果没有相应配置，最好对其进行修改。另一方面，建议检查JVM中GC参数是否配置合适。
+
+
+
+### (2) 案例二：系统严重Bug导致RegionServer宕机
+
+#### 1. 大字段scan导致RegionServer宕机
+
+##### 现象：
+
+- 收到RegionServer进程退出的报警。
+
+##### 宕机原因定位
+
+- 步骤1：日志定位。RegionServer宕机通常在监控上看不出最直接的原因，而需要到事发RegionServer对应的日志中进行排查。先检索GC相关日志，如果检索不到再继续检索关键字"abort"，通常可以确定宕机时的日志现场。查看日志找到可疑日志"java.lang. OutOfMemoryError: Requested array size exceeds VM limit"，如下所示：
+
+```
+      2016-11-22 22:45:33,518 FATAL [IndexRpcServer.handler=5,queue=0 port=50020] region
+            server.HRegionServer; Run out of memory; HRegionServer will abort itself immediately
+      java.lang.OutOfMemoryError:Requested array size exceeds VM Limit
+          at java.nio.HeapByteBuffer. <init>(HeapByteBuffer.java:57)
+          at java.nio.ByteBuffer.allocate(ByteBuffer.java:332)
+          at org.apache.hadoop.hbase.io.ByteBufferOutputStream.checkSizeAndGrow(Byte
+                BufferOutputStream.java:74)
+          at org.apache.hadoop.hbase.io.ByteBufferOutputStream.write(ByteBufferOutputStream.
+                java:112)
+          at org.apache.hadoop.hbase.KeyValue.oswrite(KeyValue.java:2881)
+          at org.apache.hadoop.hbase.codec.KeyValueCodec$KeyValueEncoder.write(KeyValue
+                Codec.java:50)
+          at org.apache.hadoop.hbase.ipc.IPOUtil.buildCellBlock(IPOUtil.java:120)
+          at org.apache.hadoop.hbase.ipc.RpcServer$Call.setResponse(RpcServer.java:384)
+          at org.apache.hadoop.hbase.ipc.CallRunner.run(CallRunner.java:128)
+          at org.apache.hadoop.hbase.ipc.RpcExecutor.consumerLoop(RpcExecutor.java:112)
+          at org.apache.hadoop.hbase.ipc.RpcExecutor$1.run(RpcExecutor.java:92)
+          at java.lang.Thread.run(Thread.java:745)
+```
+
+- 步骤2：源码确认。看到带堆栈的FATAL级别日志，最直接的定位方式就是查看源码或者根据关键字在网上搜索。通过查看源码以及相关文档，确认该异常发生在scan结果数据回传给客户端时，由于数据量太大导致申请的array大小超过JVM规定的最大值（Interge.Max_Value-2），如下所示：
+
+<img src="../../pics/hbase/hbase_87.png" align=left width=800>
+
+##### 故障因果分析
+
+因为HBase系统自身的bug，在某些场景下scan结果数据太大导致JVM在申请array时抛出OutOfMemoryError，造成RegionServer宕机。
+
+##### 本质原因分析
+
+造成这个问题的原因可以认为是HBase的bug，不应该申请超过JVM规定阈值的array。另一方面，也可以认为是业务方用法不当。
+
+- 表列太宽（几十万列或者上百万列），并且对scan返回结果没有对列数量做任何限制，导致一行数据就可能因为包含大量列而超过array的阈值
+- KeyValue太大，并且没有对scan的返回结果做任何限制，导致返回数据结果大小超过array阈值。
+
+##### 解决方案
+
+目前针对该异常有两种解决方案，一是升级集群，这个bug在0.98的高版本（0.98.16）进行了修复，系统可以直接升级到高版本以解决这个问题。二是要求客户端访问的时候对返回结果大小做限制（scan.setMaxResultSize (210241024)），并且对列数量做限制（scan. setBatch(100)）。当然，0.98.13版本以后也可以在服务器端对返回结果大小进行限制，只需设置参数hbase.server.scanner.max.result.size即可。
+
+#### 2. close_wait端口耗尽导致RegionServer宕机
+
+##### 现象：
+
+- 收到RegionServer进程退出的报警。
+
+##### 宕机原因定位
+
+- 步骤1：日志定位。RegionServer宕机通常在监控上看不出最直接的原因，而需要到事发RegionServer对应的日志中进行排查。先检索GC相关日志，如果检索不到再继续检索关键字"abort/ABORT"，通常可以确定宕机时的日志现场。查看日志找到了可疑日志"java.net. BindException：Address already in use"，如下所示：
+
+```
+        FATAL  [regionserver60020.logRoller]  regionserver.HRegionServer:  ABORTING
+    region server hbase8.photo.163.org,60020,1449193615307：IOE in log roller
+        java.net.BindException: Problem binding to [hbase8.photo.163.org/10.160.126.136:0]
+        java.net.BindException: Address already in use;
+              at org.apache.hadoop.net.NetUtils.wrapException(NetUtils.java:719)
+              at org.apache.hadoop.ipc.Client.call(Client.java:1351)
+              at org.apache.hadoop.ipc.Client.call(Client.java:1300)
+              at org.apache.hadoop.ipc.ProtobufRpcEngine$Invoker.invoke(ProtobufRpcEngine.java:206)
+```
+
+- 步骤2：监控确认。日志中"Address already in use"说明宕机和连接端口耗尽相关，为了确认更多细节，可以查看监控中关于连接端口的监控信息。如图14-1所示。
+
+<img src="../../pics/hbase/hbase_88.png" align=left width=800>
+
+根据监控图，明显可以看到红色曲线表示的CLOSE_WAIT连接数随着时间不断增加，一直增加到40k+之后悬崖式下跌到0。通过与日志对比，确认增加到最高点之后的下跌就是因为RegionServer进程宕机退出引起的。
+
+##### 故障因果分析
+
+可以基本确认RegionServer宕机是由CLOSE_WAIT连接数超过某一个阈值造成的。
+
+##### 本质原因分析
+
+为什么系统的CLOSE_WAIT连接数会不断增加？无论从日志、监控和源码中都不能非常直观地找到答案，只能从网上找找答案。以CLOSE_WAIT为关键字在HBase官方Jira上搜索，很容易得到多方面的信息，具体详见：HBASE-13488和HBASE-9393。
+
+通过对Jira上相关问题的分析，确认是由于RegionServer没有关闭与datanode之间的连接导致。
+
+##### 解决方案
+
+这个问题是一个偶现问题，只有在某些应用场景下才会触发。一旦触发并没有非常好的解决方案。如果想临时避免这类问题的发生，可以对问题RegionServer定期重启。如果想长期解决此问题，需要同时对HDFS和HBase进行升级，HDFS需要升级到2.6.4或者2.7.0+以上版本，HBase需要升级到1.1.12以上版本。
+
+
+
+## 2、HBase写入异常
+
+支持高吞吐量的数据写入是HBase系统的先天优势之一，也是很多业务选择HBase作为数据存储的最重要依据之一。HBase写入阶段出现重大异常或者错误是比较少见的，可是一旦出现，就有可能造成整个集群夯住，导致所有写入请求都出现异常。
+
+出现写入异常不用太过担心，因为触发原因并不多，可以按照下面案例中所列举的思路一一进行排查处理。
+
+### (1) 案例一：MemStore占用内存大小超过设定阈值导致写入阻塞
+
+#### 现象：
+
+- 整个集群写入阻塞，业务反馈写入请求大量异常。
+
+#### 写入异常原因定位
+
+- 步骤1：一旦某个RegionServer出现写入阻塞，直接查看对应RegionServer的日志。在日志中首先搜索关键字"Blocking updates on"，如果能够检索到如下类似日志就说明写入阻塞是由于RegionServer的MemStore所占内存大小已经超过JVM内存大小的上限比例（详见参数hbase.regionserver.global.memstore.size，默认0.4）。
+
+```
+Blocking updates on ＊＊＊: the global memstore size ＊＊＊ is >=than blocking ＊＊＊ size
+```
+
+- 步骤2：导致MemStore所占内存大小超过设定阈值的原因有很多，比如写入吞吐量非常高或者系统配置不当，然而这些原因并不会在运行很长时间的集群中忽然出现。还有一种可能是，系统中HFile数量太多导致flush阻塞，于是MemStore中的数据不能及时落盘而大量积聚在内存。可以在日志中检索关键字"too many store files"，出现此类日志就可以基本确认是由于Region中HFile数量过多导致的写入阻塞。
+- 步骤3：为了进一步确认异常原因，需要查看当前RegionServer中HFile的数量。如果有HFile相关信息监控，则可以通过监控查看。除此之外，还可以通过Master的Web UI查看。在Web UI的RegionServers列表模块，点击Storefiles这个tab，就可以看到所有关于HFiles的相关信息，其中方框内的Num.Storefiles是我们关心的HFile数量，如图14-2所示。
+
+<img src="../../pics/hbase/hbase_89.png" align=left width=800>
+
+很明显，整个集群中每个RegionServer的HFile数量都极端不正常，达到了1w+，除以Num.Stores得到每个Store的平均HFile数量也在50+左右。这种情况下很容易达到"hbase.hstore.blockingStoreFiles"这个阈值上限，导致RegionServer写入阻塞。
+
+- 步骤4：问题定位到这里，我们不禁要问，为什么HFile数量会增长这么快？理论上如果Compaction的相关参数配置合理，HFile的数量会在一个正常范围上下波动，不可能增长如此之快。此时，笔者挑选了一个HFile数量多的Region，对该Region手动执行major_compact，希望可以减少HFile数量。然而结果非常奇怪，Compaction根本没有执行，这个Region的HFile数量自然也没有丝毫下降。
+
+为了弄明白对应RegionServer的Compaction执行情况，可以在RegionServer的UI界面上点击Queues这个tab，查看当前Compaction的队列长度，同时点击Show non-RPC Tasks查看当前RegionServer正在执行Compaction操作的基本信息，包括开始时间、持续时常等，如图14-3所示（图14-6仅是一个示意图，不是事发时的RegionServer UI界面）。
+
+
+
+通过对Show non-RPC Tasks中Compaction操作的分析，发现其中表test-sentry的Compaction非常可疑。疑点包括：
+
+- RegionServer上的Compaction操作都被这张表占用了，很长一段时间并没有观察到其他表执行Compaction
+- 这张表执行Compaction的Region大小为10G左右，但是整个Compaction持续了10+小时，而且没有看到Region中文件数量减少。
+
+因此我们怀疑是这张表消耗掉了所有Compaction线程，导致Compaction队列阻塞，整个集群所有其他表都无法执行Compaction。
+
+
+
+- 步骤5：为什么这张表的Compaction会持续10+小时呢？此时日志、监控已经不能帮助我们更好地分析这个问题了。因为怀疑Compaction线程有异常，我们决定使用jstack工具对RegionServer进程的线程栈进行分析。执行jstack pid，在打印出的线程栈文件中检索关键字compact，发现这些Compaction好像都卡在一个地方，看着像和PREFIX_TREE编码有关，如下所示：
+
+<img src="../../pics/hbase/hbase_90.png" align=left width=800>
+
+仔细查看了一下，这张表和所有其他表唯一的不同就是，这张表没有使用snappy压缩，而是使用PREFIX_TREE编码。
+
+- 步骤6：之前我们对HBase系统中PREFIX_TREE编码了解并不多，而且相关的资料很少，我们只能试着去HBase Jira上检索相关的issue。检索发现PREFIX_TREE编码功能目前并不完善，还有一些反馈的问题，比如HBASE-12959就反映PREFIX_TREE会造成Compaction阻塞，HBASE-8317反映PREFIX_TREE会造成seek的结果不正确等。我们和社区工作的相关技术人员就PREFIX_TREE的功能进行了深入沟通，确认此功能目前尚属实验室功能，可以在测试环境进行相关测试，但不建议直接在生产环境使用。
+
+#### 写入阻塞原因分析
+
+- 集群中有一张表使用了PREFIX_TREE编码，该功能在某些场景下会导致执行Compaction的线程阻塞，进而耗尽Compaction线程池中的所有工作线程。其他表的Compaction请求只能在队列中排队
+- 集群中所有Compaction操作都无法执行，这使不断flush生成的小文件无法合并，HFile的数量随着时间不断增长
+- 一旦HFile的数量超过集群配置阈值"hbase.hstore.blockingStoreFiles"，系统就会阻塞flush操作，等待Compaction执行合并以减少文件数量，然而集群Compaction已经不再工作，导致的最直接后果就是集群中flush操作也被阻塞。
+
+- 集群中flush操作被阻塞后，用户写入到系统的数据就只能在MemStore中不断积累而不能落盘。一旦整个RegionServer中的MemStore占用内存超过JVM总内存大小的一定比例上限（见参数hbase.regionserver.global.memstore.size，默认0.4），系统就不再接受任何的写入请求，导致写入阻塞。此时RegionServer需要执行flush操作将MemStore中的数据写到文件来降低MemStore的内存压力，很显然，因为集群flush功能已经瘫痪，所以MemStore的大小会一直维持在非常高的水位，写入请求也会一直被阻塞
+
+#### 解决方案
+
+- 强烈建议在生产环境中不使用PREFIX_TREE这种实验性质的编码格式，HBase 2.x版本考虑到PREFIX_TREE的不稳定性，已经从代码库中移除了该功能。另外，对于社区发布的其他实验性质且没有经过生产环境检验的新功能，建议不要在实际业务中使用，以免引入许多没有解决方案的问题
+- 强烈建议生产环境对集群中HFile相关指标（store file数量、文件大小等）以及Compaction队列长度等进行监控，有助于问题的提前发现以及排查
+- 合理设置Compaction的相关参数。hbase.hstore.compactionThreshold表示触发执行Compaction的最低阈值，该值不能太大，否则会积累太多文件。hbase.hstore. blockingStoreFiles默认设置为7，可以适当调大一些，比如调整为50。
+
+### (2) 案例二：RegionServer Active Handler资源被耗尽导致写入阻塞
+
+#### 1. 大字段写入导致Active Handler资源被耗尽
+
+##### 现象：
+
+集群部分写入阻塞，部分业务反馈集群写入忽然变慢并且数据开始出现堆积的情况。
+
+##### 写入异常原因定位
+
+- 步骤1：在异常的RegionServer的日志中检索关键字"Blocking updates on"和"too many store files"，未发现任何相关日志信息。排除案例一中可能因为Store file数量过多导致的MemStore内存达到配置上限引起的写入阻塞。
+- 步骤2：集群并没有出现所有写入都阻塞的情况，还是有部分业务可以写入。排查表级别QPS监控后发现了一个非常关键的信息点：业务A开始写入之后整个集群部分业务写入的TPS都几乎断崖式下跌。
+
+几乎在相同时间点集群中其他业务的写入TPS都出现下跌。但是直观上来看业务A的TPS并不高，只有1万次/秒左右，没有理由影响其他业务。于是我们继续查看其他监控信息，首先确认系统资源（主要是IO）并没有到达瓶颈，其次确认了写入的均衡性，直至看到图14-4，才追踪到影响其他业务写入的第二个关键点——RegionServer的Active Handler在事发时间点被耗尽。
+
+<img src="../../pics/hbase/hbase_91.png" align=left width=800>
+
+该RegionServer上配置的Active Handler个数为150，具体见参数hbase.regionserver. handler.count，默认为30。
+
+- 步骤3：经过对比，发现两者时间点非常一致，基本确认是由于该业务写入导致这台RegionServer的active handler被耗尽，进而其他业务拿不到handler，自然写不进去。为什么会这样？正常情况下handler在处理完客户端请求之后会立马释放，唯一的解释是这些请求的延迟实在太大了。
+
+试想，我们去汉堡店排队买汉堡，有150个窗口服务，正常情况下大家买一个很快，这样150个窗口可能只需要50个窗口进行服务。假设忽然来了一批大汉，要定制超大汉堡，好了，所有的窗口都工作起来，而且因为大汉堡不好制作导致服务很慢，这样必然会导致其他排队的用户长时间等待，直至超时。
+
+可问题是写请求不应该有如此大的延迟。和业务方沟通之后确认该表主要存储语料库文档信息，都是平均100K左右的数据。在前面的案例中提到了KeyValue大小对写入性能有非常大的影响，随着写入KeyValue的增大，写入延迟几乎成倍增加。KeyValue太大会导致HLog文件写入频繁切换、flush以及Compaction频繁被触发，写入性能自然也会急剧下降。
+
+##### 写入阻塞原因分析
+
+- 集群中某业务在某些时间段间歇性地写入大KeyValue字段，因为自身写入延迟非常高导致长时间占用系统配置的Active Handler，进而表现为系统Active Handler耗尽
+- 其他业务的写入请求因为抢占不到handler，只能在请求队列中长时间排队，表现出来就是写入吞吐量急剧下降，甚至写入请求超时。
+
+##### 解决方案
+
+目前针对这种因较大KeyValue导致，写入性能下降的问题还没有直接的解决方案，好在社区已经意识到这个问题，在接下来即将发布的HBase 2.0.0版本中会针对该问题进行深入优化（详见HBase MOB），优化后用户使用HBase存储文档、图片等二进制数据都会有极佳的性能体验。
+
+针对集群中部分业务影响其他业务的场景，还可以尝试使用RSGroup功能将不同操作类型的业务隔离到不同的RegionServer上，实现进程级别的隔离，降低业务之间的相互干扰，提升系统可用性和稳定性。
+
+#### 2. 小集群IO离散型随机读取导致Active Handler资源耗尽
+
+和上个案例相似，笔者还遇到过另外一起因为Active Handler资源耗尽导致集群写入请求阻塞的线上问题。
+
+##### 现象：
+
+集群部分写入阻塞，部分业务反馈集群写入忽然变慢并且数据开始出现堆积的情况，如图14-5所示。
+
+<img src="../../pics/hbase/hbase_92.png" align=left width=800>
+
+##### 写入异常原因定位
+
+- 步骤1：在异常RegionServer的日志中检索关键字"Blocking updates on"和"too many store files"，未发现任何相关日志信息。排除案例一中可能因为HFile数量过多导致的MemStore内存达到配置上限引起的写入阻塞。
+- 步骤2：有了上一个案例的经验，笔者也对系统中其他表的TPS监控信息进行了排查，发现了一个非常关键的信息点：业务B开始读取之后整个集群部分业务的写入TPS几乎断崖式下跌。图14-6是业务B在对应时间点的读TPS监控。
+
+显然，业务B的读请求影响到了整个集群的写请求。那是不是和上个案例一样耗尽了系统的Active Handler呢？排查了该RegionServer上的ActiveHandlerNum指标之后我们确认了这个猜测，如图14-7所示。
+
+<img src="../../pics/hbase/hbase_93.png" align=left width=800>
+
+- 步骤3：经过对上述监控指标的排查，可以确认是业务B的读请求消耗掉了Region-Server的handler线程，导致其他业务的写请求吞吐量急剧下降。为什么读请求会消耗掉系统handler线程呢？根据监控看读请求的QPS只有1400左右，并不高啊。
+
+
+
+经过和业务沟通，我们确认该业务的特性是没有任何热点读的随机读，所有请求都会落盘。经过简单的计算，发现这类无热点的随机读应用在小集群中很致命，完全可能使读延迟非常高。
+
+当前一块4T sata硬盘的IOPS是200次/秒，一台机器上12块盘，所以能承受的最大IOPS约为2400次/秒，一个4台物理机组成的集群总的IOPS上限为9600次/秒。上述B表QPS在1500左右，因为读取请求在实际读取的时候存在放大效应，比如上述一次读请求是一次scan的next请求，会涉及大量KeyValue读取而不是一个KeyValue；另外在HFile层面查找指定KeyValue也会存在读取放大，放大的倍数和HFile数量有很大的关系。因此一次读请求可能会带来多次硬盘IO导致IO负载很高，读取延迟自然也会很高。
+
+##### 写入阻塞原因分析
+
+- 集群中某业务在某些时间段间歇性地执行无热点的随机读，因为自身读取延迟非常高导致长时间占用系统配置的Active Handler，进而表现为系统Active Handler耗尽
+- 其他业务的写入请求因为抢占不到handler，只能在请求队列中长时间排队，表现出来就是写入吞吐量急剧下降，甚至写入请求超时。
+
+##### 解决方案
+
+- 系统中读请求因为队列handler资源争用影响到写请求，可以使用HBase提供的读写队列隔离功能将读写业务在队列上进行有效隔离，使handler资源互相独立，不再共享。进一步还可以将scan请求和get请求在队列上进行隔离，有效防止大规模scan影响get请求
+- 虽然做了队列上的隔离，可以避免读写之间互相影响，但是依然解决不了读请求与读请求之间的影响。最好的办法还是尝试使用RSGroup功能将不同操作类型的业务隔离到不同的RegionServer上，从而实现进程级别的隔离。
+
+### (3) 案例三：HDFS缩容导致部分写入异常
+
+#### 现象：
+
+- 业务反馈部分写入请求超时异常。此时HBase运维在执行HDFS集群多台DataNode退服操作。
+
+#### 写入异常原因定位
+
+- 步骤1：和Hadoop运维沟通是否因为DataNode退服造成HBase集群不稳定，运维反馈理论上平滑退服不会造成上层业务感知。
+- 步骤2：排查HBase集群节点监控负载，发现退服操作期间节点间IO负载较高，如图14-8所示。
+
+<img src="../../pics/hbase/hbase_94.png" align=left width=800>
+
+初步判定业务写入异常和退服期间IO负载较高有一定关系。
+
+- 步骤3：在异常时间区间查看RegionServer日志，搜索“ Exception ”关键字，得到如下异常信息：
+
+```
+        2019-04-24 13:03:16,700 INFO  [sync.0] wal.FSHLog: Slow sync cost: 13924 ms, current
+    pipeline: [10.200.148.21:50010, 10.200.148.25:50010]
+        2019-04-24 13:03:16,700 INFO   [sync.1] wal.FSHLog: Slow sync cost: 13922 ms, current
+    pipeline: [10.200.148.21:50010, 10.200.148.25:50010]
+        2019-04-24  13:03:16,700  WARN  [RW.default.writeRpcServer.handler=4,queue=4,
+    port=60020] ipc.RpcServer: (responseTooSlow):{"call":"Multi(org.apache.hadoop.hbase.
+```
+
+```
+    protobuf.generated.ClientProtos$MultiRequest)","starttimems":1556082182777,"response
+    size":8,"method":"Multi","param":"region=at_history,ZpJHq0H8ovf9NACJiSDjbr3WDhA8itN/
+    k8gIEHtSZnDs1Ps2zsX31JKMcaIdyqxmQANIljlNGs4k/IFFT153CQ==:20171027,1516372942980.5a2c
+    33420826374847d0840cdebd32ea., for 1 actions and 1st rowkey="...","processingtimems"
+    :13923,"client":"10.200.165.31:35572","queuetimems":0,"class":"HRegionServer"}
+```
+
+从日志上看，HLog执行sync花费太长时间（13924ms）导致写入响应阻塞。
+
+- 步骤4：进一步查看DataNode日志，确认DataNode刷盘很慢，异常信息如下：
+
+```
+        2019-04-24  13:03:16,684  WARN  org.apache.hadoop.hdfs.server.datanode.DataNode:
+    Slow BlockReceiver write data to disk cost:13918ms (threshold=300ms)
+        2019-04-24 13:03:16,685 ERROR org.apache.hadoop.hdfs.server.datanode.DataNode:
+    newsrec-hbase10.dg.163.org:50010:DataXceiver  error  processing  WRITE_BLOCK
+    operation   src: /10.200.148.21:55637 dst: /10.200.148.24:50010
+```
+
+#### 写入异常原因分析
+
+- HDFS集群DataNode退服会先拷贝其上数据块到其他DataNode节点，拷贝完成后再下线，拷贝过程中退服节点依然可以提供读服务，新数据块不会再写入退服节点。理论上退服流程不会对上层业务读写产生任何影响
+- 此案例中HDFS集群多台DataNode同时退服，退服过程中拷贝大量数据块会导致集群所有节点的带宽和IO负载压力陡增
+- 节点IO负载很高导致DataNode执行数据块落盘很慢，进而导致HBase中HLog刷盘超时异常，在集群写入压力较大的场景下会引起写入堆积超时。
+
+#### 解决方案
+
+- 和业务沟通在写入低峰期执行DataNode退服操作
+- 不能同时退服多台DataNode，以免造成短时间IO负载压力急剧增大。同时，退服改为依次退服，减小对系统资源影响。
+
+
+
+## 3、HBase运维时问题分析思路
+
+生产线问题是系统开发运维工程师的导师。之所以这样说，是因为对问题的分析可以让我们积累更多的问题定位手段，并且让我们对系统的工作原理有更加深入的理解，甚至接触到很多之前不可能接触到的知识领域。就像去一个未知的世界探索一个未知的问题，越往里面走，就越能看到别人看不到的世界。所以，生产线上的问题发生了，一定要抓住机会，追根溯源。毫不夸张地说，技术人员的核心能力很大部分表现在定位并解决问题的能力上。
+
+实际上，解决问题只是一个结果。从收到报警看到问题的那一刻到最终解决问题，必然会经历三个阶段：问题定位，问题分析，问题修复。问题定位是从问题出发通过一定的技术手段找到触发问题的本质，问题分析是从原理上对整个流程脉络梳理清楚，问题解决依赖于问题分析，根据问题分析的结果对问题进行针对性修复或者全局修复。
+
+### (1) 问题定位
+
+定位问题的触发原因是解决问题的关键。问题定位的基本流程如图14-9所示。
+
+<img src="../../pics/hbase/hbase_95.png" align=left width=800>
+
+- 指标监控分析。很多问题都可以直接在监控界面上直观地找到答案。比如业务反馈在某一时刻之后读延迟变的非常高，第一反应是去查看系统IO、CPU或者带宽是不是有任何异常，如果看到IO利用率在对应时间点变的异常高，就基本可以确定读性能下降就是由此导致。虽说IO利用率异常不是本质原因，但这是问题链上的重要一环，接下来就需要探究为什么IO利用率在对应时间点异常。
+
+对问题定位有用的监控指标非常多，宏观上看可以分为系统基础指标和业务相关指标两大类。系统基础指标包括系统IO利用率、CPU负载、带宽等；业务相关指标包括RegionServer级别读写TPS、读写平均延迟、请求队列长度/Compaction队列长度、MemStore内存变化、BlockCache命中率等。
+
+- 日志分析。对于系统性能问题，监控指标或许可以帮上大忙，但对于系统异常类型的问题，监控指标有可能看不出来任何端倪。这个时候就需要对相关日志进行分析，HBase系统相关日志最核心的有RegionServer日志和Master日志，另外，GC日志、HDFS相关日志（NameNode日志和DataNode日志）以及ZooKeeper日志在特定场景下对分析问题都有帮助。
+
+对日志分析并不需要将日志从头到尾读一遍，可以直接搜索类似于Exception，ERROR，甚至WARN这样的关键字，再结合时间段对日志进行分析。
+
+大多数情况下，系统异常都会在日志中有所反映，而且通过日志内容可以直观地明确问题所在。
+
+- 网络求助。经过监控指标分析和日志分析之后，运维人员通常都会有所收获。也有部分情况下，我们能看到了"Exception"，但不明白具体含义。此时需要去网络上求助。首先在搜索引擎上根据相关日志查找，大多数情况下都能找到相关的文章说明，因为你遇到的问题很大概率别人也会遇到。如果没有线索，接着去各个专业论坛查找或请教，比如stackoverflow、hbase.group以及各种HBase相关交流群组。最后，还可以发邮件到社区请教社区技术人员
+- 源码分析。在问题解决之后，建议通过源码对问题进行再次确认
+
+### (2) 问题分析
+
+解决未知问题就像一次探索未知世界的旅程。定位问题的过程就是向未知世界走去，走得越远，看到的东西越多，见识到的世面越大。然而眼花缭乱的景色如果不仔细捋一捋，一旦别人问起那个地方怎么样，必然会无言以对。
+
+问题分析是问题定位的一个逆过程。从问题的最本质原因出发，结合系统的工作原理，不断推演，最终推演出系统的异常行为。要把这个过程分析得清清楚楚，不仅仅需要监控信息、异常日志，更需要结合系统工作原理进行分析。所以回过头来看，只有把系统的原理理解清楚，才能把问题分析清楚。
+
+### (3) 问题修复
+
+如果能够把问题的来龙去脉解释清楚，相信就能够轻而易举地给出针对性的解决方案。这应该是整个问题探索中最轻松的一个环节。没有解决不了的问题，如果有，那就是没有把问题分析清楚。
 
 
 
 # 第十五章 HBase 2.x 核心技术
 
+在2018年4月30日，HBase社区发布了意义重大的2.0.0版本。该版本可以说是迄今为止改动最大的一个版本，共包含了4500余个issue。这个版本主要包含以下核心功能：
+
+- 基于Procedure v2重新设计了HBase的Assignment Manager和核心管理流程。通过Procedure v2，HBase能保证各核心步骤的原子性，从设计上解决了分布式场景下多状态不一致的问题
+- 实现了In Memory Compaction功能。该功能将MemStore分成若干小数据块，将多个数据块在MemStore内部做Compaction，一方面缓解了写放大的问题，另一方面降低了写路径的GC压力
+- 存储MOB数据。2.0.0版本之前对大于1MB的数据支持并不友好，因为大value场景下Compaction会加剧写放大问题，同时容易挤占HBase的BucketCache。而新版本通过把大value存储到独立的HFile中来解决这个问题，更好地满足了多样化的存储需求。
+- 读写路径全链路Offheap化。在2.0版本之前，HBase只有读路径上的BucketCache可以存放Offheap，而在2.0版本中，社区实现了从RPC读请求到完成处理，最后到返回数据至客户端的全链路内存的Offheap化，从而进一步控制了GC的影响
+- 异步化设计。异步的好处是在相同线程数的情况下，提升系统的吞吐量。2.0版本中做了大量的异步化设计，例如提供了异步的客户端，采用Netty实现异步RPC，实现asyncFsWAL等。
+
+
+
 ## 1、Producere 功能
 
+在HBase 2.0版本之前，系统存在一个潜在的问题：HBase的元信息分布在ZooKeeper、HBase Meta表以及HDFS文件系统中，而HBase的分布式管理流程并没法保证操作流程的原子性，因此，容易导致这三者之间的不一致。
+
+举个例子，在HBase中创建一个带有3个Region的表（表名为Test），主要有以下4步：
+
+1）在HDFS文件系统上初始化表的相关文件目录
+
+2）将HBase 3个Region的信息写入hbase:meta表中
+
+3）依次将这3个Region分配到集群的某些节点上，此后Region将处于online状态
+
+4）将Test表的状态设为ENABLED。
 
 
 
+如果在第3步中发现某一个region online失败，则可能导致表处于异常状态。如果系统设计为不回滚，则导致HDFS和hbase:meta表中存在该表错误的元数据。如果设计为出错回滚，则可能在回滚过程中继续出错，导致每一个类似的分布式任务流都需要考虑失败之后甚至回滚后接着失败的这种复杂逻辑。
+
+这样上层实现任务流的代码变得更加复杂，同时容易引入系统缺陷。例如，我们曾经碰到过一个Region被同时分配到两台RegionServer上的情况，hbase:meta表其实只存了一个Region对应的RegionServer，但是另一台RegionServer却在自己的内存中认为Region是分配到自己节点上，甚至还跑了Major Compaction，删除了一些无用文件，导致另一个RegionServer读数据时发现缺少数据。最终，出现读取异常的情况。
+
+在HBase 2.0版本之前，社区提供了HBCK工具。大部分的问题都可以遵循HBCK工具的修复机制，手动保证各元数据的一致性。但是，一方面，HBCK并不完善，仍有很多复杂的情况没有覆盖。另一方面，在设计上，HBCK只是一个用来修复缺陷的工具，而这个工具自身也有缺陷，从而导致仍有部分问题没有办法从根本上解决。
+
+正是在这样的背景之下，HBase 2.0引入了Procedure v2的设计。本质上是通过设计一个分布式任务流框架，来保证这个任务流的多个步骤全部成功，或者全部失败，即保证分布式任务流的原子性。
+
+### (1) Procedure 定义
+
+一个Procedure一般由多个subtask组成，每个subtask是一些执行步骤的集合，这些执行步骤中又会依赖部分Procedure。
+
+因此本质上，Procedure可以用图15-1来表示。Procedure.0有A、B、C、G共4个subtask，而这4个subtask中的C又有1个Procedure，也就是说只有等这个Procedure执行完，C这个subtask才能算执行成功。而C中的子Procedure，又有D、E、F共3个subtask。
+
+<img src="../../pics/hbase/hbase_96.png" align=left width=800>
+
+图15-2是另一个Procedure示例，Procedure.0有A、B、C、D共4个subtask。其中subtask C又有Procedure.1、Procedure.2、Procedure.3共3个子Procedure。
+
+<img src="../../pics/hbase/hbase_97.png" align=left width=800>
+
+仍以上述建表操作为例（参见图15-3），建表操作可以认为是一个Procedure，它由4个subtask组成。
+
+<img src="../../pics/hbase/hbase_98.png" align=left width=800>
+
+- subtask.A：用来初始化Test表在HDFS上的文件
+- subtask.B：在hbase:meta表中添加Test表的Region信息
+- subtask.C ：将3个region分配到多个节点上，而每个Assign region的过程又是一个Procedure
+- subtask.D：最终将表状态设置为ENABLED。
+
+在明确了Procedure的结构之后，需要理解Procedure提供的两个接口：execute()和rollback()，其中execute()接口用于实现Procedure的执行逻辑，rollback()接口用于实现Procedure的回滚逻辑。这两个接口的实现需要保证幂等性。也就是说，如果x=1，执行两次increment(x)后，最终x应该等于2，而不是等于3。因为我们需要保证increment这个subtask在执行多次之后，同执行一次得到的结果完全相等。
+
+### (2) Procedure 执行和回滚
+
+下面以上述建表的Procedure为例，探讨Procedure v2是如何保证整个操作的原子性的。
+
+首先，引入Procedure Store的概念，Procedure内部的任何状态变化，或者Procedure的子Procedure状态发生变化，或者从一个subtask转移到另一个subtask，都会被持久化到HDFS中。持久化的方式也很简单，就是在Master的内存中维护一个实时的Procedure镜像，然后有任何更新都把更新顺序写入Procedure WAL日志中。由于Procedure的信息量很少，内存占用小，所以只需内存镜像加上WAL的简单实现，即可保证Procedure状态的持久性。
+
+其次，需要理解回滚栈和调度队列的概念。回滚栈用于将Procedure的执行过程一步步记录在栈中，若要回滚，则一个个出栈依次回滚，即可保证整体任务流的原子性。调度队列指的是Procedure在调度时使用的一个双向队列，如果某个Procedure调度优先级特别高，则直接入队首；如果优先级不高，则直接入队尾。
+
+图15-4很好地展示了回滚栈和调度队列两个概念。初始状态时，Procedure.0入队。因此，下一个要执行的Procedure就是Procedure.0。
+
+<img src="../../pics/hbase/hbase_99.png" align=left width=800>
+
+执行时，从调度队列中取出队首元素Procedure.0，开始执行subtask.A，如图15-5所示。
+
+<img src="../../pics/hbase/hbase_100.png" align=left width=800>
+
+执行完subtask.A之后，将Procedure.0压入回滚栈，再接着执行subtask.B，如图15-6所示
+
+<img src="../../pics/hbase/hbase_101.png" align=left width=800>
+
+执行完subtask.B之后，将Procedure.0再次压入回滚栈，再接着执行subtask.C，如图15-7所示。
+
+<img src="../../pics/hbase/hbase_102.png" align=left width=800>
+
+执行完subtask.C后，发现C生成了3个子Procedure，分别是Procedure.1、Procedure.2、Procedure.3。因此，需要再次把Procedure.0压入回滚栈，再将Procedure.3、Procedure.2、Procedure.1依次压入调度队列队首，如图15-8所示。
+
+<img src="../../pics/hbase/hbase_103.png" align=left width=800>
+
+调度队列中队首是Proceure.1，因此开始执行Procedure.1，如图15-9所示。
+
+<img src="../../pics/hbase/hbase_104.png" align=left width=800>
+
+执行完Procedure.1之后，将Procedure.1压入回滚栈，开始执行Procedure.2，如图15-10所示。
+
+<img src="../../pics/hbase/hbase_105.png" align=left width=800>
+
+Procedure.2和Procedure.1执行过程类似，执行完成后将Procedure.2压入回滚栈，开始执行Procedure.3，如图15-11所示。
+
+<img src="../../pics/hbase/hbase_106.png" align=left width=800>
+
+Procedure.3执行过程亦类似。需要注意的是，3个子Procedure可以由多个线程并发执行。因为我们在实现Procedure的时候，同时需要保证每一个子Procedure之间都是相互独立的，也就是它们之间不存在依赖关系，可以并行执行，如果3个子Procedure之间有依赖关系，则设计子Procedure的子Procedure即可。
+
+执行完Procedure.3之后（此时Procedure.3已经压入回滚栈），可以发现Procedure.0的subtask C下所有的子Procedure已经全部执行完成。此时ProcedureExecutor会再次将Procedure.0调度到队列中，放入队首，如图15-12所示。
+
+<img src="../../pics/hbase/hbase_107.png" align=left width=800>
+
+取出调度队列队首元素，发现是Procedure.0。此时Procedure.0记录着subtask C已经执行完毕。于是，开始执行subtask D，如图15-13所示。
+
+<img src="../../pics/hbase/hbase_108.png" align=left width=800>
+
+待Procedure.0的subtask D执行完毕之后，将Procedure.0压入回滚栈，并将这个Procedure.0标记为执行成功，最终将在Procedure Store中清理这个已经成功执行的Procedure，如图15-14所示。
+
+<img src="../../pics/hbase/hbase_109.png" align=left width=800>
+
+Procedure的回滚：有了回滚栈这个状态之后，在执行任何一步发生异常需要回滚的时候，都可以按照栈中顺序依次将之前已经执行成功的subtask或者子Procedure回滚，且严格保证了回滚顺序和执行顺序相反。如果某一步回滚失败，上层设计者可以选择重试，也可以选择跳过继续重试当前任务（设计代码抛出不同类型的异常），直接回滚栈中后一步状态。
+
+
+
+> 注意：Procedure的回滚：有了回滚栈这个状态之后，在执行任何一步发生异常需要回滚的时候，都可以按照栈中顺序依次将之前已经执行成功的subtask或者子Procedure回滚，且严格保证了回滚顺序和执行顺序相反。如果某一步回滚失败，上层设计者可以选择重试，也可以选择跳过继续重试当前任务（设计代码抛出不同类型的异常），直接回滚栈中后一步状态。
+
+
+
+### (3) Procedure Suspend
+
+在执行Procedure时，可能在某个阶段遇到异常后需要重试。而多次重试之间可以设定一段休眠时间，防止因频繁重试导致系统出现更恶劣的情况。这时候需要suspend当前运行的Procedure，等待设定的休眠时间之后，再重新进入调度队列，继续运行这个Procedure。
+
+下面仍然以上文讨论过的CreateTableProcedure为例，说明Procedure的Suspend过程。首先，需要理解一个简单的概念——DelayedQueue，也就是说每个Suspend的Procedure都会被放入这个DelayedQueue队列，等待超时时间消耗完之后，一个叫作TimeoutExecutor Thread的线程会把Procedure取出，放到调度队列中，以便继续执行。
+
+如图15-15所示，Procedure.0在执行subtask C的子Procedure.2时发现异常，此时开始重试，设定两次重试之间的间隔为30s。之后，把Procedure.2标记为Suspend状态，并放入到DelayedQueue中。
+
+<img src="../../pics/hbase/hbase_110.png" align=left width=800>
+
+ProcedureExecutor继续从调度队列中取出下一个待执行的子Procedure.3，并开始执行Procedure.3，如图15-16所示。
+
+<img src="../../pics/hbase/hbase_111.png" align=left width=800>
+
+待Procedure.3执行完成之后，将Procedure.3压入回滚栈。此时Procedure.0的subtask C仍然没有完全执行完毕，必须等待Procedure.2执行完成，如图15-17所示。
+
+<img src="../../pics/hbase/hbase_113.png" align=left width=800>
+
+在某个时间点，30s等待已经完成。TimeoutExecutorThread将Procedure.2从DelayedQueue中取出，放入到调度队列中，如图15-18所示。
+
+<img src="../../pics/hbase/hbase_114.png" align=left width=800>
+
+ProcedureExecutor从调度队列队首取出Procedure.2，并开始执行Procedure.2，如图15-19所示。
+
+<img src="../../pics/hbase/hbase_115.png" align=left width=800>
+
+Procedure.2执行完成之后，subtask C标记为执行成功。开始切换到下一个状态，开始subtask 4，如图15-20所示。
+
+<img src="../../pics/hbase/hbase_116.png" align=left width=800>
+
+### (4) Procedure Yield
+
+Procedure v2框架还提供了另一种处理重试的方式——把当前异常的Procedure直接从调度队列中移走，并将Procedure添加到调度队列队尾。等待前面所有的Procedure都执行完成之后，再执行上次有异常的Procedure，从而达到重试的目的。
+
+例如，在执行subtask C的子Procedure.1时发生异常。上层设计者要求当前Procedure开启Yield操作，如图15-21所示。
+
+<img src="../../pics/hbase/hbase_117.png" align=left width=800>
+
+此时Procedure.1会被标记为Yield，然后将Procedure.1添加到调度队列队尾，如图15-22所示。
+
+<img src="../../pics/hbase/hbase_118.png" align=left width=800>
+
+ProcedureExecutor取出调度队列队首元素，发现是Procedure.2，开始执行Procedure.2，如图15-23所示。
+
+<img src="../../pics/hbase/hbase_119.png" align=left width=800>
+
+待Procedure.2执行完成之后，将Procedure.2添加到回滚栈。ProcedureExecutor继续去调度队列取出队首元素，发现是Procedure.3，开始执行Procedure.3，如图15-24所示。
+
+<img src="../../pics/hbase/hbase_120.png" align=left width=800>
+
+Procedure.3执行完成之后，将Procedure.3添加到回滚栈。ProcedureExecutor继续去调度队列中取出队首元素，发现是之前被Yield的Procedure.1，开始执行Procedure.1，如图15-25所示。
+
+<img src="../../pics/hbase/hbase_121.png" align=left width=800>
+
+待Procedure.1执行完成之后。subtask C已经执行完毕，切换到执行subtask D，如图15-26所示。
+
+<img src="../../pics/hbase/hbase_122.png" align=left width=800>
+
+### (5) 总结
+
+本节介绍了HBase Procedure v2框架的基本原理，目前的实现严格地保证了任务流的原子性。因此，HBase 2.x版本的大量任务调度流程都使用Procedure v2重写，典型如建表流程、删表流程、修改表结构流程、Region Assign和Unassign流程、故障恢复流程、复制链路增删改流程等。当然，仍然有一些管理流程没有采用Procedure v2重写，例如权限管理（HBASE-13687）和快照管理（HBASE-14413），这些功能将作为Procedure v2的第三期功能在未来的HBase3.0中发布，社区非常欢迎有兴趣的读者积极参与。
+
+另外，值得一提的是，由于引入Procedure v2，原先设计上的缺陷得到全面解决，因此在HBase 1.x中引入的HBCK工具将大量简化。当然，HBase 2.x版本仍然提供了HBCK工具，目的是防止由于代码Bug导致某个Procedure长期卡在某个流程，使用时可以通过HBCK跳过某个指定Prcedure，从而使核心流程能顺利地运行下去。
 
 
 
 ## 2、In Memory Compaction
 
+在HBase 2.0版本中，为了实现更高的写入吞吐和更低的延迟，社区团队对MemStore做了更细粒度的设计。这里，主要指的就是In Memory Compaction。
+
+一个表有多个Column Family，而每个Column Family其实是一个LSM树索引结构，LSM树又细分为一个MemStore和多个HFile。随着数据的不断写入，当MemStore占用内存超过128MB（默认）时，开始将MemStore切换为不可写的Snapshot，并创建一个新MemStore供写入，然后将Snapshot异步地flush到磁盘上，最终生成一个HFile文件。可以看到，这个MemStore设计得较为简单，本质上是一个维护cell有序的ConcurrentSkipListMap。
+
+### (1) Segment
+
+这里先简单介绍一下Segment的概念，Segment本质上是维护一个有序的cell列表。根据cell列表是否可更改，Segment可以分为两种类型。
+
+- MutableSegment ：该类型的Segment支持添加cell、删除cell、扫描cell、读取某个cell等操作。因此一般使用一个ConcurrentSkipListMap来维护列表
+- ImmutableSegment ：该类型的Segment只支持扫描cell和读取某个cell这种查找类操作，不支持添加、删除等写入操作。因此简单来说，只需要一个数组维护即可。
+
+> 注：无论是何种类型的Segment，都需要实时保证cell列表的有序性。
+
+### (2) CompactingMemstore
+
+在HBase 2.0中，设计了CompactingMemstore。如图15-27所示，CompactingMemstore将原来128MB的大MemStore划分成很多个小的Segment，其中有一个MutableSegment和多个ImmutableSegment。该Column Family的写入操作，都会先写入MutableSegment。一旦发现MutableSegment占用的内存空间超过2MB，则把当前MutableSegment切换成ImmutableSegment，然后再初始化一个新的MutableSegment供后续写入。
+
+<img src="../../pics/hbase/hbase_123.png" align=left width=800>
+
+CompactingMemstore中的所有ImmutableSegment，我们称之为一个Pipeline对象。本质上，就是按照ImmutableSegment加入的顺序，组织成一个FIFO队列。
+
+当对该Column Family发起读取或者扫描操作时，需要将这个CompactingMemstore的一个MutableSegment、多个ImmutableSegment以及磁盘上的多个HFile组织成多个内部数据有序的Scanner。然后将这些Scanner通过多路归并算法合并生成Scanner（如图15-28所示），最终通过这个Scanner可以读取该Column Family的数据。
+
+<img src="../../pics/hbase/hbase_124.png" align=left width=800>
+
+但随着数据的不断写入，ImmutableSegment个数不断增加，如果不做任何优化，需要多路归并的Scanner会很多，这样会降低读取操作的性能。所以，当ImmutableSegment个数到达某个阈值（可通过参数hbase.hregion.compacting.pipeline.segments.limit设定，默认值为2）时，CompactingMemstore会触发一次In Memory的Memstore Compaction，也就是将CompactingMemstore的所有ImmutableSegment多路归并成一个ImmutableSegment。这样，CompactingMemstore产生的Scanner数量会得到很好的控制，对读性能基本无影响。同时在某些特定场景下，还能在Memstore Compact的过程中将很多可以确定为无效的数据清理掉，从而达到节省内存空间的目的。这些无效数据包括：TTL过期的数据，超过Family指定版本的cell，以及被用户删除的cell。
+
+在内存中进行Compaction之后，MemStore占用的内存增长会变缓，触发MemStore Flush的频率会降低。
+
+### (3) 更多优化
+
+CompactingMemstore中有了ImmutableSegment之后，我们便可以做更多细致的性能优化和内存优化工作。图15-29简要介绍这些工作。
 
 
 
+图15-29 In-memory compaction的三种内存压缩方式
+
+<img src="../../pics/hbase/hbase_125.png" align=left width=800>
+
+<img src="../../pics/hbase/hbase_126.png" align=left width=800>
+
+首先，ConcurrentSkipListMap是一个内存和CPU都开销较大的数据结构。采用In Memory Compaction后，一旦ImmutableSegment需要维护的有序列表不可变，就可以直接使用数组（之前使用跳跃表）来维护有序列表。相比使用跳跃表，至少节省了跳跃表最底层链表之上所有节点的内存开销，对Java GC是一个很友好的优化。
+
+> 注意：相比DefautMemstore，CompactingMemstore中ImmutableSegment的内存开销大量减少，这是CompactiongMemstore最核心的优势所在。
 
 
+
+这是因为，ImmutableSegment占用的内存更少，同样是128MB的MemStore，Compacting-Memstore可以在内存中存放更多的数据。相比DefaultMemstore，CompactingMemstore触发Flush的频率就会小很多，单次Flush操作生成的HFile数据量会变大。于是，磁盘上HFile数量的增长速度就会变慢。这样至少有以下三个收益：
+
+- 磁盘上Compaction的触发频率降低。很显然，HFile数量少了，无论是Minor Compaction还是Major Compaction，次数都会降低，这就节省了很大一部分磁盘带宽和网络带宽
+- 生成的HFile数量变少，读取性能得到提升
+- 新写入的数据在内存中保留的时间更长了。针对那种写完立即读的场景，性能有很大提升。
+
+当然，在查询的时候，数组可以直接通过二分查找来定位cell，性能比跳跃表也要好很多（虽然复杂度都是O(logN)，但是常数好很多）。
+
+使用数组代替跳跃表之后，每个ImmutableSegment仍然需要在内存中维护一个cell列表，其中每一个cell指向MemstoreLAB中的某一个Chunk（默认大小为2MB）。这个cell列表仍然可以进一步优化，也就是可以把这个cell列表顺序编码在很少的几个Chunk中。这样，ImmutableSegment的内存占用可以进一步减少，同时实现了零散对象的“凑零为整”，这对Java GC来说，又是相当友好的一个优化。尤其MemStore Offheap化之后，cell列表这部分内存也可以放到offheap，onheap内存进一步减少，Java GC也会得到更好的改善。
+
+> 注：图15-29的第一幅图表示MutableSegment的实现；第二幅图表示用cell数组实现的ImmutableSegment；第三幅图表示cell列表编码到Chunk之后的ImmutableSegment。
+
+其实，在ImmutableSegment上，还可以做更多细致的工作。例如，可以把ImmutableSegment直接编码成HFile的格式，这样MemStore Flush的时候，可以直接把内存数据写入磁盘，而不需要按照原来的方式（编码->写入->编码->写入）写入磁盘。新的方式可进一步提升Flush的速度，写入吞吐也会更高、更稳定。当然，这部分工作暂时还没有在社区版本上实现，暂时只是一个提议。
+
+### (4) 实践
+
+有两种方式可以开启In Memory Compaction功能。第一种是在服务端的hbase-site.xml中添加如下配置，此配置对集群中所有的表有效：
+
+```
+hbase.hregion.compacting.memstore.type=BASIC   #可选择NONE/BASIC/EAGER三种
+```
+
+当然，也可以针对某个表的给定Column Family打开In Memory Compaction，代码如下：
+
+```
+create 'test', {NAME=> 'cf', IN_MEMORY_COMPACTION=> 'BASIC'} #NONE/BASIC/EAGER
+```
+
+注意，这里IN_MEMORY_COMPACTION三个取值的含义如下：
+
+- NONE，系统默认值，表示不开启In-Memory Compaction，仍使用之前默认的DefaultMemstore
+- BASIC，表示开启In-Memory Compaction，但是在ImmutableSegment做Compaction的时候，并不会走ScanQueryMatcher过滤无效数据，同时cell指向的内存数据不会发生任何移动。可以认为是一种轻量级的内存Compaction
+- EAGER，表示开启In-Memory Compaction。在ImmutableSegment做Compaction时，会通过ScanQueryMatcher过滤无效数据，并重新整理cell指向的内存数据，将其拷贝到一个全新的内存区域。可以认为是一种开销比BASIC的更大，但是更彻底的Compaction。所谓无效数据包括TTL过期的数据、超过Family指定版本的cell，以及被用户删除的cell。
+
+从原理上说，如果表中存在大量特定行的数据更新，则使用EAGER能获得更高的收益，否则使用BASIC。
+
+### (5) 总结
+
+In-Memory Compaction功能由Stack等6位社区成员共同完成，其中有雅虎2名美女工程师参与核心设计。更多详情可以参考：HBASE-13408。
+
+In MemoryCompaction主要有以下好处：
+
+- 由于ImmutableSegment的内存优化，Flush和HFile Compaction频率降低，节省磁盘带宽和网络带宽
+- 利用ImmutableSegment不可变的特点，设计出更简单的数据结构，进一步控制GC对读写操作的影响，降低延迟
+- 新写入的数据在内存中保留的时间更长。对于写完立即读的场景，性能有很大提升
+- 对于特定行数据频繁更新的场景，可以采用EAGER方式在内存中清理掉冗余版本数据，节省了这部分数据落盘的代价。
+
+在小米内部的SSD测试集群上进行测试，可以发现，开启In Memory Compaction之后，写入操作的p999延迟从之前的100ms左右下降到50ms以内，这是极大的性能提升，关键就在于该功能对GC有更好的控制。
 
 ## 3、MOB 对象存储
 
+在KV存储中，一般按照KeyValue所占字节数大小进行分类：
+
+- KeyValue所占字节数小于1MB，这样的数据一般称为Meta数据
+- KeyValue所占字节数大于1MB，小于10MB。这样的数据一般称为MOB，表示中等大小的数据
+- KeyValue所占字节数大于10MB。这样的数据一般称为LOB，也就是大对象。
+
+对HBase来说，存储Meta数据是最理想的应用场景。MOB和LOB两种应用场景，可能需要其他的存储服务来满足需求，例如HDFS可以支持LOB的服务场景。MOB会相对麻烦一点，之前的Hadoop生态中并不支持这种存储场景，只能借助第三方的对象存储服务来实现。
 
 
 
+但是MOB存储的需求其实很常见，例如图片和文档，甚至在HBase中，某些业务的部分Value超过1MB也很正常。但是HBase存储MOB数据甚至是LOB数据，其实是有一些问题的：
+
+- 由于HBase所有数据都需要先写MemStore，所以写少数几个MOB的cell数据，就需要进行Flush操作。以128MB的Flush阈值为例，只需要写约13个（每个KV占用10MB，13个KV占用130MB）MOB数据，MemStore就会触发Flush操作。频繁的Flush操作会造成HDFS上产生大量的HFile文件，严重影响HBase的读性能
+- 由于HDFS上HFile文件多了，触发LSM树进行Compaction的频率就会提高。而且大量的Compaction不断地合并那些没有变动的Value数据，也消耗了大量的磁盘IO
+- 由于MOB数据的写入，会导致频繁地触发Region分裂，这也会影响读写操作延迟，因为分裂过程中Region需要经历offline再online的过程。
+
+
+
+有一些简单的设计方案可以实现MOB功能，但各有缺陷。例如，比较容易想到的一个方案就是，把这些MOB数据分成Meta信息和Value分别存储在HBase和HDFS系统中。如图15-30所示，在HBase系统中维护一些Meta数据，而实际的MOB数据存储在HDFS文件系统中，在Meta中记录这个MOB数据落在哪个HDFS文件上的信息。这种方案简单粗暴，但是每一个MOB对应一个文件，这样对HDFS NameNode压力很大。
+
+<img src="../../pics/hbase/hbase_127.png" align=left width=800>
+
+其实可以改进一下上文中的设计方案，多个MOB对象共享一个HDFS文件，如图15-31所示，然后在Meta data中记录这个MOB数据落在哪个文件上，以及具体的offset和length是多少，这样基本上能满足需求。
+
+<img src="../../pics/hbase/hbase_128.png" align=left width=800>
+
+改进的设计方案还是会引出不少问题：
+
+- 对业务方来说，Meta数据在HBase表中，而真实数据在HDFS中，增加了业务系统的复杂性
+- 对MOB数据，业务需要直接访问HBase和HDFS，难以保证两套系统之间的原子性，权限认证也复杂很多
+- 对MOB数据，无法实现HBase表所支持的复制和快照等功能。
+
+为了解决这些问题，HBase社区实现了CF级别的MOB功能，也就是说同一个表，可以指定部分CF为MOB列，部分CF为正常列，同时还支持HBase表大部分功能，例如复制、快照、BulkLoad、单行事务等。这一方案极大地减轻了MOB用户的开发和维护成本。下面将从原理上探讨HBase 2.0 MOB这个功能。
+
+### (1) HBase MOB设计
+
+HBase MOB方案的设计本质上与HBase+HDFS方案相似，都是将Meta数据和MOB数据分开存放到不同的文件中。区别是，HBase MOB方案完全在HBase服务端实现，cell首先写入MemStore，在MemStore Flush到磁盘的时候，将Meta数据和cell的Value分开存储到不同文件中。之所以cell仍然先存MemStore，是因为如果在写入过程中，将这些cell直接放到一个单独的文件中，则在Flush过程中很难保证Meta数据和MOB数据的一致性。因此，这种设计也就决定了cell的Value数据量不能太大，否则一次写入可能撑爆MemStore，造成OOM或者严重的Full GC。
+
+#### 1. 写操作
+
+首先，在建表时，我们可以对某个Family设置MOB属性，并指定MOB阈值，如果cell的Value超过MOB阈值，则按照MOB的方式来存储cell；否则按照正常方式存储cell。
+
+MOB数据的写路径实现，如图15-32所示。超过MOB阈值的cell仍然和正常cell一样，先写WAL日志，再写MemStore。但是在MemStore Flush的时候，RegionServer会判断当前取到的cell是否为MOB cell，若不是则直接按照原来正常方式存储cell；若是MOB cell，则把Meta数据写正常的StoreFile，把MOB的Value写入到一个叫作MobStoreFile的文件中。
+
+<img src="../../pics/hbase/hbase_129.png" align=left width=800>
+
+具体讲，Meta数据cell内存储的内容包括：
+
+- row、timestamp、family、qualifer这4个字段，其内容与原始cell保持一致
+- value字段主要存储——MOB cell中Value的长度（占4字节），MOB cell中Value实际存储的文件名（占72字节），两个tag信息。其中一个tag指明当前cell是一个reference cell，即表明当前Cell是一个MOB cell，另外一个tag指明所属的表名。注意，MobStoreFile的文件名长度固定为72字节。
+
+
+
+MoB cell的Value存储在MobStoreFile中，文件路径如下：
+
+```
+{rootDir}/mobdir/data/{namespace}/{tableName}/{regionEncodedName}
+```
+
+MobStoreFile位于一个全新的目录，这里regionEncodedName并不是真实Region的encoded name，而是一个伪造Region的encoded name。表中所有Region的MobStoreFile都存放在这个伪造的Region目录下，因此一个表只有一个存储MOB文件的目录：
+
+
+
+MobStoreFile的文件名格式如图15-33所示，主要由3部分组成（合计72字节）。
+
+<img src="../../pics/hbase/hbase_130.png" align=left width=800>
+
+- Region的Start Key经过MD5哈希计算生成的32字节字符串。用来标识这个StoreFile位于哪个Region
+- 8字节Timestamp，表示这个MOB HFile中所有cell最大的时间戳
+- 生成的32字节UUID字符串，用来唯一标识这个文件。
+
+MobStoreFile中的cell和写入的原始cell保持一致。
+
+#### 2. 读操作
+
+理解了写操作流程以及数据组成之后，读操作就更好理解了。首先按照正常的读取方式，读正常的StoreFile。若读出来的cell不包含reference tags，则直接将这个cell返回给用户；否则解析这个cell的Value值，这个值就是MobStoreFile的文件路径，在这个文件中读取对应的cell即可。
+
+需要注意的是，默认的BucketCache最大只缓存513KB的cell。所以对于大部分MOB场景而言，MOB cell是没法被Bucket Cache缓存的，事实上，Bucket Cache也并不是为了解决大对象缓存而设计的。所以，在第二次读MobStoreFile时，一般都是磁盘IO操作，性能会比读非MOB cell差一点，但是对于大部分MOB读取场景，应该可以接受。
+
+当然，MOB方案也设计了对应的Compaction策略，来保证MOB数据能得到及时的清理，只是在Compaction频率上设置得更低，从而避免由于MOB而导致的写放大现象。
+
+### (2) 实践
+
+为了能够正确使用HBase 2.0版本的MOB功能，用户需要确保HFile的版本是version 3。添加如下配置选项到hbase-site.xml：
+
+```
+hfile.format.version=3
+```
+
+在HBase Shell中，可以通过如下方式设置某一个Column Family为MOB列。换句话说，如果这个列簇上的cell的Value部分超过了100KB，则按照MOB方式来存储；否则仍按照默认的KeyValue方式存储数据。
+
+```
+create 't1', {NAME=> 'f1', IS_MOB=> true, MOB_THRESHOLD=> 102400}
+```
+
+当然，也可以通过如下Java代码来设置一个列簇为MOB列：
+
+```
+        HColumnDescriptor hcd=new HColumnDescriptor("f");
+        hcd.setMobEnabled(true);
+        hcd.setMobThreshold(102400);
+```
+
+对于MOB功能，可以指定如下几个参数：
+
+```
+        hbase.mob.file.cache.size=1000
+        hbase.mob.cache.evict.period=3600
+        hbase.mob.cache.evict.remain.ratio=0.5f
+```
+
+此外，HBase目前提供了如下工具来测试MOB的读写性能。
+
+```
+        ./bin/hbase org.apache.hadoop.hbase.IntegrationTestIngestWithMOB \
+            -threshold 1024 \
+            -minMobDataSize 512 \
+            -maxMobDataSize 5120
+```
+
+### (3) 总结
+
+HBase MOB[插图]功能满足了在HBase中直接存储中等大小cell的需求，而且是一种完全在服务端实现的方案，对广大HBase用户非常友好。同时，还提供了HBase大部分的功能，例如复制、BulkLoad、快照等。但是，MOB本身也有一定局限性：
+
+- 每次cell写入都要存MemStore，这导致没法存储Value过大的cell，否则内存容易被耗尽
+- 暂时不支持基于Value过滤的Filter。当然，一般很少有用户会按照一个MOB对象的内容做过滤。
 
 
 
 ## 4、Offheap 读路径和 Offheap 写路径
 
+HBase作为一个分布式数据库系统，需要保证数据库读写操作有可控的低延迟。由于使用Java开发，一个不可忽视的问题是GC的STW（Stop The World）的影响。在CMS中，主要考虑Young GC和Full GC的影响，在G1中，主要考虑Young GC和mixed GC的影响。下面以G1为例探讨GC对HBase的影响。
+
+在整个JVM进程中，HBase占用内存最大的是写缓存和读缓存。写缓存是上文所说的MemStore，因为所有写入的KeyValue数据都缓存在MemStore中，只有等MemStore内存占用超过阈值才会Flush数据到磁盘上，最后内存得以释放。读缓存，即我们常说的BlockCache。HBase并不提供行级别缓存，而是提供以数据块（Data Block）为单位的缓存，也就是读一行数据，先将这一行数据所在的数据块从磁盘加载到内存中，然后放入LRU Cache中，再将所需的行数据返回给用户后，数据块会按照LRU策略淘汰，释放内存。
+
+MemStore和BlockCache两者一般会占到进程总内存的80%左右，而且这两部分内存会在较长时间内被对象引用（例如MemStore必须Flush到磁盘之后，才能释放对象引用；Block要被LRU Cache淘汰后才能释放对象引用）。因此，这两部分内存在JVM分代GC算法中，会长期位于old区。而小对象频繁的申请和释放，会造成老年代内存碎片严重，从而导致触发并发扫描，最终产生大量mixed GC，大大提高HBase的访问延迟（如图15-34所示）。
+
+<img src="../../pics/hbase/hbase_131.png" align=left width=800>
+
+一种最常见的内存优化方式是，在JVM堆内申请一块连续的大内存，然后将大量小对象集中存储在这块连续的大内存上。这样至少减少了大量小对象申请和释放，避免堆内出现严重的内存碎片问题。本质上也相当于减少了old区触发GC的次数，从而在一定程度上削弱了GC的STW对访问延迟的影响。
+
+MemStore的MSLAB和BlockCache的BucketCache，核心思想就是上述的“凑零为整”，也就是将多个零散的小对象凑成一个大对象，向JVM堆内申请。以堆内BucketCache为例，HBase向堆内申请多块连续的2MB大小的内存，然后每个2MB的内存划分成4KB，8KB，…，512KB的小块。如图15-35所示，若此时有两个3KB的Data Block，则分配在图中的Bucket-1中，因为4KB是能装下3KB的最小块。若有一个7KB的Data Block，则分配在图中的Bucket-2，因为8KB是能装下7KB的最小块。内存释放时，则直接标记这些被占用的4KB，8KB，…512KB块为可用状态。这样，我们把大量较小的数据块集中分布在多个连续的大内存上，有效避免了内存碎片的产生。有些读者会发现用512KB装500KB的数据块，有12KB的内存浪费，这其实影响不大，因为BucketCache一旦发现内存不足，就会淘汰掉部分Data Block以腾出内存空间。
+
+<img src="../../pics/hbase/hbase_132.png" align=left width=800>
+
+至此基本解决了因MemStore和BlockCache中小对象申请和释放而造成大量碎片的问题。虽然堆内的申请和释放都是以大对象为单位，但是old区一旦触发并发扫描，这些大对象还是要被扫描。如图15-36所示，对G1这种在old GC会整理内存（compact）的算法来说，这些占用连续内存的大对象还是可能从一个区域被JVM移动到另外一个区域，因此一旦触发Mixed GC，这些Mixed GC的STW时间可能较高。换句话说，“凑零为整”主要解决碎片导致GC过于频繁的问题，而单次GC周期内STW过长的问题，仍然无法解决。
+
+<img src="../../pics/hbase/hbase_133.png" align=left width=800>
+
+事实上，JVM支持堆内（onheap）和堆外（offheap）两种内存管理方式。堆内内存的申请和释放都是通过JVM来管理的，平常所谓GC都是回收堆内的内存对象；堆外内存则是JVM直接向操作系统申请一块连续内存，然后返回一个DirectByteBuffer，这块内存并不会被JVM的GC算法回收。因此，另一种常见的GC优化方式是，将那些old区长期被引用的大对象放在JVM堆外来管理，堆内管理的内存变少了，单次old GC周期内的STW也就能得到有效的控制。
+
+具体到HBase，就是把MemStore和BucketCache这两块最大的内存从堆内管理改成堆外管理。甚至更进一步，我们可以从RegionServer读到客户端RPC请求那一刻起，把所有内存申请都放在堆外，直到最终这个RPC请求完成，并通过socket发送到客户端。所有的内存申请都放在堆外，这就是后面要讨论的读写全路径offheap化。
+
+但是，采用offheap方式分配内存后，一个严重的问题是容易内存泄漏，一旦某块内存忘了回收，则会一直被占用，而堆内内存GC算法会自动清理。因此，对于堆外内存而言，一个高效且无泄漏的内存管理策略显得非常重要。目前HBase 2.x上的堆外内存分配器较为简单，如图15-37所示，内存分配器由堆内分配器和堆外分配器组合而成，堆外内存划分成多个64KB大小内存块。HBase申请内存时，需要遵循以下规则：
+
+<img src="../../pics/hbase/hbase_134.png" align=left width=800>
+
+1）分配小于8KB的小内存，如果直接分一个堆外的64KB块会比较浪费，所以此时仍然从堆内分配器分配
+
+2）分配大于等于8KB且不超过64KB的中等大小内存，此时可以直接分配一个64KB的堆外内存块
+
+3）分配大于64KB的较大内存，此时需要将多个64KB的堆外内存组成一个大内存，剩余部分通过第1条或第2条规则来分配。例如，要申请130KB的内存，首先分配器会申请2个64KB的堆外内存块，剩余的2KB直接去堆内分配。
 
 
 
+这样就能够把大部分内存占用都分配在堆外，从而减小old区的内存，缓解GC压力。当然，上文说的64KB是可以根据不同业务场景来调整的，对于cell字节较大的场景，可以适当把这个参数调大，反之则调小。
+
+
+
+### (1) 读路径offheap化
+
+读路径offheap化的过程参见图15-38。
+
+<img src="../../pics/hbase/hbase_135.png" align=left width=800>
+
+在HBase 2.0版本之前，如果用户的读取操作命中了BucketCache的某个Block，那么需要把BucketCache中的Block从堆外拷贝一份到堆内，最后通过RPC将这些数据发送给客户端。
+
+从HBase 2.0开始，一旦用户命中了BucketCache中的Block，会直接把这个Block往上层Scanner传，不需要从堆外把Block拷贝一份到堆内，因为社区已经把整个读路径都ByteBuffer化了，整个读路径上并不需要关心Block到底来自堆内还是堆外，这样就避免了一次拷贝的代价，减少了年轻代的内存垃圾。
+
+### (2) 写路径offheap化
+
+客户端的写入请求发送到服务端时，服务端可以根据protobuffer协议提前知道这个request的总长度，然后从ByteBufferPool里面拿出若干个ByteBuffer存放这个请求。写入WAL的时候，通过ByteBuffer接口写入HDFS文件系统（原生HDFS客户端并不支持写入ByteBuffer接口，HBas自己实现的asyncFsWAL支持写入ByteBuffer接口），写入MemStore的时，则直接将ByteBuffer这个内存引用存入到CSLM（CocurrentSkip ListMap），在CSLM内部对象compare时，则会通过ByteBuffer指向的内存来比较。直到MemStore flush到HDFS文件系统，KV引用的ByteBuffer才得以最终释放到堆外内存中。这样，整个KV的内存占用都是在堆外，极大地减少了堆内需要GC的内存，从而避免了出现较长STW（Stop The World）的可能。
+
+在测试写路径offheap时，一个特别需要注意的地方是KV的overhead。如果我们设置的kvlength=100字节，则会有100字节的堆内额外开销。因此如果原计划分6GB的堆内内存给MemStore，则需要分3GB给堆内，3GB给堆外，而不是全部6GB都分给堆外。
+
+
+
+### (3) 总结
+
+为了尽可能避免Java GC对性能造成不良影响，HBase 2.0已经对读写两条核心路径做了offheap化，如图15-39所示，也就是直接向JVM offheap申请对象，而offheap分出来的内存都不会被JVM GC，需要用户自己显式地释放。在写路径上，客户端发过来的请求包都被分配到offheap的内存区域，直到数据成功写入WAL日志和MemStore，其中维护MemStore的ConcurrentSkipListSet其实也不是直接存cell数据，而是存cell的引用，真实的内存数据被编码在MSLAB的多个Chunk内，这样比较便于管理offheap内存。类似地，在读路径上，先尝试读BucketCache，Cache命中时直接去堆外的BucketCache上读取Block；否则Cache未命中时将直接去HFile内读Block，这个过程在Hbase 2.3.0版本之前仍然是走heap完成。拿到Block后编码成cell发送给用户，大部分都是走BucketCache完成的，很少涉及堆内对象申请。
+
+<img src="../../pics/hbase/hbase_136.png" align=left width=800>
+
+但是，在小米内部最近的性能测试中发现，100%get的场景受Young GC的影响仍然比较严重，在HBASE-21879中可以非常明显地观察到get操作的p999延迟与G1Young GC的耗时基本相同，都为100ms左右。按理说，在HBASE-11425之后，所有的内存分配都是在offheap的，heap内应该几乎没有内存申请。但是，仔细梳理代码后发现，从HFile中读Block的过程仍然是先拷贝到堆内去的，一直到BucketCache的WriterThread异步地把Block刷新到Offheap，堆内的DataBlock才释放。而磁盘型压测试验中，由于数据量大，Cache命中率并不高（约为70%），所以会有大量的Block读取走磁盘IO，于是堆内产生大量的年轻代对象，最终导致Young区GC压力上升。
+
+消除Young GC的直接思路就是，从HFile读DataBlock开始，直接去Offheap上读。小米HBase团队已经在持续优化这个问题，可以预期的是，HBase 2.x性能必定朝更好的方向发展，尤其是GC对p99和p999的影响会越来越小。
 
 
 
 ## 5、异步化设计
 
+对HBase来说，我们通常所说的性能，其实是分成两个部分的。
+
+第一个部分是延迟指标，也就是说单次RPC请求的耗时。我们常用的衡量指标包括：get操作的平均延迟耗时（ms），get操作的p75延迟耗时，get操作的p99延迟耗时，get操作的p999延迟耗时（以get p99为例，其含义是将100个请求按照耗时从小到大排列，第99个请求的延迟耗时就是p99的值）。在第13章中，我们尽量保证更高的Cache命中率，保证更好的本地化率，使用布隆过滤器等，这些优化都有利于降低读取操作的延迟。在一般情况下，p99延迟受限于系统某个资源，而p999延迟很大程度上与Java GC有关，如果能有效控制STW的耗时，那么p999将被控制在一个较理想的范围。
+
+第二个部分是请求吞吐量，也可以简单理解为每秒能处理的RPC请求次数。最典型的衡量指标是QPS（Query Per Second）。为了实现HBase更高的吞吐量，常见的优化手段有：
+
+- 为HBase RegionServer配置更合适的Handler数，避免由于个别Handler处理请求太慢，导致吞吐量受限。但Handler数也不能配置太大，因为太多的线程数会导致CPU出现频繁的线程上下文切换，反而影响系统的吞吐量
+- 在RegionServer端，把读请求和写请求分到两个不同的处理队列中，由两种不同类型的Handler处理。这样可以避免出现因部分耗时的读请求影响写入吞吐量的现象
+- 某些业务场景下，采用Buffered Put的方式替换不断自动刷新的put操作，本质上也是为了实现更高的吞吐。
+
+一般来说，一旦延迟降低，吞吐量都会有不同幅度的提升；反之，吞吐量上去了，受限于系统层面的资源或其他条件，延迟不一定随之降低。
 
 
 
+在branch-1中，社区已经借助异步事件驱动的Netty框架实现了异步的RPC服务端代码，当然之前默认的NIO RPC依然可以配置使用，两者实现都是插件化的，可通过配置选择生效。在HBase 2.0中，为了实现对吞吐量的极致追求，社区进一步推动了关键路径的异步化。其中，最为关键的两点是：
+
+- 实现了完全异步的客户端，这个客户端提供了包括Table和Admin接口在内的所有异步API接口
+- 将写路径上最耗时的Append+Sync WAL步骤全部异步化，以期实现更低延迟和更高吞吐。这部分我们简称为AsyncFsWAL。
+
+下面将分别介绍异步客户端和AsyncFsWAL。
+
+### (1) 异步客户端
+
+为什么需要设计异步客户端呢？首先看看同步客户端与异步客户端的吞吐量对比，如图15-40所示。
+
+<img src="../../pics/hbase/hbase_137.png" align=left width=800>
+
+图中左侧是同步客户端处理流程，右侧是异步客户端处理流程。很明显，在客户端采用单线程的情况下，同步客户端必须等待上一次RPC请求操作完成，才能发送下一次RPC请求。如果RPC2操作耗时较长，则RPC3一定要等RPC2收到Response之后才能开始发送请求，这样RPC3的等待时间就会很长。异步客户端很好地解决了后面请求等待时间过长的问题。客户端发送完第一个RPC请求之后，并不需要等待这次RPC的Response返回，可以直接发送后面请求的Request，一旦前面RPC请求收到了Response，则通过预先注册的Callback处理这个Response。这样，异步客户端就可以通过节省等待时间来实现更高的吞吐量。
+
+另外，异步客户端还有其他的好处。如图15-41所示，如果HBase业务方设计了3个线程来同步访问HBase集群的RegionServer，其中Handler1、Handler2、Handler3同时访问了中间的这台RegionServer。如果中间的RegionServer因为某些原因卡住了，那么此时HBase服务可用性的理论值为66%，但实际情况是业务的可用性已经变成0%，因为可能业务方所有的Handler都因为这台故障的RegionServer而卡住。换句话说，在采用同步客户端的情况下，HBase方的任何故障，在业务方会被一定程度地放大，进而影响上层服务体验。
+
+<img src="../../pics/hbase/hbase_138.png" align=left width=800>
+
+而事实上，影响HBase可用性的因素有很多，且没法完全避免。例如RegionServer或者Master由于STW的GC卡住、访问HDFS太慢、RegionServer由于异常情况挂掉、某些热点机器系统负载高，等等。因此，社区在HBase 2.0中设计并实现了异步客户端。
+
+异步客户端和同步客户端的架构对比如图15-42所示。异步客户端使用ClientService. Interface，而同步客户端使用ClientService.BlockingInterface，Interface的方法需要传入一个callback来处理返回值，而BlockingInterface的方法会阻塞并等待返回值。值得注意的是，异步客户端也可以跑在BlockingRpcClient上，因为本质上，只要BlockingRpcClient实现了传入callback的ClientService.Interface，就能实现异步客户端上层的接口。
+
+<img src="../../pics/hbase/hbase_139.png" align=left width=800>
+
+总体来说，异步客户端在原理上并不十分复杂，其最大的工作量在于把社区支持的众多客户端API接口全部用异步的方式实现一遍，因此实现时花了不少精力。
+
+
+
+下面将给出一个异步客户端操作HBase的示例。首先通过conf拿到一个异步的connection，并在asynConn的callback中继续拿到一个asyncTable，接着在这个asyncTable的callback中继续异步地读取HBase数据。可以看出，异步客户端的一个特点是，对那些所有可能做IO或其他耗时操作的方法来说，其返回值都是一个CompletableFuture，然后在这个CompletableFuture上注册回调函数，进一步处理返回值。示例代码如下：
+
+```
+        CompletableFuture<Result> asyncResult=new CompletableFuture<>();
+        ConnectionFactory.createAsyncConnection(conf).whenComplete((asyncConn, error) -> {
+              if (error !=null) {
+                asyncResult.completeExceptionally(error);
+                return;
+              }
+              AsyncTable<?> table=asyncConn.getTable(TABLE_NAME);
+                table.get(new Get(ROW_KEY)).whenComplete((result, throwable) -> {
+                  if (throwable !=null) {
+                    asyncResult.completeExceptionally(throwable);
+                    return;
+                  }
+                  asyncResult.complete(result);
+                });
+              });
+```
+
+当然，使用异步客户端有一些常见的注意事项：
+
+- 由于异步API调用耗时极短，所以需要在上层设计合适的API调用频率，否则由于实际的HBase集群处理速度远远无法跟上客户端发送请求的速度，可能导致HBase客户端OOM
+- 异步客户端的核心耗时逻辑无法直观地体现在Java stacktrace上，所以如果想要通过stacktrace定位一些性能问题或者逻辑Bug，会有些麻烦。这对上层的开发人员有更高的要求，需要对异步客户端的代码有更深入的理解，才能更好地定位问题。
+
+### (2) AsyncFsWAL
+
+RegionServer在执行写入操作时，需要先顺序写HDFS上的WAL日志，再写入内存中的MemStore（不同HBase版本中，顺序可能不同）。很明显，在写入路径上，内存写速度远大于HDFS上的顺序写。而且，HDFS为了保证数据可靠性，一般需要在本地写一份数据副本，远程写二份数据副本，这便涉及本地磁盘写入和网络写入，导致写WAL这一步成为写入操作最关键的性能瓶颈。
+
+另外一个需要注意的点是：HBase上的每个RegionServer都只维护一个正在写入的WAL日志，因此这个RegionServer上所有的写入请求，都需要经历以下4个阶段：
+
+1）拿到写WAL的锁，避免在写入WAL的时候其他的操作也在同时写WAL，导致数据写乱
+
+2）Append数据到WAL中，相当于写入HDFS Client缓存中，数据并不一定成功写入HDFS中。读者可参考3.2节
+
+3）Flush数据到HDFS中，本质上是将第2步中写入的数据Flush到HDFS的3个副本中，即数据持久化到HDFS中。一般默认用HDFS hflush接口，而不是HDFS hsync接口，同样可参考3.2节
+
+4）释放写WAL的锁。
+
+因此，从本质上说所有的写入操作在写WAL的时候，是严格按照顺序串行地同步写入HDFS文件系统，这极大地限制了HBase的写入吞吐量。于是，在漫长的HBase版本演进中，社区对WAL写入进行了一系列的改进和优化，如图15-43所示。
+
+<img src="../../pics/hbase/hbase_140.png" align=left width=800>
+
+在早前的HBase 0.94版本中，小米工程师已经开始着眼优化。最开始的优化方式是将写WAL这个过程异步化，这其实也是很多数据库在写WAL时采用的思路，典型如MySQL的Group Commit实现。
+
+
+
+将写WAL的整个过程分成3个子步骤：
+
+1）Append操作，由一个名为AsyncWriter的独立线程专门负责执行Append操作
+
+2）Sync操作，由一个或多个名为AsyncSyncer的线程专门负责执行Sync操作
+
+3）通知上层写入的Handler，表示当前操作已经写完。再由一个独立的AsyncNotifier线程专门负责唤醒上层Write Handler。
+
+
+
+当Write Handler执行某个Append操作时，将这个Append操作放入RingBuffer队列的尾部，当前的Write Handler开始wait()，等待AsyncWriter线程完成Append操作后将其唤醒。同样，Write Handler调用Sync操作时，也会将这个Sync操作放到上述RingBuffer队列的尾部，当前线程开始wait()，等待AsyncSyncer线程完成Sync操作后将其唤醒。
+
+RingBuffer队列后有一个消费者线程AsyncWriter，AsyncWriter不断地Append数据到WAL上，并将Sync操作分给多个AsyncSyncer线程中的某一个开始处理。AsyncWriter执行完一个Append操作后，就会唤醒之前wait()的Write Handler。AsyncSyncer线程执行完一个Sync操作后，也会唤醒之前wait()的Write Handler。这样，短时间内的多次Append+Sync操作会被缓冲进一个队列，最后一次Sync操作能将之前所有的数据都持久化到HDFS的3副本上。这种设计大大降低了HDFS文件的Flush次数，极大地提升了单个RegionServer的写入吞吐量。HBASE-8755中的测试结果显示，使用这个优化方案之后，工程师们将HBase集群的写入吞吐量提升了3～4倍。
+
+之后，HBase PMC张铎提出：由于HBase写WAL操作的特殊性，可以设计一种特殊优化的OutputStream，进一步提升写WAL日志的性能。这个优化称为AsyncFsWAL，本质上是将HDFS通过Pipeline写三副本的过程异步化，以达到进一步提升性能的目的。核心思路可以参考图15-43的右侧。与HBASE-8755相比，其核心区别在于RingBuffer队列的消费线程的设计。首先将每一个Append操作都缓冲进一个名为toWriteAppends的本地队列，Sync操作则通过Netty框架异步地同时Flush到HDFS三副本上。注意，在之前的设计中，仍然采用HDFS提供的Pipeline方式写入HDFS数据，但是在AsyncFsWAL中，重新实现了一个简化版本的OutputStream，这个OutputStream会同时将数据并发地写入到三副本上。相比之前采用同步的方式进行Pipeline写入，并发写入三副本进一步降低了写入的延迟，同样也使吞吐量得到较大提升。
+
+理论上，可以把任何HDFS的写入都设计成异步的，但目前HDFS社区似乎并没有在这方面投入更多精力。所以HBase目前也只能是实现一个为写WAL操作而专门设计的AsyncFsWAL，一般一个WAL对应HDFS上的一个Block，所以目前AsyncFsWAL暂时并不需要考虑拆分Block等一系列问题，实现所以相对简单一点。
+
+### (3) 总结
+
+HBase 2.0针对部分核心路径上的耗时操作做了异步化设计，以实现更高吞吐和更低延迟的目的。目前已经异步化的地方主要包括HBase客户端、RegionServer的RPC网络模型、顺序写WAL等。可以期待的是，未来社区会针对HBase更多关键核心路径上的耗时操作，做进一步异步化设计。
 
 
 
@@ -3258,19 +4622,280 @@ HBase集群只要对每个Region都维护一个Barrier列表和LastPushedSequenc
 
 ## 1、二级索引
 
+现在有一张存放大学生信息的表，这个表中有学号、身份证号、性别、出生地址这4个字段。很明显，学号和身份证号两个字段都是全局唯一的，老师们可以通过给定的学号找出某个学生的详细信息，也可以根据身份证号查出这个学生的学号以及其他详细信息。在MySQL中，我们一般会设计这样一个表：
+
+```
+        create table `student`(
+            `STUDENT_NO`         int(15),
+            `ID_NO`                varchar(20),
+            `SEX`                  int(5),
+            `ADDRESS`             varchar(60),
+            PRIMARY KEY(STUDENT_NO),
+            INDEX ID_NO_IDX (ID_NO)
+        );
+```
+
+这个表中设计了两个索引，一个是STUDENT_NO这个主键索引，另外一个是ID_NO这个辅助索引。这样，无论老师们根据学号（STUDENT_NO）还是身份证号（ID_NO）查询学生详细信息，都可以通过MySQL索引快速定位到所需记录。一般我们将除主键索引之外的其他索引统一称为二级索引，例如这里ID_NO_IDX就是一个二级索引。二级索引通常存储索引列到主键值的映射关系，这样数据库可以先通过二级索引查询到主键值，然后再通过主键索引快速查出主键值对应的完整数据。
+
+MySQL中使用二级索引很方便，HBase并不直接支持二级索引功能。但上述这种查询需求又很常见，如果没有ID_NO_IDX这个二级索引，用户只能扫描全表数据并过滤不满足条件的数据，最终查询到所需数据。在一个拥有数亿行记录的表中，做一次扫描全表操作将非常慢，同时还会消耗大量资源。因此，很多HBase的用户会尝试针对HBase表设计二级索引。一个常见的思路是，对上述大学生信息表，用户会设计两张表。
 
 
 
+第一张是学生信息表，代码如下：
+
+```
+        create 'student', {NAME=>'S', VERSIONS=>1, BLOOMFILTER=> 'ROW'}
+        # ROW_KEY         存放学生学号；
+        # S:ID_NO         列的Value存放身份证号；
+        # S:SEX           列的Value存放学生性别；
+        # S:ADDRESS      列的Value存放学生地址；
+```
+
+另外一张是存放（身份证号、学号）映射关系的索引表，代码如下：
+
+```
+        create `student_idno_idx`, {NAME=>'I', VERSIONS=>1, BLOOMFILTER=>'ROW'}
+        # ROW_KEY          存放身份证号；
+        # I:STUDENT_ID    列的Value存放学生学号；
+```
+
+在写入一条学生信息时，业务方需要同时写入student表和student_idno_idx表。那么，这里存在两个问题：
+
+- 如何保证写入student表和student_idno_idx表的原子性？若写入student表成功，但是写student_idno_idx表失败，该如何处理比较好？
+- HBase的表会分成很多个Region，落在不同的RegionServer上。因此，待写student表对应的Region所在的RegionServer，与待写student_idno_idx表对应Region所在的RegionServer，通常会是两个RegionServer，因此一次写入至少进行两次put操作，每次put操作都要先写WAL日志，再写MemStore。这样，写入的延迟和吞吐都会受到一定影响。
+
+
+
+根据身份证号查询学生详细信息时，需要先读student_idno_idx表，找到学号后，再根据学号去student表查询学生的详细信息。这也面临两个问题：一个是主表和索引表如何保证一致性，例如用户先写完主表，还未写索引表时，业务直接查索引表会错误地认为某个身份证号不对应任何学生信息；另一个是该如何尽可能节省RPC，保证良好的吞吐和延迟。
+
+HBase原生支持Region内部多行操作的原子性（若一次RPC的多个操作都落在一个Region内，则HBase可保证原子性；若一次RPC的多个操作落在不同的Region上，则HBase无法保证整个事务的原子性），但并不支持跨表事务（某个事务的多个操作落在不同表内，HBase无法保证原子性）。因此，上述设计要实现主表和索引表操作的原子性，是比较困难的，但却有一些方案可以做到单个Region内的主索引和二级索引数据一致性，后文将介绍这种方案。另外需要理解的一点是：保证主表与索引数据强一致性和高性能，这两点本身难以兼顾，一致性程度越高，则需要消耗在RPC上的资源会更多，吞吐和延迟会变得更差，因为需要设计更复杂的分布式协议来保证。一个简单的例子就是，从Region级别一致性提升到全局一致性，需要花费的RPC要多很多。
+
+### (1) 局部二级索引
+
+所谓局部二级索引是指在Region内部建立二级索引，同时保证主表和索引数据的一致性。在不涉及额外的事务协议的前提下，因为HBase原生支持Region内事务的原子性，所以我们首先能想到的就是，把Region-A内的索引数据也存放在Region-A内，这样就可以很容易地保证索引数据和主表数据的原子性。
+
+
+
+下面介绍一种可行的方案。
+
+这里仍然以上述大学生信息表为例，我们在这个大学生信息表中添加一个额外的Column Family，叫做IDX，表示该列簇专门用来存放索引数据。表结构如下：
+
+```
+        create 'student' \
+            {NAME=>'S',    VERSIONS=>1, BLOOMFILTER=>'ROW'}, \
+            {NAME=>'IDX', VERSIONS=>1, BLOOMFILTER=>'ROW'}
+        # ROW_KEY         存放学生学号；
+        # S:ID_NO         列的Value存放身份证号；
+        # S:SEX           列的Value存放学生性别；
+        # S:ADDRESS      列的Value存放学生地址；
+        # IDX:X            列的Value存放一个任意字节，用来表示这个(Rowkey,IDX,X)这个cell的存在性；
+```
+
+这里的rowkey做了特殊化设计，假设某个Region对应的rowkey区间为[startKey，endKey），索引列簇的Rowkey设计为：
+
+```
+rowkey=startKey:ID_NO:STUDENT_ID
+```
+
+即索引列簇的rowkey是由startKey、身份证号和学号拼接组成，这里的startKey就是当前Region区间的起始端点。
+
+这种设计能保证索引列的rowkey和数据列的rowkey落在同一个Region内，也就能保证同一行的数据列和索引列更新的原子性。
+
+图16-1显示了[2017，2020）这个Region的数据分布。
+
+<img src="../../pics/hbase/hbase_141.png" align=left width=800>
+
+首先，前面4行数据表示身份证到学号的局部二级索引数据，2017:004X:20180204这种格式的rowkey是索引列rowkey，表示Region的区间起始端点是2017，004X表示学生的身份证号，20180204表示该学生的学号。
+
+注意，前面4行数据的S:ID_NO，S:SEX和S:ADDRESS列都是空的，因为索引列只存储（身份证号，学号）映射关系。
+
+后面4行数据则表示学生的真实信息，即每个学号对应学生的身份证号，性别和地址，这4行数据在IDX:X列上不会存储任何数据。
+
+当新增一条学生信息（20180212，007F，M，WuHan）时，需要在同一个Region写入两行数据，两行数据如图16-2所示。由于可以保证Region内多行操作的原子性，所以索引行和数据行更新的原子性也就得到了保障。
+
+<img src="../../pics/hbase/hbase_142.png" align=left width=800>
+
+读取时，根据学号20180204读取学生信息，明显可以直接根据学号rowkey找到学生其余的详细信息；而根据身份证号0078查找学生的信息则会稍微复杂一点：
+
+1）需要确认可能包含0078这个身份证号的Region集合
+
+2）对Region集合中的每个Region，把Region的startKey和0078拼成一个字节串，例如2017:0078，然后以这个字节串为前缀扫描当前Region，对返回的rowkey进行解析获得学号信息
+
+3）按照学号去Region中点查对应的学生信息。
+
+
+
+具体实现时，为了保证读写操作的原子性，需要使用自定义的Coprocessor。这种设计的好处是充分利用了Region内的原子性和HBase本身提供的Coprocessor机制，优雅地实现了Region内部的局部二级索引。这种方案已经可以从很大程度上解决非rowkey字段查询扫表效率低的问题。但毕竟是局部索引，根据身份证号查询学生信息时，需要去每个Region都读两次，效率会受到一定影响。
+
+
+
+### (2) 全局二级索引
+
+全局二级索引，是为整个表的某个字段建立一个全表级别的索引。仍以上述大学生信息表为例，需要建立如下HBase表：
+
+```
+        create 'student' \
+            {NAME=>'S',    VERSIONS=>1, BLOOMFILTER=>'ROW'}, \
+            {NAME=>'IDX', VERSIONS=>1, BLOOMFILTER=>'ROW'}
+        # ROW_KEY         存放学生学号；
+        # S:ID_NO         列的Value存放身份证号；
+        # S:SEX           列的Value存放学生性别；
+        # S:ADDRESS      列的Value存放学生地址；
+        # IDX:X           列的Value存放学生学号；
+```
+
+这个表中的rowkey有两种含义：
+
+1）ROWKEY=20180203这种格式，我们认为该rowkey是学生的学号，S:ID_NO，S:SEX，S:ADDRESS列对应用户的信息，而IDX:X列不存储任何信息
+
+2）ROWKEY=MD5HEX(007F):007F这种格式，我们认为该rowkey是学生身份证号到学号的全局索引信息，S:ID_NO，S:SEX，S:ADDRESS列都为空，而IDX:X列存储学生的学号。
+
+
+
+和局部二级索引不同的是，同一个Region内的学生数据对应的二级索引数据，分散在整个表的各个Region上，因此写入一条学生信息时，为了保证原子性，就需要有可靠的跨Region的跨行事务来保证。而HBase目前并不能做到这一点，这就需要依靠分布式事务协议来保证了。
+
+读取的时候，比较简单，直接根据身份证生成对应的rowkey进行点查即可，全局二级索引比局部二级索引要快很多。
+
+### (3) 总结
+
+局部二级索引的写入性能很高，因为直接通过Region内部的原子Batch操作即可完成，但是读取的时候需要考虑每个Region是否包含对应的数据，适合写多读少的场景。全局二级索引的写入需要通过分布式事务协议来保证跨Region跨行事务的原子性，实现比局部二级索引复杂很多，写入的性能要比局部二级索引差很多，但是读取性能好很多，适合写少读多的场景。
 
 
 
 ## 2、单行事务和跨行事务
 
+事务是任何数据库系统都无法逃避的一个核心话题，它指的是如何保证一批操作满足ACID特性。
+
+- A（Atomicity），即原子性。这批操作执行的结果只有两种，一种是所有操作都成功，另一种是所有操作都失败。不容许存在部分操作成功，而另一部分操作失败的情况
+- C（Consistency），即一致性。数据库内会设置众多约束（例如MySQL中的主键唯一性约束、主键索引和二级索引保持严格一致等），无论事务成功或失败，都不能破坏预设约束
+- I（Isolation），即隔离性。多个事务之间容许并发运行，设计什么样的隔离级别，决定了并发事务读取到的数据版本。常见的隔离级别有5种，分别是ReadUncommited、ReadCommitted、RepeatableRead、Snapshot、Serializable
+- D（Durability），即持久性。表示一个事务一旦成功提交，则所有数据都被持久化到磁盘中，即使系统断电重启，依然能读取到之前成功提交的事务结果。
 
 
 
-
-## 3、HBase 开发与测试
-
+目前，HBase支持Region级别的事务，也就是说HBase能保证在同一个Region内部的多个操作的ACID，无法支持表级别的全局ACID。当然，我们普遍认为HBase仅支持行级别的ACID，因为目前HBase HTable支持的接口基本都是行级别的事务；如果用户希望使用Region级别的事务操作，需要通过MultiRowMutationEndpoint这个coprocessor来实现。
 
 
+
+### (1) 单行事务
+
+在HBase中，一行数据下面有多个Column Family，所谓单行事务就是，HBase能保证该行内的多个Column Family的多个操作的ACID特性。
+
+### (2) 跨行事务
+
+对于很多使用HBase的用户来说，他们发现在很多时候HBase原生支持的单行事务并不够用，一旦想在一个事务中支持多行数据的更改，则没法通过HBase直接解决这个问题，典型例子是全局二级索引场景。在Google BigTable的很多内部用户中，同样面临类似的问题，因此，Google后续设计了Pecolator协议来实现分布式跨行事务，其本质是借助BigTable的单行事务来实现分布式跨行事务。下面我们将探讨如何基于BigTable来实现分布式跨行事务。
+
+
+
+首先，设计一个分布式跨行事务协议需要注意哪些事项呢？
+
+- 分布式系统中的事务操作一般都要求高吞吐、高并发。因此，希望设计出来的分布式事务具有扩展能力，BigTable/HBase支持的高吞吐量不会因为上层设计的分布式事务协议而大幅受限
+- 需要设计一个全局的时间戳服务。在分布式系统中，由于各个机器之间时间无法做到精确同步，不精确的时间会导致无法评定众多并发事务的先后顺序，也就无法有效保证事务的隔离性。HBase或者BigTable之所以只能支持Region内事务，无法支持跨Region的事务，最关键的原因是，cell的时间戳是按照Region级别划分的，而多个Region之间的时间戳无法保证全局有序
+- 设计一个全局的锁检测服务。两个并发事务不能修改同一行记录，而且要避免两个事务出现死锁。要做到这一点就必须有一个全局的锁检测服务，但是这个全局锁检测服务必须保证高吞吐。此外，全局锁服务还必须具备容错性
+- 保证跨行事务操作的ACID。
+
+
+
+那么，Pecolator协议是如何来解决这些问题的呢？下面简要介绍Pecolator是如何基于HBase/BigTable单行事务实现跨行事务的。后续将以Percolator论文中依赖的各服务组件来介绍，其中BigTable对应HBase，GFS对应HDFS，Tablet Server对应HBase的RegienServer，ChunkServer对应HDFS的DataNode，Chubby对应ZooKeeper。
+
+
+
+先从整体来看Percolator协议的架构，如图16-3所示。
+
+<img src="../../pics/hbase/hbase_143.png" align=left width=800>
+
+在Google集群中，每一个机器上同时部署了三种服务：Percolator，BigTable的Tablet Server，GFS的ChunkServer。这些服务又依赖Chubby来提供高吞吐、低延迟的分布式锁服务和协调服务。对于Percolator来说，主要引入了2个服务：
+
+- Timestamp Oracle，用来提供一个全局自增的逻辑时间戳服务，注意这里的时间戳是逻辑时间戳，并非Linux的物理时间戳。这个服务实现非常轻量级
+- Percolator，在论文中一般都称Percolator worker服务，本质上是借助BigTable客户端来实现Percolator协议的服务。Pecolator worker主要用来响应来自客户端的分布式事务RPC请求，多个Pecolator worker之间无任何状态依赖，因此可以通过部署众多Percolator worker来实现服务横向扩展。
+
+
+
+Percolator客户端发起一个分布式事务时，Percolator服务端将按照以下步骤来实现。
+
+1）向Timestamp Oracle服务发请求，请求分配一个自增的ID，用来表示当前事务的开始时间戳start_ts
+
+2）Percolator客户端向Percolator Worker发起Pwrite请求，这里Pwrite请求是2PC提交中的第一步，此时数据已经成功写入BigTable，但对其他事务尚不可见
+
+3）Percolator客户端向Timestamp Oracle服务再次请求分配一个自增的ID，用来表示当前事务的提交时间戳commit_ts
+
+4）Percolator客户端向Percolator Worker服务发起Commit请求，这是2PC提交中的第二步，该Commit操作执行成功后将对其他事务可见。
+
+另外，对BigTable中的一个表采用Percolator实现分布式事务后，需要在同一个Family下增加两个Column，分别叫做lock列和write列，其中lock列用来存放事务协调过程中需要用的锁信息，write列用来存放当前行的可见时间戳版本。这里以Family=bal为例，新增的两个列名为bal:lock和bal:write。
+
+
+
+下面将以Bob向Joe转账7美金为例，阐述跨行事务的运行机制。
+
+在初始状态下，Bob账户内有10美金，最近一次事务提交的时间戳是5（对应Bob这行的bal:write列，其中data @5表示该行当前可见版本为5）；Joe账户下有2美金，最近一次事务提交的时间戳也是5。
+
+<img src="../../pics/hbase/hbase_144.png" align=left width=800>
+
+首先，对Bob账户进行Pwrite操作，往Bob这个rowkey下写入一行timestamp=7的数据，其中bal:data列为3美金，bal:lock列标明当前行是分布式事务的主锁。这里，主锁表示整个事务是否成功执行，若主锁所在行的操作成功执行，则表示整个分布式事务成功执行；若主锁所在行执行失败，则整个分布式事务失败，将回滚。
+
+<img src="../../pics/hbase/hbase_145.png" align=left width=800>
+
+在对Bob账号成功完成Pwrite之后，开始对Joe账号进行Pwrite操作：往Joe这个rowkey下写入一行timestamp=7的数据，其中bal:data列为9美金，bal:lock列标明当前行是分布式事务的指向主锁的从锁，其主锁是Bol行的bal这个Column Family。从锁行是否提交成功并不影响整个分布式事务成功与否，只要主锁所在行提交成功，则后续会异步的将从锁行提交成功。
+
+<img src="../../pics/hbase/hbase_146.png" align=left width=800>
+
+在Bob账户和Joe账户都成功执行完Pwrite之后，表示分布式事务2PC的第一阶段已经成功完成。注意，虽然Pwrite对Bob行和Joe行分别写入了两行数据，但这两行数据并不能被其他事务读取，因为当前的bal:write列存放的时间戳仍然是5。若想被其他事务成功读取，必须执行2PC的第二个阶段：Commit阶段。
+
+<img src="../../pics/hbase/hbase_147.png" align=left width=800>
+
+Commit阶段会按照行数拆分成BigTable的多个单行事务。首先，Commit主锁所在的行数据：
+
+1）往Bob行写入一个cell，将bal:write列设为7，表示该行最近一次事务提交的时间戳是7
+
+2）在Bob行写入一个删除cell，将timestamp=7的bal:lock主锁信息删除。
+
+由于BigTable的单行事务保证，上述对Bob行写入cell和删除cell的操作是原子的。一旦成功执行，则标志着整个分布式跨行事务已经成功执行。
+
+<img src="../../pics/hbase/hbase_148.png" align=left width=800>
+
+在主锁所在行成功Commit之后，虽然分布式事务已经成功提交，结果已经能被其他事务读到，但是，Percolater协议仍然会尝试提交从锁行的数据，因为若此时不提交，则需要推迟到后续读流程中提交，这样会拉升读取操作的延迟。从锁行Commit和主锁行Commit流程类似，向所在行原子地写入一个cell和删除一个cell，表示该行数据已经成功提交。
+
+上述讨论的都是分布式事务提交的成功流程，但是一旦放到分布式系统中，可能出现各种各样的异常情况。如果是BigTable层面出现机器宕机，并不影响Percolator协议的整体执行流程，因为BigTable即使发生Tablet Server宕机，单行事务的原子性依然能保证，Percolator协议的依赖条件依然没变。所以，我们在主要关注Percolator Client的各RPC异常。
+
+
+
+为方便读者更好理解，下面引用了Percolator论文中的算法伪代码：
+
+<img src="../../pics/hbase/hbase_149.png" align=left width=800>
+
+首先，进行get操作时，先检查在start_ts之前该行是否仍然遗留着lock信息，若有，则说明该行尚有其他未提交或者被异常中断提交的事务，此时需要尝试清理该行的锁信息。如果是从锁行，则直接根据从锁引用去找主锁行，若主锁行事务已经提交，则直接清理掉该从锁行的lock信息，因为分布式事务已经在主锁行提交完成时成功提交。若主锁行尚未提交，检查该主锁是否超过最长持锁时间（或者持有该主锁的Percolator worker进程已经退出），若是，则直接清理主锁，表示分布式事务失败；否则继续休眠重试。
+
+在处理完遗留的锁信息之后，客户端开始确定当前能读取的最近一次成功提交的时间戳，然后用该时间戳去get数据。
+
+
+
+下面是Pwrite流程的伪代码：
+
+<img src="../../pics/hbase/hbase_150.png" align=left width=800>
+
+注意在32行和34行分别有两个判断。第一个判断是说在当前事务开始后，已经产生了成功提交的事务，此时当前事务应该失败回滚（上层可以重试）；第二个判断是说，当前行仍然有其他未提交的事务在执行，此时也应该将当前分布式事务标记为失败回滚。
+
+注意，在Pwrite阶段，任何一行Pwrite操作失败，都将导致整个分布式事务失败回滚。回滚的方式很简单，就是异步地将Pwrite对应timestamp的行数据删除，由于清除后并没有将write列推向更新的时间戳，所以，本质上其他分布式事务仍然只能读取到该分布式事务开始之前的结果。
+
+
+
+下面这一段代码表示Commit阶段。由于在调用Transaction.Set(..)时，是将write操作append到本地buffer的，所以这里把Pwrite操作移到了在Commit()方法中执行。流程很简单，先对每一行做Pwrite，然后对主锁行进行Commit，最后对从锁行进行Commit。
+
+<img src="../../pics/hbase/hbase_151.png" align=left width=800>
+
+如果在Pwrite阶段发生失败，则整个分布式事务都将失败回滚。比较麻烦的问题是，如果在Commit主锁时Percolator Worker进程退出，此时无论主锁行还是从锁行都遗留了一个lock信息，后续读取时将很难确定当前事务该回滚还是该成功提交。Percolator的做法是，在lock列存入Percolator Worker的信息，在get操作检查lock时，发现lock中存的Percolator Worker已经宕机，则直接清理该lock信息。当然，另一种可能是Percolator worker并没有宕机，但是该事务却卡住很长时间了，一旦发现主锁超过最长持锁时间，客户端可直接将lock删除，避免出现某行被长期锁住的风险。
+
+
+
+### (3) 总结
+
+Percolator协议本质上是借助BigTable/HBase的单行事务来实现分布式跨行事务，主要的优点有：
+
+- 基于BigTable/HBase的行级事务，实现了分布式事务协议。代码实现较为简单
+- 每一行的行锁信息都存储在各自的行内，锁信息是分布式存储在各个节点上的。换句话说，全局锁服务是去中心化的，不会限制整个系统的吞吐。
+
+
+
+当然，Percolator协议最大的问题就是依赖中心化的逻辑时钟，每一个事务在开始和提交时都需要取一次逻辑的timestamp，这就决定了集群无法无限扩展。例如一个中心化的Timestamp Oracle服务，每秒可以提供200万的时间戳服务，也就决定了整个集群的事务吞吐量不可能超过每秒200万。当然，可以尝试通过将大集群拆分成多个小集群来获得更高的整体吞吐量。Percolator协议另外一个问题就是采用乐观锁机制，相比MySQL的悲观锁机制，表现行为还是有一些不一致。最后值得注意的一点是，在事务执行过程中，写入都是先缓存在本地buffer中的，因此需要控制事务的更新数据量。
+
+Percolator协议目前已经在很多分布式系统中应用，小米实现的Themis系统以及流行的NewSQL系统（如TiDB）都采用了Percolator协议实现分布式跨行事务。
