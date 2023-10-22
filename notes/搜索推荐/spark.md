@@ -36,7 +36,122 @@ Spark 以核心组件的形式一站式地提供了带有详细文档的各种�
 
 - 还可以扩展 Spark 的 DataFrameReader 和 DataFrameWriter，以便将其他数据源的数据读取为DataFrame 的逻辑数据抽象，以进行操作
 
-## 2、一站式数据分析
+## 2、spark 部署模式
+
+### (1) Standalone部署模式
+
+- Standalone 部署模式与 Hadoop MapReduce 部署模式基本类似，唯一区别是 Hadoop MapReduce 部署模式为每个 task 启动一个 JVM进程运行，而且是在 task 将要运行时启动 JVM，而 Spark 是预先启动资源容器(Executor JVM)，然后当需要执行task时，再在 Executor JVM里启动task线程运行
+
+- 在运行大数据应用前，大数据处理框架还需要对用户提交的应用 (job)及其计算任务(task)进行调度。任务调度的主要目的：通过设置不同的策略来决定应用或任务获得资源的先后顺序。典型的任务调度 器包含先进先出(FIFO)调度器、公平(Fair)调度器等
+
+### (2) YARN部署模式
+
+- YARN 能够同时为集群中运行的多种框架(如Hadoop MapReduce， Spark)提供资源管理等服务
+
+- 用户可以直接将应用提交给YARN，并且 在提交应用时指定应用的资源需求，如CPU个数和内存空间大小等
+
+---
+
+配置参数：
+
+- `spark opts`：
+
+    - `deploy-mode=cluster`
+
+    - `master=yarn`
+
+    - `class=com.xxx.LabelExpectNlpHbaseSpark`
+
+    - `driver-cores=12`
+
+    - `driver-memory=10g`
+
+    - `executor-memory=10g`
+
+    - `executor-cores=12`
+
+    - `num-executors=100`
+
+    - **jars**     
+
+        **packages**    
+
+        **files**     
+
+        **driver-java-options** 
+
+        **driver-library-path** 
+
+        **total-executor-cores** 
+
+        **num-executors**   
+
+        **exclude-packages**  
+
+        **driver-class-path**  
+
+- `spark conf`：
+
+    - `spark.driver.maxResultSize=4g`
+
+    - `spark.default.parallelism=1200`
+
+    - `spark.executor.memoryOverhead=2g`
+
+    - `spark.driver.memoryOverhead=2g`
+
+    - `spark.yarn.maxAppAttempts=3`
+
+    - `spark.yarn.submit.waitAppCompletion=true`
+
+    - **spark.port.maxRetries**     
+
+        **spark.default.parallelism**    
+
+        **spark.kryoserializer.buffer.max**   
+
+        **spark.shuffle.io.maxRetries**    
+
+        **spark.shuffle.io.retryWait**    
+
+        **spark.executor.memoryOverhead**   
+
+        **spark.driver.memoryOverhead**    
+
+        **spark.yarn.maxAppAttempts**    
+
+        **spark.yarn.submit.waitAppCompletion**  
+
+        **spark.network.timeout**     
+
+        **spark.executor.heartbeatInterval**  
+
+        **spark.core.connection.ack.wait.timeout** 
+
+        **spark.task.maxFailures**  
+
+### (3) Mesos部署模式
+
+Mesos 与 YARN 类似，可以对集群上各种应用进行资源分配与任务调度，支持 MapReduce 作业、Spark 作业、MPI 作业 等
+
+
+
+
+
+## 3、Map/Reduce
+
+<img src="../../pics/spark/spark_47.png" align=left  width=1200>
+
+① : 每个数据的Split对应一个Map任务作为Map的输入，一般来说是HDFS的一个Block。
+② : Map产生的数据会先写入到一个环形的内存的Buffer空间里。
+③ : 当Buffer满了以后, 会Spill溢出数据到磁盘里。在溢出之前会先按照Partition函数对数据进行分区(默认是取key的hash值然后根据Reducer的个数进行取模)，然后按照Key进行排序(快速排序)。如果设置了Combiner会在写入磁盘前，对数据进行Combine操作，通过减少key的数据量来减轻Reducer拉取数据的网络传输。
+④ : 最后将所有的溢出文件合并为一个文件，合并的过程中按照分区按照key进行排序（归并排序）, 如果溢出文件超过一定的数量（可配置)， 会在合并的前还会执行Combine操作（如果设置了Combiner）。
+⑤ : 当Map端有任务完成后，Reducer端就会启动对应的fetch & copy线程去从Map端复制数据。
+⑥ : 当Copy过来的数据内存中放不下后，会往磁盘写，写之前会先进行merge和sort操作（归并排序），combiner操作，最终会合并得到一份Reduce的输入数据。
+⑦ : 当输入数据准备好后，进行Reduce操作。
+⑧ : 输出数据到指定的位置。
+
+## 4、一站式数据分析
 
 ### (1) 由 Spark 组件组成的一站式软件栈
 
@@ -224,6 +339,890 @@ print(log_df.rdd.getNumPartitions())
 df = spark.range(0, 10000, 1, 8)
 print(df.rdd.getNumPartitions())
 ```
+
+# 二、spark 架构与应用
+
+## 1、Spark系统架构
+
+Spark也采用 Master-Worker结构：
+
+- 每个Worker进程存在一个或多个ExecutorRunner对象，每个 ExecutorRunner对象管理一个Executor，Executor持有一个线程池，每个 线程执行一个task
+- Worker进程通过持有ExecutorRunner对象来控制 CoarseGrainedExecutorBackend进程的启停
+- 每个Spark应用启动一个Driver和多个Executor，每个Executor里面运行的task都属于同一个Spark应用
+
+<img src="../../pics/spark/spark_48.png" align=left width=900>
+
+Master节点和Worker节点的具体功能：
+
+- **Master 节点上常驻 Master 进程**：该进程负责管理全部的Worker节点，如将Spark任务分配给Worker节点，收集Worker节点上任务的运行 信息，监控Worker节点的存活状态等
+- **Worker节点上常驻Worker进程**：该进程除了与Master节点通信， 还负责管理Spark任务的执行，如启动Executor来执行具体的Spark任 务，监控任务运行状态等
+
+---
+
+案例：提交一个名为 SparkPi 的应用。Master 节点接收到应用后首先会通知 Worker 节点启动 Executor，然后分配 Spark 计算任务(task)到 Executor上执行，Executor 接收到 task 后，为每个 task 启动 1 个线程来执行
+
+- `Spark application`：即 Spark 应用，指的是1个可运行的Spark程序， 如WordCount.scala
+
+    > 该程序包含main()函数，其数据处理流程一般先从数据源读取数据，再处理数据，最后输出结果
+    >
+    > 同时，应用程序也包 含了一些配置参数，如需要占用的 CPU 个数，Executor 内存大小等
+
+- `Spark Driver`：即 Spark 驱动程序，指实际在运行 Spark 应用中 main() 函数的进程。如果是YARN集群，那么 Driver也可能被调度到Worker节点上运行
+
+- `Executor`：即 Spark 执行器，是Spark计算资源的一个单位。 Spark先以Executor为单位占用集群资源，然后可以将具体的计算任务分配给Executor执行
+
+    > 由于 Spark 由 Scala 语言编写，Executor 在物理上是一个JVM进程，可以运行多个线程(计算任务)
+    >
+    > Worker 进程实际只负责启停和观察 Executor 的执行情况
+
+- `task`：即 Spark 应用的计算任务，Driver在运行Spark应用的 main()函数时，会将应用拆分为多个计算任务，然后分配给多个 Executor执行
+
+    - task 是 Spark 中最小的计算单位，不能再拆分
+    - task 以线程方式运行在 Executor 进程中，执行具体的计算任务，如map算子、reduce 算子等
+    - 由于 Executor 可以配置多个CPU，而1个task一般使用1个CPU， 因此当Executor具有多个CPU时，可以运行多个task
+
+## 2、spark 案例分析
+
+### (1) 案例代码
+
+以 Spark 自带的 example 包中的 GroupByTest.scala 为例：模拟了SQL中的GroupBy语句，即将具有相同Key的 `<Key， Value>record` 聚合在一 起
+
+---
+
+启动命令：
+
+```shell
+GroupByTest.scala [numMappers] [numKVPairs] [valSize] [numReducers]
+bin/run-example GroupByTest 3 4 1000 2
+```
+
+该命令启动 GroupByTest 应用:
+
+- 该应用包括 3 个map task，每个 task 随机生成4个 `<K，V>record`，record 中的 Key 从[0，1，2，3]中随 机抽取一个产生，每个 Value 大小为 1000 byte
+
+- 由于 Key 随机产生具有重复性，所以可以通过 GroupBy 将具有相同 Key 的 record 聚合在一 起，这个聚合过程最终使用 2 个 reduce task 并行执行
+
+---
+
+注意：
+
+- **不需要指定 map task 个数**，因为 map task 的个数可以通过“输入数据大小/每个分片大小”来确定
+
+    > 例如：HDFS上的默认文件 block 大小为 128MB，假设有1GB 的文件需要处理，那么系统会自动算出需要启动 `1GB/128MB=8个 map task` 
+
+- reduce task 的个数一般在使用算子时通过设置 partition number 来间接设置
+
+---
+
+GroupByTest 具体代码如下：
+
+<img src="../../pics/spark/spark_49.png" align=left width=700>
+
+执行步骤拆解如下：
+
+- **初始化 SparkSession**：主要是初始化 Spark 的一些环境变量，得到 Spark 的一些上下文信息 sparkContext，使得后面的一些操作函 数(如flatMap()等)能够被编译器识别和使用，这一步同时创建 GroupByTest Driver，并初始化Driver所需要的各种对象
+
+- 设置参数 numMappers=3，numKVPairs=4，valSize=1000， numReducers=2
+
+- 使用 `sparkContext.parallelize(0 until numMappers，numMappers)` 将[0，1，2]划分为3份，即每一份包含一个数字 *p* ={ *p* =0， *p* =1， *p* =2}
+
+    > 接下来flatMap()的计算逻辑是对于每一个数字 *p* (如 *p* =0)，生成一个数组arr1:Array[(Int，Byte[])]，数组长度为 numKVPairs=4
+    >
+    > 数组中的每个元素是一个(Int，Byte[])对，其中Int为 [0，3]上随机生成的整数，Byte[]是一个长度为1000的数组
+    >
+    > 因为 *p* 只 有3个值，所以该程序总共生成3个arr1数组，被命名为pairs1，pairs1被 声明为需要缓存到内存中
+
+- 接下来，执行一个 action() 操作 pairs1.count() 来统计 pairs1 中所有 arr1 中的元素个数，执行结果应该是 numMappers*numKVPairs=3×4=12
+
+    > 注意：缓存操作在这一步才执行，因为pairs1实际在执行action()操作后才会被生成，这种延迟(lazy)计算的方式与普通Java程序有所区别。
+    >
+    > action()操作的含义是触发Spark执行数据处理流程、进行计算的操作，即需要输出结果
+
+- 在已经被缓存的pairs1上执行 groupByKey()操作将具有相同Key的 `<Int，Byte[]>record` 聚合在一起，得到&lt;Int，list (Byte[1000]， Byte[1000]，...，Byte[1000])&gt;，总的结果被命名为results
+
+    > Spark 实际在执行这一步时，由多个 reduce task 来完成，reduce task 的个数等于 numReducers
+
+- 最后执行 results.count()，count()将results中所有record个数进 行加和，得到结果4，这个结果也是pairs1中不同Key的总个数
+
+### (2) 逻辑处理流程
+
+**Spark 的实际执行流程**：
+
+- 先建立 DAG 型的逻辑处理流程(Logical plan)
+- 然后根据逻辑处理流程生成物理执行计划(Physical plan)，物理执行计划中包含具体的计算任务(task)
+- 最后 Spark 将 task 分配到多台机器上执行
+
+---
+
+由于 GroupByTest 进行了两次 action() 操作: pairs1.count()和results.count()，所以会生成两个Spark作业 (job)：
+
+- **第1个job，即 pairs1.count() 的执行流程如下所述**：
+
+    - input 是输入一个 [0，1，2] 的普通 Scala 数组
+
+    - 执行 input.parallelize() 操作产生一个 ParrallelCollectionRDD，共 3个分区，每个分区包含一个整数 *p* 
+
+        > **这一步的重要性**：
+        >
+        > - 将 input 转化成 Spark 系统可以操作的数据类型 ParrallelCollectionRDD，即 input 数组仅仅是一个普通的 Scala 变量，并不是Spark 可以并行操作的数据类型
+        > - 在对 input 进行划分后生成了 ParrallelCollectionRDD，这个 RDD 是 Spark 可以识别和并行操作的类型
+        > - ParrallelCollectionRDD 可以有多个分区，分区的意义在于可以使不同的 task 并行处理这些分区
+        >
+        > RDD(Resilient Distributed Datasets)的含义 是“并行数据集的抽象表示”，实际上是 Spark 对数据处理流程中形成的中间数据的一个抽象表示或者叫抽象类，这个类就像 一个“分布式数组”，包含相同类型的元素，但元素可以分布在不同机器 上
+
+    - 在ParrallelCollectionRDD上执行flatMap()操作，生成 MapPartitionsRDD，该RDD同样包含3个分区，每个分区包含一个通过 flatMap()代码生成的arr1数组
+
+    - 执行 paris1.count() 操作，先在 MapPartitionsRDD 的每个分区上进行 count()，得到部分结果，然后将结果汇总到 Driver 端，在 Driver 端进行加和得到最终结果
+
+    - 由于 MapPartitionsRDD 被声明要缓存到内存中，缓存的意思是将某些可以重用的输入数据或中间计算结果存放到内存中，以减少后续计算时间
+
+- **第2个job，即 results.count() 的执行流程如下所述**：
+
+    - 在已经被缓存的 MapPartitionsRDD 上执行 groupByKey() 操作， 产生了另外一个名为 ShuffledRDD 的中间数据，即 results
+
+        > ShuffledRDD 与 MapPartitionsRDD 具有不同的分区个数，这样MapPartitionsRDD与ShuffledRDD之间的分区关系就不是一对 一的，而是多对多
+
+    - ShuffledRDD 中的数据是 MapPartitionsRDD 中数据聚合的结果，而且在不同的分区中具有不同 Key 的数据
+
+    - 执行 results.count()，首先在 ShuffledRDD 中每个分区上进行 count() 的运算，然后将结果汇总到 Driver 端进行加和，得到最终结果
+
+<img src="../../pics/spark/spark_50.png" align=left width=800>
+
+### (3) 物理执行计划
+
+Spark 根据数据依赖关系，来将逻辑处理流程转化为物理执行计划，包括执行阶段 (stage)和执行任务(task)，具体包括以下3个步骤：
+
+1. **首先，确定应用会产生哪些作业(job)**：在 GroupByTest 中， 有两个 count() 的 action() 操作，因此会产生两个 job
+
+2. **其次，根据逻辑处理流程中的数据依赖关系，将每个 job 的处理流程拆分为执行阶段(stage)** 
+
+    > job 0 中的两个RDD虽然独立，但这两个RDD之间的数据依赖是一对一 的关系，因此可以将这两个RDD放在一起处理，形成 一个stage，编号为stage 0
+    >
+    > job 1 中的 MapPartitionsRDD 与 ShuffledRDD 是多对多的关系，Spark将这两个RDD分别处理，形成两个执行阶段stage 0和stage 1
+
+3. **最后，对于每一个stage，根据 RDD 的分区个数确定执行的 task个数和种类**。
+
+    > job 0 中的RDD包含3个分 区，因此形成3个计算任务(task)
+    >
+    > - 首先，每个 task 从 input 中读取数据，进行 flatMap() 操作，生成一个 arr1 数组
+    > - 然后，对该数组进行 count() 操作得到结果4，完成计算
+    > - 最后，Driver 将每个 task 的执行结果收集起来，加和计算得到结果 12
+    >
+    > 对于job 1：
+    >
+    > - stage 0 只包含 MapPartitionsRDD，共3个分区，因此生成3个task。每个task从内存中读取已经被缓存的数据，根据这些数据Key的Hash值将数据写到磁盘中的不同文件中，这一步是为了将数据分配到下一个阶段的不同 task中
+    > - stage 1只包含 ShuffledRDD，共两个分区，也就是生成两个task，每个task从上一阶段输出的数据中根据Key的Hash值得到属于 自己的数据
+    >
+    > 从 stage 0 到 stage 1 的数据分区和获取的过程称为**Shuffle机制**，即数据经过了混洗、重新分配，并且从一个阶段传递到了下一个阶段
+    >
+    > stage 1 中的task将相同 Key 的 record 聚合在 一起，统计 Key 的个数作为 count() 的结果，完成计算
+    >
+    > Driver 再将所有 task 的结果进行加和输出，完成计算
+
+<img src="../../pics/spark/spark_51.png" align=left width=900>
+
+4. **生成执行任务 task 后，可以将 task 调度到 Executor 上执行，在同一个 stage 中的 task 可以并行执行**
+
+---
+
+**为什么要拆分为执行阶段**：
+
+- 如果将每个操作都当作一个任务，那么效率太低，而且错误容忍比较困难
+- 将 job 划分为执行阶段 stage 后：
+    - 第1个好处是 stage 中生成的 task 不会太大，也不会太小，而且是同构的，便于并行执行
+    - 第2个好处是可以将多个操作放在一个 task 里处理，使得操作可以进行串行、流水线式的处理，这样可以提高数据处理效率
+    - 第3个好处是 stage 可以方便错误容忍，如一个stage失效，可以重新运行这个 stage，而不需要运行整个job
+
+# 三、spark 逻辑处理流程
+
+## 1、Spark 逻辑处理流程概览
+
+**一个典型的 Spark 逻辑处理流程**：
+
+<img src="../../pics/spark/spark_52.png" align=left width=900>
+
+**这个典型的逻辑处理流程主要包含四部分**：
+
+1. **数据源(Data blocks)**：其表示原始数据，数据可以存放在本地文件系统和分布式文件系统中，如 HDFS、分布式Key- Value数据库(HBase)等
+
+2. **数据模型**：需要对数据进行操作处理，即如何对输入/输出、中间数据进行抽象表示，使得程序能够识别处理
+
+    > Hadoop MapReduce 框架将输入/输出、中间数据抽象为 `<K，V>record`，这样 map()/reduce() 按照这个格式读入并处理数据，最后输出也是这个格式
+    >
+    > - **这种数据表示方式的优点**：简单易操作
+    > - **缺点**：过于细粒度。没有对这些 &lt;K，V&gt;record进行更高层的抽象，导致只能使用map(K，V) 这样的固定形式去处理数据，而无法使用类似面向对象程序的灵活数据处理方式
+    >
+    > ---
+    >
+    > Spark 将输入/输出、中间数据抽象表示为统一的数据模型(数据结构)，命名为RDD，每个输入/输出、中间数据可以是一个具体的实例化的 RDD
+    >
+    > RDD与普通数据结构(如ArrayList)的主要区别有两点：
+    >
+    > - RDD只是一个逻辑概念，在内存中并不会真正地为某个 RDD 分配存储空间(除非该RDD需要被缓存)。RDD中的数据只会在计算中产 生，而且在计算完成后就会消失，而ArrayList等数据结构常驻内存
+    > - RDD可以包含多个数据分区，不同数据分区可以由不同的任务 (task)在不同节点进行处理
+
+3. **数据操作**：Spark 将数据操作分为两种：transformation() 操作和 action() 操作
+
+    - 两者区别：
+
+        - **transformation() 操作**：单向操作，即 rdd1 使用 transformation() 后会生成新的 rdd2，而不能对 rdd1 本身进行修改
+
+            > 在 Spark 中，因为数据操作一般是单向操作，通过流水线执行，还需要进行错误容忍等，所以RDD被设计成一个不可变类型
+            >
+            > 一直使用 transformation()操作可以不断生成新的RDD，而action()操作用来计算最后的数据结果
+
+        - **action() 操作**：对数据结果进行后处理(post-processing)，产生输出结果，而且会触发 Spark 提交 job 真正执行数据处理任务
+
+4. **计算结果处理**：由于RDD实际上是分布在不同机器上的，所以大数据应用的结果计算分为两种方式：
+
+    - 一种方式：直接将计算结果存放到分布式文件系统中，如rdd.save(“hdfs://file_location”)，这种方式一般不需要在Driver端进行集中计算
+    - 另一种方式：需要在 Driver 端进行集中计算，如统计RDD中元素数目，需要先使用多个 task 统计每个RDD中分区(partition)的元素数目，然后将它们汇集到 Driver 端进行加和计算
+
+## 2、Spark 逻辑处理流程生成方法
+
+Spark 要有一套通用的方法，其能够将应用程序自动转化为确定性的逻辑处理流程，即 RDD 及其之间的数据依赖关系，因此需要解决以下3个问题：
+
+- 根据应用程序如何产生 RDD，产生什么样的 RDD? 
+- 如何建立 RDD 之间的数据依赖关系? 
+- 如何对RDD内部的数据进行分区?
+- 如何计算 RDD 中的数据?
+
+### (1) 根据应用程序如何产生RDD，产生什么样的 RDD
+
+- 虽然用 RDD 来对输入/输出、中间数据进行统一抽象，但这些数据本身可能具有不同的类型，而且是由不同的计算逻辑得到，可能具有不同的依赖关系。
+
+- 因此需要多种类型的 RDD 来表示这些不同的数据类型、不同的计算逻辑，以及不同的数据依赖。
+
+Spark 实际产生的 RDD 类型和个数与 transformation() 的计算逻辑有关：
+
+- 如在 rdd1上使用map(func)进行操作时，是对rdd1中每一个元素执行 func()函数得到一个新的元素，因此只会生成一个rdd2
+
+- 如 join()、distinct() 等，需要对中间数据进行一系列子操作，那么一个 transformation() 会创建多个RDD
+
+    > 例如，rdd3=rdd1.join(rdd2)需要先将rdd1和rdd2中的元素聚合在一起，然后使用笛卡儿积操作生成关联后的结果，在这个过程中会生成多个 RDD。Spark依据这些子操作的顺序，将生成的多个RDD串联在一起， 而且只返回给用户最后生成的RDD
+
+### (2) 如何建立RDD间的数据依赖关系
+
+数据依赖关系包括两 方面：
+
+- 一方面是 RDD 之间的依赖关系，如一些 transformation() 会对多个 RDD 进行操作，则需要建立这些 RDD 之间的关系
+- 另一方面是 RDD 本身具有分区特性，需要建立 RDD 自身分区之间的关联关系
+
+具体地， 需要解决以下3个问题：
+
+1. 如何建立 RDD 之间的数据依赖关系？例如，生成的RDD是依赖于一个parent RDD，还是多个parent RDD?
+
+    > 对于一元操作，如 rdd2=rdd1.transformation() 可以确定 rdd2 只依赖 rdd1，所以关联关系是 `rdd1 => rdd2`
+    >
+    > 对于二元操作，如 rdd3=rdd1.join(rdd2)，可以确定 rdd3 同时依赖 rdd1和 rdd2，关联关系是 `(rdd1，rdd2) => rdd3`
+
+2. 新生成的 RDD 应该包含多少个分区？
+
+    > 在Spark中，新生成的 RDD 分区个数由用户和 parent RDD 共同决定：
+    >
+    > - 对于一些 transformation()，如 join() 操作，可以指定其生成的分区的个数，如果个数不指定，则一般取其 parent RDD 的分区个数最大值
+    >
+    > - 还有 一些操作，如 map()，其生成的 RDD 的分区个数与数据源的分区个数相同
+
+3. 新生成的 RDD 与其 parent RDD 中的分区间是什么依赖关系?是依赖 parent RDD 中的一个分区还是多个分区呢？
+
+    > 分区之间的依赖关系既与 transformation() 的语义有关，也与 RDD 的分区个数有关
+    >
+    > 例如：
+    >
+    > - 在执行 rdd2=rdd1.map() 时，map() 对 rdd1 的每个分区中的每个元素进行计 算，可以得到新的元素，类似一一映射，所以并不需要改变分区个数， 即 rdd2 的每个分区唯一依赖 rdd1 中对应的一个分区
+    > - 而对于 groupByKey() 之类的聚合操作，在计算时需要对 parent RDD 中各个分 区的元素进行计算，需要改变分区之间的依赖关系，使得 RDD 中的每个分区依赖其 parent RDD 中的多个分区
+
+---
+
+Spark 是怎么设计出一个通用的方法来解决第3个问题，Spark通过总结这些数据操作的数据依 赖关系，将其分为两大类：
+
+- **窄依赖(NarrowDependency)**：新生成的 child RDD 中每个分区都依赖 parent RDD 中的一部分分区
+
+    > 窄依赖可以进一步细分为4种依赖：
+    >
+    > <img src="../../pics/spark/spark_53.png" align=left width=700>
+
+    - **一对一依赖(OneToOneDependency)**：表示child RDD 和 parent RDD 中的分区个数相同，并存在一一映射关系，比如 map()、fliter() 等
+    - **区域依赖(RangeDependency)**：表示 child RDD 和 parent RDD 的分区经过区域化后存在一一映射关系，比如 union() 等
+    - **多对一依赖(ManyToOneDependency)**：表示 child RDD 中的一个分区同时依赖多个 parent RDD 中的分区，比如具有特殊性质的 cogroup()、join() 等
+    - **多对多依赖(ManyToManyDependency)**：表示 child RDD 中的一 个分区依赖 parent RDD 中的多个分区，同时 parent RDD 中的一个分区被 child RDD 中的多个分区依赖，比如：cartesian()
+
+- **宽依赖(ShuffleDependency)**：新生成的 child RDD 中的分区依赖 parent RDD 中的每个分区的一部分
+
+    > ShuffleDependency 中 RDD 2 的每个分区虽然依赖 RDD 1 中的所有分区， 但只依赖这些分区中id为1或2的部分
+    >
+    > ManyToManyDependency 中 RDD 2 的每个分区依赖 RDD 1 中每个分区的所有部分
+
+**总结**：
+
+- 如果 parent RDD 的一个或多个分区中的数据需要**全部流入**child RDD 的某一个或者多个分区，则是**窄依赖**
+
+- 如果 parent RDD 分区中的数据需要一**部分流入** child RDD 的某一个 分区，另外一部分流入 child RDD 的另外分区，则是**宽依赖**
+
+---
+
+**对数据依赖进行分类的作用**：
+
+- 首先，可以明确 RDD 分区之间的数据依赖关系，在执行时 Spark 可以确定从哪里获取数据，输出数据到哪里
+
+- 其次，对数据依赖进行分类有利于生成物理执行计划
+
+    > NarrowDependency 在执行时可以在同一个阶段进行流水线(pipeline)操作，不需要进行Shuffle，而 ShuffleDependency 需要进行 Shufle
+
+- 最后，对数据依赖进行分类有利于代码实现
+
+    > 如 OneToOneDependency 可以采用一种实现方式，而 ShuffleDependency 采用另一种实现方式
+    >
+    > 这样，Spark 可以根据 transformation() 操作的计算逻辑选择合适的数据依赖进行实现
+
+### (3) 如何对RDD内部的数据进行分区
+
+> 在确定了数据依赖关系后，便知道了child RDD 中每个分区的输入数据是什么，那么只需要使用 transformation(func) 处理这些输入数据，将生成的数据推送到child RDD 中对应的分区即可
+
+**如何对RDD内部的数据进行分区，常用的数据分区方法(Partitioner)包括3种**：
+
+- **水平划分**：按照 record 的索引进行划分
+
+    > `sparkContext.parallelize(list(1,2,3,4,5,6,7,8,9),3)` 就是按照元素的下标划分，`(1,2,3)` 为一组，`(4,5,6)` 为一组， `(7,8,9)` 为一组
+    >
+    > 使用 Spark处理大数据时，先将输入数据上传到HDFS上，HDFS自动对数据进行水平划分，即按照128MB为单位将输入数据划分为很多个小数据块，之后每个 Spark task 可以只处理一个数据块
+
+- **Hash 划分**：使用 record 的 Hash 值来对数据进行划分，该划分方法的好处是只需要知道分区个数，就能将数据确定性地划分到某个分区
+
+    > 在水平划分中，由于每个 RDD 中的元素数目和排列顺序不固定，同一个元素在不同 RDD 中可能被划分到不同分区
+    >
+    > 而使用 HashPartitioner，可以根据元素的Hash值，确定性地得出该元素的分区，该划分方法经常被用于数据 Shuffle 阶段
+
+- **Range 划分**：该划分方法一般适用于排序任务，核心思想是按照元素的大小关系将其划分到不同分区，每个分区表示一个数据区域
+
+    > 例如：对一个数组进行排序，数组里每个数字是 [0,100] 中的随机数，Range 划分
+    >
+    > - 首先将上下界 [0,100] 划分为若干份(如10份)
+    > - 然后将数组中的每个数字分发到相应的分区，如将18分 发到(10，20]的分区
+    > - 最后对每个分区进行排序，这个排序过程可以并行执行，排序完成后是全局有序的结果
+    >
+    > Range 划分需要提前划分好数据区域，因此要统计 RDD 中数据的最大值和最小值，为了简化统计过程，Range 划分常采用抽样方法估算数据区域边界
+
+### (4) 如何计算 RDD 中的数据
+
+Spark 的大多数 transformation() 类似数学中的映射函数，具有固定的计算方式，如 map(func) 操作要每读入一个record 就处理，然后输出一个 record
+
+reduceByKey(func) 操作中的 func 对中间结果和下一个 record 进行聚合 计算并输出结果
+
+Spark 也提供了一些类似普通程序的操作，如 mapPartitions() 可以对分区中 的数据进行多次操作后再输出结果
+
+---
+
+`map()` 和 `mapPartitions()` 的区别： 假设 rdd 1 中某个分区的数据是[1，2，3，4， 5]
+
+- rdd2=rdd1.map(func) 的计算逻辑类似于下面的单机程序：
+
+    <img src="../../pics/spark/spark_54.png" align=left width=700>
+
+- rdd2=rdd1.mapPartitions(func)的计算逻辑类似于下面的单机程序：
+
+    > Spark中的 mapPartitions()可以在对分区中所有record处理后，再集中输出
+
+    <img src="../../pics/spark/spark_55.png" align=left width=700>
+
+## 3、常用 transformation() 数据操作
+
+### (1) **map**()和**mapValues**()操作
+
+map()和mapValues()操作都会生成一个MapPartitionsRDD，这 两个操作生成的数据依赖关系都是OneToOneDependency
+
+<img src="../../pics/spark/spark_56.png" align=left width=800>
+
+<img src="../../pics/spark/spark_57.png" align=left width=800>
+
+<img src="../../pics/spark/spark_58.png" align=left width=800>
+
+### (2) **filter**()和**filterByRange**()操作
+
+filter() 和 filterByRange() 操作都会生成一个 MapPartitionsRDD，这两个操作生成的数据依赖关系都是 OneToOneDependency
+
+<img src="../../pics/spark/spark_59.png" align=left width=800>
+
+<img src="../../pics/spark/spark_60.png" align=left width=800>
+
+<img src="../../pics/spark/spark_61.png" align=left width=800>
+
+### (3) **flatMap**()和**flatMapValues**()操作
+
+flatMap()和flatMapValues()操作都会生成一个 MapPartitionsRDD，这两个操作生成的数据依赖关系都是 OneToOneDependency
+
+<img src="../../pics/spark/spark_62.png" align=left width=800>
+
+<img src="../../pics/spark/spark_63.png" align=left width=800>
+
+<img src="../../pics/spark/spark_64.png" align=left width=800>
+
+### (4) sample()和sampleByKey()操作
+
+sample()操作生成一个PartitionwiseSampledRDD，而 sampleByKey()操作生成一个MapPartitionsRDD，这两个操作生成的 数据依赖关系都是OneToOneDependency
+
+- sample(false)与 sample(true)的区别
+    - 前者使用伯努利抽样模型抽样，也就是每个 record有fraction×100%的概率被选中
+    - 后者使用泊松分布抽样，也就是生成泊松分布，然后按照泊松分布采样，抽样得到的record个数可能大于rdd1 中的record个数
+- sampleByKey() 与sample() 的区别：sampleByKey() 可以为每个 Key 设定被抽取的概率，如在下面sampleByKey()代码中，通过 Map数据结构设定了在每个分区中，Key=1的数据会被抽取80%，Key=2 的数据会被抽取50%。
+
+<img src="../../pics/spark/spark_65.png" align=left width=800>
+
+<img src="../../pics/spark/spark_66.png" align=left width=800>
+
+<img src="../../pics/spark/spark_67.png" align=left width=800>
+
+### (5) **mapPartitions**()和**mapPartitionsWithIndex**()操作
+
+mapPartitions()和mapPartitionsWithIndex()操作更像是过程式 编程，给定了一组数据后，可以使用数据结构持有中间处理结果，也可 以输出任意大小、任意类型的一组数据
+
+<img src="../../pics/spark/spark_68.png" align=left width=800>
+
+<img src="../../pics/spark/spark_69.png" align=left width=800>
+
+<img src="../../pics/spark/spark_70.png" align=left width=800>
+
+若想知道这个RDD中包含多少个分区，以及每个分区中包含了哪些record，可以使用 mapPartitionsWithIndex() 来输出这些数据：
+
+<img src="../../pics/spark/spark_71.png" align=left width=800>
+
+### (6) **partitionBy**()操作
+
+<img src="../../pics/spark/spark_72.png" align=left width=800>
+
+使用 HashPartitioner 对rdd1进行重新分区：Key=2和Key=4的record被分到rdd2中的partition1，Key=1和Key=3的 record被分到rdd2中的partition2
+
+使用 RangePartitioner 对rdd1进行重新分区：Key值较小的record被分到 partition1，Key值较大的record被分到partition2
+
+<img src="../../pics/spark/spark_73.png" align=left width=800>
+
+<img src="../../pics/spark/spark_74.png" align=left width=800>
+
+### (7) **groupByKey**()操作
+
+groupByKey()引入了 ShuffleDependency，可以对child RDD的数据进行重新分区组合，因 此 groupByKey()输出的parent RDD的分区个数更加灵活，分区个数可以由用户指定，如果用户没有指定就默认为parent RDD中的分区个数
+
+> 注意：groupByKey()的缺点是在Shuffle时会产生大量的中间数据、占用内存大，因此建议使用 reduceByKey()
+
+<img src="../../pics/spark/spark_75.png" align=left width=800>
+
+**左图**：rdd1和 rdd2 的 partitioner 不同，rdd1是水平划分且分区个数为3，而rdd2是Hash划分 (groupByKey()默认使用Hash划分)且分区个数为2。为了将数据按 照Key聚合在一起，需要使用ShuffleDependency对数据进行重新分配
+
+**右图**：rdd1已经提前使用Hash划分进行了分区，具有相同 Hash值的数据已经在同一个分区，而且设定的groupByKey()生成的RDD的分区个数与rdd1一致，则只需要在每个分区中进行 groupByKey()操作，不需要再使用ShuffleDependency
+
+<img src="../../pics/spark/spark_76.png" align=left width=800>
+
+<img src="../../pics/spark/spark_77.png" align=left width=800>
+
+**无Shuffle的groupByKey()**：
+
+<img src="../../pics/spark/spark_78.png" align=left width=800>
+
+### (8) **reduceByKey**()操作
+
+与 groupByKey() 只在 ShuffleDependency 后按 Key 对数据进行聚合不同，reduceByKey() 实际包括两步聚合：
+
+- 第1步：在 ShuffleDependency 之前对 RDD 中每个分区中的数据进行一个本地化的 combine() 聚合操作
+
+    > 首先对 ParallelCollectionsRDD 中的每个分区进行combine() 操作，将具有相同 Key 的 Value 聚合在一起，并利用 func 进行 reduce() 聚合操作，这一步由 Spark 自动完成，并不形成新的 RDD
+
+- 第2步：reduceByKey() 生成新的 ShuffledRDD，将来自 rdd1 中不同分区且具有相同 Key 的数据聚合在一起，同样利用 func 进行 reduce() 聚合操作
+
+    > reduceByKey() 中 combine()和 reduce() 的计算逻辑一样，采用同一个func
+    >
+    > 注意：func 需要满足交换律和结合律，因为 Shuffle 并不保证数据到达顺序，另外因为 ShuffleDependency 需要对Key进行Hash划分，所以 Key不能是特别复杂的类型，如Array
+
+---
+
+在性能上，相比groupByKey()、 reduceByKey()可以在Shuffle之前使用func对数据进行聚合，减少了 数据传输量和内存用量，效率比groupByKey()的效率高
+
+<img src="../../pics/spark/spark_79.png" align=left width=800>
+
+<img src="../../pics/spark/spark_80.png" align=left width=800>
+
+### (9) **aggregateByKey**()操作
+
+> 若在 combine() 中想使用一个 sum() 函数，而在 reduce() 中想使用 max() 函数，那么 reduceByKey() 就不满足要求
+
+aggregateByKey() 将 combine() 和 reduce() 两个函数的计算逻辑分开：
+
+- `combine()` 使用 seqOp 将同一个分区中的 &lt;K，V&gt;record 聚 合在一起
+- `reduce()` 使用 combineOp 将经过 seqOp 聚合后的不同分区的 &lt;K，V *′* &gt;record 进一步聚合
+
+> 进行 reduce(func)操作时需要一个初始值，而reduceByKey(func)没有初始值，因此 aggregateByKey() 还提供了一个zeroValue参数，来为 seqOp提供初始值zeroValue
+
+<img src="../../pics/spark/spark_81.png" align=left width=800>
+
+aggregateByKey()对于 ParallelCollectionRDD中的每一个分区，首先使用seqOp对分区中的每条 数据进行聚合，如在第3个分区中对3个record进行如下计算:
+
+<img src="../../pics/spark/spark_82.png" align=left width=800>
+
+<img src="../../pics/spark/spark_83.png" align=left width=800>
+
+combineOp 计算过程：在 ShuffledRDD 中对相同 Key 的 record 进行如下计算，以Key=2为例
+
+<img src="../../pics/spark/spark_84.png" align=left width=800>
+
+示例代码：
+
+- **示例一**：将 inputRDD 中的数据使用下画线符号和@符号连接在一起，在seqOp中使用初始值 *x* 和下画线符号对数据进行连接， 在combineOp中使用@符号对数据进行连接
+
+    <img src="../../pics/spark/spark_85.png" align=left width=800>
+
+- **示例二**：在FPGrowthModel代码中使用aggregateByKey()
+
+    <img src="../../pics/spark/spark_86.png" align=left width=800>
+
+- 示例三：在NaiveBayes代码中使用aggregateByKey()
+
+    <img src="../../pics/spark/spark_87.png" align=left width=800>
+
+### (10) **combineByKey**()操作
+
+- aggregateByKey() 基于combineByKey()实现，如：aggregateByKey() 中的 zeroValue 对应 combineByKey() 中的 createCombiner，seqOp 对应mergeValue，combOp 对应 mergeCombiners
+- 区别是 combineByKey() 的 createCombiner 是一个初始化函数， 而 aggregateByKey() 包含的 zeroValue 是一个初始化的值，显然 createCombiner 函数的功能比一个固定的 zeroValue 值更强大
+
+<img src="../../pics/spark/spark_88.png" align=left width=800>
+
+---
+
+下图案例：先执行createCombiner函数，可以根据每个record的Value值为 每个record定制初始值。之后的mergeValue功能与seqOp功能一样， mergeCombiner功能也与combOp功能一样
+
+<img src="../../pics/spark/spark_89.png" align=left width=800>
+
+### (11) **foldByKey**()操作
+
+foldByKey()也是基于 aggregateByKey()实现的，功能介于reduceByKey()和 aggregateByKey()之间
+
+- 相比reduceByKey()，foldByKey()多了 初始值zero Value
+- 相比aggregateByKey()，foldByKey()要求 seqOp=combOp=func
+
+<img src="../../pics/spark/spark_90.png" align=left width=800>
+
+<img src="../../pics/spark/spark_91.png" align=left width=800>
+
+### (12) **cogroup**()**/groupWith**()操作
+
+> cogroup() 与 groupByKey() 的不同 在于 cogroup() 可以将多个RDD聚合为一个RDD，其生成的 RDD与多个parent RDD存在依赖关系
+
+cogroup() 最多支持4个RDD同时进行cogroup()，如 rdd5=rdd1.cogroup (rdd2，rdd3，rdd4)
+
+- cogroup() 实际生成了两个 RDD：CoGroupedRDD 将数据聚合在一起，MapPartitionsRDD 将数据类 型转变为CompactBuffer(类似于Java 的ArrayList)
+- 当cogroup() 聚合的RDD包含很多数据时，Shuffle 这些中间数据会增加网络传输，而且需要很大内存来存储聚合后的数据，效率较低
+
+<img src="../../pics/spark/spark_92.png" align=left width=800>
+
+将inputRDD1中的数据与 inputRDD2中的数据聚合在一起：
+
+<img src="../../pics/spark/spark_93.png" align=left width=800>
+
+- 上图展示的CoGroupedRDD与rdd1、 rdd2之间都是 ShuffleDependency
+
+    > 原因：rdd1 和 CoGroupedRDD 具有相同的 partitioner(都是HashPartitioner)且分区个数相同，rdd1中每个record可以直接流入CoGroupedRDD进行聚合，不需要 ShuffleDependency
+
+- 下图展示的 CoGroupedRDD与rdd1之间是 OneToOneDependency
+
+    > 对于rdd2，其分区个数和 partitioner 都与 CoGroupedRDD不一致，因此还需要将rdd2中的数据通过 ShuffleDependency分发到CoGroupedRDD中
+
+<img src="../../pics/spark/spark_95.png" align=left width=800>
+
+<img src="../../pics/spark/spark_94.png" align=left width=800>
+
+> 总结：Spark在决定RDD之间的数据依赖时除了考虑 transformation()的计算逻辑，还考虑child RDD和parent RDD的分区信 息，当分区个数和partitioner都一致时，说明parent RDD中的数据可以直 接流入child RDD，不需要ShuffleDependency，这样可以避免数据传 输，提高执行效率
+
+### (13) **join**()操作
+
+
+
+<img src="../../pics/spark/spark_96.png" align=left width=800>
+
+将inputRDD1中的数据与inputRDD2中的数据关联在一 起：
+
+<img src="../../pics/spark/spark_97.png" align=left width=800>
+
+join() 操作实际上建立在 cogroup()之上：
+
+- 首先利用 CoGroupedRDD 将具有相同 Key 的 Value 聚合 在一起，形成 `<K，[list(V)，list(W)]>`
+- 然后对 `[list(V)，list(W)]` 进行笛卡儿积计算并输出结果 `<K，(V，W)>`，这里用 list 来表示 CompactBuffer
+
+在实际实现中：
+
+- join()首先调用 cogroup() 生成 CoGroupedRDD 和 MapPartitionsRDD
+- 然后计算 MapPartitionsRDD 中 [list(V)，list(W)] 的笛卡儿积，生成 MapPartitionsRDD
+
+<img src="../../pics/spark/spark_98.png" align=left width=800>
+
+- 第1个图：rdd1、rdd2、CoGroupedRDD 具有不同的 partitioner
+
+    > 直接执行示例中的代码，会得到第1个图的结果，由于各个RDD的 partitioner不同，相同Key的record在不同的RDD中分布在不同的分区 中，因此需要ShuffleDependency将这些相同Key的record聚合在一起
+
+- 第2个图：rdd1、CoGroupedRDD 的 partitioner 都为 HashPartitioner(3)
+
+    > 如果只去掉第1个注释代码，那么会得到第2个图，也就是rdd1中的 数据已经预先按照HashPartitioner(3)进行了分区，与CoGroupedRDD 中的数据分布相同，没有必要再进行Shuffle，因此只需要 OneToOneDependency
+
+- 第3个图：rdd2、CoGroupedRDD的partitioner 都为 HashPartitioner(3)
+
+    > 如果只去掉第2个注释代码，那么会得到第3个图，原理与第2个图 的原理相同
+
+- 第4个图：rdd1、rdd2、CoGroupedRDD 的 partitioner 都为 HashPartitioner(3)
+
+    > 如果同时去掉第1个和第2个注释代码，那么会得到第4个图，原理 与第2个图的原理相同。此时，整个join()操作就不存在 ShuffleDependency，在下一章我们会看到，该逻辑处理流程图不会产生 Shuffle阶段
+
+### (14) **cartesian**()操作
+
+cartesian()操作形成的数据依赖关系虽然比较复杂，但归属于多对多的NarrowDependency，并不是ShuffleDependency
+
+<img src="../../pics/spark/spark_99.png" align=left width=800>
+
+计算inputRDD1与inputRDD2中数据的笛卡儿积：
+
+<img src="../../pics/spark/spark_100.png" align=left width=800>
+
+假设rdd1中的分区个数为 *m* ，rdd2的 分区个数为 *n* ，cartesian()操作会生成 *m* × *n* 个分区。rdd1和rdd2中的 分区两两组合，组合后形成CartesianRDD中的一个分区，该分区中的数据是rdd1和rdd2相应的两个分区中数据的笛卡儿积
+
+<img src="../../pics/spark/spark_101.png" align=left width=800>
+
+### (15) **sortByKey**()操作
+
+sortByKey() 为了保证生成的RDD中的数据是全局有序(按照Key排 序)的，采用Range划分来分发数据
+
+> Range划分可以保证在生成的 RDD中，partition 1中的所有record的Key小于(或大于)partition 2中所 有的record的Key
+
+sortByKey() 的缺点：record 的 Key 有序，但 Value 无序，如何解决：
+
+- 方法一：同 Hadoop MapReduce 一样使用 SecondarySort，首先使用map()操作进行 `<Key， Value> => <(Key，Value)，null>`，然后将(Key， Value)定义为新的class，并重新定义其排序函数compare()，最后使用sortByKey()进行排序，只输出Key即可
+- 方法二：先使用 groupByKey() 将数据聚合成 `<Key，list(Value)>`，然 后再使用 rdd.mapValues(sort function) 操作对 list(Value) 进行排序
+
+<img src="../../pics/spark/spark_102.png" align=left width=800>
+
+将 inputRDD 中的数据按照 Key 进行排序：
+
+<img src="../../pics/spark/spark_103.png" align=left width=800>
+
+- sortByKey() 操作首先将rdd1中不同 Key的record分发到ShuffledRDD中的不同分区中
+- 然后在 ShuffledRDD 的每个分区中，按照Key对record进行排序，形成的数据依赖关系为 ShuffleDependency
+
+<img src="../../pics/spark/spark_104.png" align=left width=800>
+
+### (16) **coalesce**()操作
+
+<img src="../../pics/spark/spark_105.png" align=left width=800>
+
+<img src="../../pics/spark/spark_106.png" align=left width=800>
+
+<img src="../../pics/spark/spark_107.png" align=left width=800>
+
+- **减少分区个数**：当使用 coalesce(2) 减少分区时，Spark 会将相邻的分区直接合并在一起得到 rdd2，形成的数据依赖关系是多对一的 NarrowDependency
+
+    > 缺点：当 rdd1 中不同分区中的数据量差别较大时，直接合并容易造成数据倾斜(rdd2中某些分区个数过多或过少)
+
+- **增加分区个数**：当使用 coalesce(6) 增加分区时，会发现生成的 rdd2 的分区个数并没有增加，这是因为 coalesce() 默认使用 NarrowDependency，不能将 一个分区拆分为多份
+
+- **使用Shuffle来减少分区个数**：为了解决数据倾斜的问题，可以使用 coalesce(2，Shuffle=true) 来减少 RDD 的分区个数。使用Shuffle=true后，Spark可以随机将数据打乱，从而使得生成的RDD中每个分区中的数据比较均衡
+
+    > 具体方法：
+    >
+    > - 为 rdd1中的每个 record 添加一个特殊的 Key，如第3个图中的 MapPartitionsRDD，Key是Int类型，并从[0，numPartitions)中随机生成，如&lt;3，f&gt;=&gt;&lt;2，(3，f)&gt;中，2 是随机生成 的Key，接下来的 record 的Key递增 1，如&lt;1，a&gt;=&gt;&lt;3， (1，a)>
+    > - 这样，Spark可以根据Key的Hash值将 rdd1 中的数据分发到rdd2的不同的分区中，然后去掉Key即可(见最后的 MapPartitionsRDD)
+
+- **使用Shuffle来增加分区个数**：通过使用 ShuffleDepedency，可以对分区进行拆分和重新组合，解决分区不能增加的问题
+
+### (17) **repartition**()操作
+
+<img src="../../pics/spark/spark_108.png" align=left width=800>
+
+### (18) **repartitionAndSortWithinPartitions**()操作
+
+<img src="../../pics/spark/spark_109.png" align=left width=800>
+
+对inputRDD中的数据重新划分并在分区内排序：
+
+<img src="../../pics/spark/spark_110.png" align=left width=800>
+
+- 左图：repartitionAndSortWithinPartitions() 操作首先使用用户定义的 partitioner 将数据分发到不同分区，然后对每个分区中的数据按照Key进行排序
+
+    > 与repartition()操作相比， repartitionAndSortWithinPartitions()操作多了分区数据排序功能
+
+- 右图：repartitionAndSortWithinPartitions() 中的 partitioner 可定义，不一定是 sortByKey() 默认的 RangePartitioner，因此 repartitionAndSortWithinPartitions() 操作得到的结果不能保证 Key 全局有序
+
+<img src="../../pics/spark/spark_111.png" align=left width=800>
+
+### (19) **intersection**()操作
+
+intersection() 核心思想：
+
+- 先利用 cogroup() 将 rdd1 和 rdd2 的相同 record 聚合在一起
+- 然后过滤出在 rdd1 和 rdd2 中都存在的 record
+
+<img src="../../pics/spark/spark_112.png" align=left width=800>
+
+<img src="../../pics/spark/spark_113.png" align=left width=800>
+
+具体方法：
+
+- 先将 rdd1 中的 record 转化为 &lt;K，V&gt; 类 型，V为固定值null
+- 然后将 rdd1 和 rdd2 中的 record 聚合在一起，过滤掉出现“()”的record
+- 最后只保留 Key，得到交集元素
+
+<img src="../../pics/spark/spark_114.png" align=left width=800>
+
+### (20) **distinct**()操作
+
+distinct()操作先将数据转化为&lt;K，V&gt;类型，其中Value为 null类型，然后使用reduceByKey()将这些record聚合在一起，最后使用map()只输出Key就可以得到去重后的元素
+
+<img src="../../pics/spark/spark_115.png" align=left width=800>
+
+<img src="../../pics/spark/spark_116.png" align=left width=800>
+
+### (21) **union**()操作
+
+union() 将 rdd1 和 rdd2 中的 record 组合在一起，形成新的 rdd3，形成的数据依赖关系是 RangeDependency
+
+<img src="../../pics/spark/spark_117.png" align=left width=800>
+
+union()形成的逻辑执行流程有以下两种：
+
+- **第一种：左图和示例代码1**，rdd1和rdd2是两个非空的RDD，而且两者的partitioner 不一致，且合并后的 rdd3 为 UnionRDD，其分区个数是rdd1和rdd2的分区个数之和，rdd3的每个分区 也一一对应rdd1或rdd2中相应的分区
+- **第二种：右图和示例代码2**，rdd1和rdd2是两个非空的RDD，且两者都使用Hash划分，得到rdd1 *′* 和rdd2 *′* 。因此，rdd1 *′* 和rdd2 *′* 的partitioner是一致的，都是Hash划分且分区个数相同。rdd1 *′* 和rdd2 *′* 合并后的rdd3为PartitionerAwareUnionRDD，其分区个数与rdd1 和rdd2的分区个数相同，且rdd3中的每个分区的数据是rdd1 *′* 和rdd2 *′* 对 应分区合并后的结果
+
+<img src="../../pics/spark/spark_118.png" align=left width=800>
+
+<img src="../../pics/spark/spark_119.png" align=left width=800>
+
+### (22) **zip**()操作
+
+zip()操作像拉链一样将rdd1和rdd2 中的record按照一一对应关系连接在一起，形成新的&lt;K，V&gt; record，生成的RDD名为ZippedPartitionsRDD2
+
+<img src="../../pics/spark/spark_120.png" align=left width=800>
+
+<img src="../../pics/spark/spark_121.png" align=left width=800>
+
+<img src="../../pics/spark/spark_122.png" align=left width=800>
+
+### (23) **zipPartitions**()操作
+
+zipPartitions()操作首先像拉链一样 将rdd1和rdd2中的分区(而非分区中的每个record)按照一一对应关系 连接在一起，并提供两个迭代器rdd1Iter和rdd2Iter，来分别迭代每个分 区中来自rdd1和rdd2的record
+
+- zipPartitions()的要求是参与连接的rdd都包含相同的分区个数，但不要求每个分区中的record数 目相同
+
+- 参数 preservePartitioning(默认false)：意即zipPartitions()生成的rdd 继承 parent RDD 的partitioner，因为继承partitioner可以提升后续操作的执行效率
+
+    > 当参与zipPartitions()的多个 rdd具有相同的partitioner时，preservePartitioning才有意义
+
+<img src="../../pics/spark/spark_124.png" align=left width=800>
+
+同时迭代rdd1和rdd2中的record，并使用下画线连接索引相同的record：
+
+<img src="../../pics/spark/spark_125.png" align=left width=800>
+
+<img src="../../pics/spark/spark_126.png" align=left width=800>
+
+<img src="../../pics/spark/spark_127.png" align=left width=800>
+
+### (24) **zipWithIndex**()和**zipWithUniqueId**()操作
+
+<img src="../../pics/spark/spark_128.png" align=left width=800>
+
+<img src="../../pics/spark/spark_129.png" align=left width=800>
+
+- 左图：zipWithIndex() 对 rdd1 中的每 个 record 都进行编号，编号方式是从0开始依次递增(跨分区)的，生成的RDD类型是ZippedWithIndexRDD
+
+- 右图：zipWithUniqueId() 对 rdd1 中的每个 record 都进行编号，编号方式是按照 round-robin 方式，即将编号发给每个分区中的record，不可以轮空
+
+    > zipWithUniqueId()操作生成的RDD类型是MapPartitionsRDD
+
+<img src="../../pics/spark/spark_130.png" align=left width=800>
+
+### (25) **subtractByKey**()操作
+
+SubtractedRDD结构和数据依赖模式都 类似于CoGroupedRDD，可以形成OneToOneDependency或者 ShuffleDependency，但实现比CoGroupedRDD更高效
+
+<img src="../../pics/spark/spark_131.png" align=left width=800>
+
+<img src="../../pics/spark/spark_132.png" align=left width=800>
+
+- 该操作首先将rdd1和rdd2中的&lt;K， V&gt;record按Key聚合在一起，得到SubtractedRDD，该过程类似 cogroup()
+- 然后，只保留[(a)，(b)]中b为()的record，从而得到在rdd1中而不在rdd2中的元素
+
+<img src="../../pics/spark/spark_133.png" align=left width=800>
+
+### (26) **subtract**()操作
+
+- subtract()的语义与subtractByKey()类似，不同点是 subtract()适用面更广，可以针对非&lt;K，V&gt;类型的RDD
+
+- subtract()的底层实现基于subtractByKey()来完成
+
+<img src="../../pics/spark/spark_134.png" align=left width=800>
+
+<img src="../../pics/spark/spark_135.png" align=left width=800>
+
+- 先将rdd1和rdd2表示为&lt;K，V&gt;record，Value为 null
+- 然后按照Key将这些record聚合在一起得到SubtractedRDD，只保留 [(a)，(b)]中b为()的record，从而得到在rdd1中但不在rdd2中的 record
+
+<img src="../../pics/spark/spark_136.png" align=left width=800>
+
+### (27) **sortBy**(**func**)操作
+
+sortBy(func)与sortByKey()的语义类似，不同点是 sortByKey()要求RDD是&lt;K，V&gt;类型，并且根据Key来排 序，而sortBy(func)不对RDD类型作要求，只是根据每个record经过 func的执行结果进行排序
+
+<img src="../../pics/spark/spark_137.png" align=left width=800>
+
+将&lt;K，V&gt;数据按照Value进行排序：
+
+<img src="../../pics/spark/spark_138.png" align=left width=800>
+
+想对rdd1中的&lt;K，V&gt;record按 照Value进行排序，则设计的排序函数func为record=&gt; record._2：
+
+- 首先将rdd1 中每个record的形式进行改变，将&lt;K，V&gt;record转化为&lt; V，(K，V)&gt;record，如将(D，2)转化为&lt;2，(D，2) &gt; 
+- 然后利用sortByKey()对转化后的record进行排序
+- 最后，只保留第二项，也就是&lt;V，(K，V)&gt;中的(K，V)，即可得 到排序后的record，也就是rdd2
+
+<img src="../../pics/spark/spark_139.png" align=left width=800>
+
+### (28) **glom**()操作
+
+<img src="../../pics/spark/spark_140.png" align=left width=800>
+
+<img src="../../pics/spark/spark_141.png" align=left width=800>
+
+<img src="../../pics/spark/spark_142.png" align=left width=800>
+
+## 4、常用 action() 数据操作
+
+action() 数据操作是用来对计算结果进行后处理的，同时提交计算job，经常在一连串transformation()后使用
+
+### (1) **count**()**/countByKey**()**/countByValue**()操作
+
+
+
+
+
+
+
+## 5、对比MapReduce，Spark的优缺点
+
+
+
+
+
+
+
+
+
+# 四、spark 物理执行计划
+
+
+
+
+
+
+
+
+
+
+
+
 
 # 二、spark 使用
 
