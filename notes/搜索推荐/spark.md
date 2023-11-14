@@ -1190,28 +1190,823 @@ sortBy(func)与sortByKey()的语义类似，不同点是 sortByKey()要求RDD是
 
 ## 4、常用 action() 数据操作
 
-action() 数据操作是用来对计算结果进行后处理的，同时提交计算job，经常在一连串transformation()后使用
+- action() 数据操作是用来对计算结果进行后处理的，同时提交计算job，经常在一连串transformation()后使用
+
+- transformation()操作一般 返回RDD类型，而action()操作一般返回数值、数据结构(如Map) 或者不返回任何值(如写磁盘)
 
 ### (1) **count**()**/countByKey**()**/countByValue**()操作
 
+<img src="../../pics/spark/spark_143.png" align=left width=800>
 
+- count() 操作：首先计算每 个分区中 record 的数目，然后在 Dirver 端进行累加操作，得到最终结果
+- countByKey() 操作：只统计每个 Key 出现的次 数，因此首先利用 mapValues() 操作将&lt;K，V&gt;record的Value 设置为1(去掉原有的Value)，然后利用 reduceByKey() 统计每个Key 出现的次数，最后汇总到Driver端，形成Map
+- countByValue() 操作：统计每个 record 出现的次数，先将 record 变为 &lt;record，null&gt;类型，这样转化是为了接下来使用 reduceByKey()得到每个record出现的次数，最后汇总到Driver端，形 成Map
 
+---
 
+countByKey()和countByValue() 需要在 Driver 端存放一个Map，当数据量比较大时，这个Map会超过Driver的内存大小，所以在数据量较大时，建议先使用 reduceByKey() 对数据进行统计，然后将结果写入分布式文件系统
 
+<img src="../../pics/spark/spark_144.png" align=left width=800>
 
+### (2) **collect**() 和 collectAsMap() 操作
+
+<img src="../../pics/spark/spark_145.png" align=left width=800>
+
+这两个操作都是将RDD中的数据直接汇总到 Driver端，类似count()操作的流程图
+
+- collect()将record直接汇总到Driver端
+- collectAsMap()将 &lt;K，V&gt;record 都汇集到Driver端
+
+> 在数据量较大时，两者都会造成大量内存消耗，所以需要注意内存用量
+
+### (3) **foreach**() 和 foreachPartition() 操作
+
+<img src="../../pics/spark/spark_146.png" align=left width=800>
+
+foreach()和foreachPartition()的关系类似于map()和 mapPartitions()的关系
+
+- foreach() 操作：使用 func 对 rdd1中的每个 record 进行计算，
+
+    > 不同于 map() 操作的是：foreach() 操作一般会直接输出计算结果，并不形成新的RDD
+
+- foreachPartition() 的用法也类似于mapPartitions()，但不形成新的 RDD
+
+<img src="../../pics/spark/spark_147.png" align=left width=800>
+
+### (4) **fold**()**/reduce**()**/aggregate**()操作
+
+<img src="../../pics/spark/spark_148.png" align=left width=800>
+
+- fold(func)：首先在 rdd1的每个分区中计算局部结果，如0_a_b_c，然后在Driver端将局部结果聚合成最终结果
+
+    > - func 的语义与foldByKey(func)中的func相同，区别是foldByKey()生成一个 新的RDD，而fold()直接计算出结果
+    >
+    > - 每次聚合时初始值 zeroValue 都会参与计算，而foldByKey()在聚合来自不同分区的record时并不使用初始值
+
+- reduce(func)：可以看作是 aggregate(seqOp， combOp) 中 seqOp=combOp=func 的场景
+
+-  aggregate(seqOp，combOp)：使用 seqOp 在每个分区中计算局部结果，然后使用 combOp 在 Driver 端将局部结果聚合成最终结果
+
+    > - 在 aggregate()中，seqOp和combOp聚合时初始值zeroValue都会参与计 算，而在aggregateByKey()中，初始值只参与seqOp的计算
+    >
+    > - 与 aggregateByKey  区别是aggregateByKey()生成一个新的RDD，而aggregate()直接计算出结果
+
+<img src="../../pics/spark/spark_149.png" align=left width=800>
+
+共同问题：当需要merge的部分结果很大时，数据传输量很 大，而且Driver是单点merge，存在效率和内存空间限制问题
+
+解决：Spark对这些聚合操作进行了优化，提出了treeAggregate() 和treeReduce()操作
+
+### (5) **treeAggregate** ()和**treeReduce**()操作
+
+<img src="../../pics/spark/spark_150.png" align=left width=800>
+
+-  treeAggregate(seqOp，combOp)：使用树形聚合方法来优化全局聚合阶段，来减轻Driver端聚合的压力(数据传输量和内存用量)
+
+    > 在树形聚合时，非根节点实际上是局部聚合，只有根节点是全局聚合：
+    >
+    > - 利用之前的聚合操作(如reduceByKey()、aggregateByKey())来实现非根节点的局部聚合
+    > - 将最后的根节点聚合放在Driver端进行，只是需要为每个非根节点分配合理的数据
+    >
+    > 即 treeAggregate()首先对rdd1中的每个分区进行局部聚合，然后不断利用foldByKey()进行树形聚合
+    >
+    > ---
+    >
+    > 基于这个思想，Spark采用 foldByKey() 实现非根节点的聚合，并使用 fold() 实现根节点的聚合
+
+- treeReduce()的逻辑：实际是调用treeAggregate()实现，唯一区别是没有初始值 zeroValue
+
+<img src="../../pics/spark/spark_151.png" align=left width=800>
+
+---
+
+<img src="../../pics/spark/spark_152.png" align=left width=800>
+
+### (6) **reduceByKeyLocality**()操作
+
+<img src="../../pics/spark/spark_153.png" align=left width=800>
+
+reduceByKeyLocality()：
+
+- 首先在 rdd1 的每个分区中对数据进行聚合，并使用HashMap来存储聚合结果
+- 然后，把数据汇总到Driver端进行全局聚合，仍然是将聚合结果存放到 HashMap而不是RDD中
+
+<img src="../../pics/spark/spark_154.png" align=left width=800>
+
+### (7) **take**()**/f irst**()**/takeOrdered**()**/top**()操作
+
+<img src="../../pics/spark/spark_155.png" align=left width=800>
+
+- take(num)操作：
+    - 首先取出 rdd1中第一个分区的前num个record，如果num大于partition1中record的总数，则take()继续从后面的分区中取出record
+    - 为了提高效率， Spark在第一个分区中取record的时候会估计还需要对多少个后续的分区 进行操作
+- first()操作：流程等价于take(1)
+
+- takeOrdered(num)：目的是从 rdd1中找到最小的num个record，因此要求 rdd1 中的 record 可比较
+    - 首先使用map在每个分区中寻找最小的 num个 record，因为全局最小的 *n* 个元素一定是每个分区中最小的 *n* 个元素的子集
+    - 然后将这些record收集到Driver端，进行排序，然后取出前num个 record
+- top(num) 执行逻辑与takeOrdered(num)相同，只是取出最大的num个record
+
+<img src="../../pics/spark/spark_156.png" align=left width=800>
+
+### (8) **max**()和**min**()操作
+
+max()和min()操作都是基于reduce(func)实现的，func的语义是选取最大值或最小值
+
+<img src="../../pics/spark/spark_157.png" align=left width=800>
+
+### (9) **isEmpty**()操作
+
+<img src="../../pics/spark/spark_158.png" align=left width=800>
+
+isEmpty()操作：主要用来判断rdd中 是否包含 record。如果对rdd执行一些数据操作(如过滤、求交集等) 后，rdd为空的话，那么执行其他操作的结果肯定也为空，因此，提前判断rdd是否为空，可以避免提交冗余的 job
+
+<img src="../../pics/spark/spark_159.png" align=left width=800>
+
+### (10) **lookup**()操作
+
+<img src="../../pics/spark/spark_160.png" align=left width=800>
+
+- lookup() 首先过滤出给定 Key 的 record，然后使用 map() 得到相应的Value，最后使用collect() 将这些Value收集到Driver端形成list
+- 如果rdd1的partitioner已经确定，如 HashPartitioner(3)，那么在过滤前，可以通过Hash(Key)直接确 需要操作的分区，这样可以减少操作的数据
+
+<img src="../../pics/spark/spark_161.png" align=left width=800>
+
+### (11) **saveAsTextFile**()/saveAsObjectFile()/saveAsHadoopFile()/saveAsSequ操作
+
+<img src="../../pics/spark/spark_162.png" align=left width=800>
+
+- saveAsTextFile()针对String类型的record，将record转化为&lt; NullWriter，Text&gt;类型，然后一条条输出，NullWriter的意思是空 写，也就是每条输出数据只包含类型为文本的Value
+-  saveAsObjectFile()针对普通对象类型，将record进行序列化，并且以 每10个record为一组转化为SequenceFile&lt;NullWritable， Array[Object]&gt;格式，调用saveAsSequenceFile()写入HDFS中
+- saveAsSequenceFile()针对&lt;K，V&gt;类型的record，将record进 行序列化后，以SequenceFile形式写入分布式文件系统中。这些操作都 是基于saveAsHadoopFile()实现的
+- saveAsHadoopFile()连接 HDFS，进行必要的初始化和配置，然后把文件写入HDFS中
 
 ## 5、对比MapReduce，Spark的优缺点
 
+从编程模 型角度来说，Spark的编程模型更具有通用性和易用性：
 
+- 通用性：
 
+    - MapReduce：基于函数式编程思想，将数据类型抽象为&lt;K，V&gt;格式，并将数据处理操作抽象为map()和 reduce()两个算子，这两个算子可以表达一大部分数据处理任务。因 此，MapReduce为这两个算子设计了固定的处理流程map—Shuffle— reduce。
 
+        > map—Shuffle—reduce 模式只适用于表达类似foldByKey()、 reduceByKey()、aggregateByKey()的处理流程，
+        >
+        > 而像 cogroup()、join()、cartesian()、coalesce()的流程需要更灵活的表达方式
 
+    - Spark 在两方面进行 了优化改进：
 
+        - 一方面借鉴了 DryadLINQ/FlumeJava 的思想，将输入/输出、中间数据抽象表达为一个数据结构RDD，相当于在Java中定义了 class，然后可以根据不同类型的中间数据，生成不同的RDD(相当于 Java中生成不同类型的object)
 
+            > 这样，数据结构不再拘泥于MapReduce中的&lt;K，V&gt;格式，而且中间数据变得可定义、可表示、可操作、可连接
 
+        - 另一方面通过可定义的数据依赖关系来灵活连接中间数据，比如 ShuffleDependency、NarrowDependency(包含多种子依赖关系)，这样可以根据数据操作的计算逻辑灵活选择数据依赖关系来实现
+
+            > 另外，Spark使用DAG图来组合数据处理操作，比固定的 map—Shuffle—reduce处理流程表达能力更强
+            >
+            > 在MapReduce中，数据依赖关系只有 ShuffleDependency
+
+- 易用性：
+
+    - 基于灵活的数据结构和依赖关系，Spark原生实现了很多常见的数据操作，如MapReduce中的map()、reduceByKey()， SQL中的filter()、groupByKey()、join()、sortByKey()，Pig Latin中的cogroup()，集合操作union()、intersection()，以及特 殊的zip()等。通过使用和组合这些操作，开发人员容易实现复杂的数据处理流程
+    - 另外，由于数据结构RDD上的操作可以由Spark自动并 化，程序开发时更像在写普通程序，不用考虑这些操作到底是本地的还是由Spark分布执行的
+    - 另外，使用RDD上的数据操作，开发人员更 容易将数据操作与普通程序的控制流进行结合。例如，在实现迭代程序 时，可以使用普通程序的while语句，而while循环内部可以使用RDD操 作
+
+    > 在MapReduce中，实现迭代程序比较困难，需要不断手动提交job， 
+    >
+    > 而Spark提供了action()操作，job分割和提交都完全由Spark框架来进行，易用性得到了进一步提高
+
+---
+
+Spark存在两个缺点：
+
+- 第一个，Spark中的操作都是单向操作，单向的意思是中间数据不可修改
+
+    > 在普通Java程序中，在数据结构中存放的数据是可以直接被修改的，而Spark只能生成新的数据作为修改后的结果
+
+- 第二个，Spark中的操作是粗粒度的，指RDD上的操作是面向分区的，即每个分区上的数据操作是相同的
+
+    > 假设处理 partition1上的数据时需要partition2中的数据，并不能通过RDD的操作 访问到partition2的数据，只能通过添加聚合操作来将数据汇总在一起处理
+
+当然，这两个缺点也是并行化设计权衡后的结果，即这两个缺点是并行化的优点，粗粒度可以方便并行执行，如一台机器处理一个分区，而单向操作有利于错误容忍
 
 # 四、spark 物理执行计划
 
+> 首先以一个典型的Spark应用为例，概览该应用对应的物理执行计划，然后讨论Spark物理执行计划生成方法，最后讨论常用数据操 作生成的物理执行计划
+
+## 1、Spark物理执行计划概览
+
+构建一个 ComplexApplication应用，该应用包含map()、partitionBy()、 union()和join()等多种数据操作
+
+```scala
+ComplexApplication应用的示例代码:
+
+//构建一个 <K, V> 类型的 rdd1
+val data1 = Array[(Int, Char)]((1,'a'),(2,'b'),3'c),(4,'d'),(5,'e'),(3,f),(2,'g'),(1,'h'))
+val rdd1 = sc.parallelize(data1, 3)
+//使用 HashPartitioner 对 rdd1 进行重新划分
+var partitionRDD = rdd1.partitionBy(new HashPartitioner(3))
+
+//构建一个 <K,V> 类型的 rdd2，并对 rdd2 中的 record 的 Value 进行复制
+val data2 = Array[(Int,String)]((1,"A"),(2,"B"),(3,"C"),(4,"D"))
+val rdd2 = sc.parallelize(data2, 2).map(x => (x._1, x._2 + "" + x._2))
+
+//构建一个 <K,V> 类型的 rdd3
+val data3 = Array[(Int,String)]((3,"X"),(5,"Y"),(3,"Z"),(4,"Y"))
+val rdd3 = sc.parallelize(data3, 2)
+
+//将 rdd2 和 rdd3 进行 union 操作
+val unionRDD = rdd2.union(rdd3)
+//将被重新划分过的 rdd1 与 unionRDD 进行 join 操作
+val resultRDD = partitionRDD.join(unionRDD)
+//输出 join 操作后的结果，包括每个 record 及其 index
+resultRDD.foreach(println)
+```
+
+**核心问题：如何将逻辑处理流程转化为物理执行计划**
+
+- **想法一**：将每个具体的数据操作作为一个执行阶段，即将前后关联的RDD组成一个执行阶段，下图中的每个箭头都生成一个执行任务
+
+    对于2个RDD聚合成1个RDD的情况(图中的ShuffledRDD、UnionRDD、CoGroupedRDD)，将这3个RDD组成一 个stage。这样虽然可以解决任务划分问题，但存在多个性能问题：
+
+    - 第一个性能问题：会产生很多个任务，图中有36个箭头，会生成36个任 务，当然可以对ShuffleDependency进行优化，将指向child RDD中同一个分区的箭头合并为一个task，使得一个task从parent RDD中的多个分区中获取数据，但是仍然会有多达21个任务
+    - 第2个严重的性能问题：过多的任务不仅会增加调度压力，也需要存储大量的中间数据。一般来说，每个任务需要将执行结果存到磁盘或者内存中，这样方便下一个任务读取数据、进行计算。如果每个箭头都是计算任务的话，那么存储这些中间计算结果(RDD中的数据)需要大量的内存和磁 盘空间，效率较低
+
+- **想法二**：减少任务数量，仔细观察逻辑处理流程图，会发现中间数据只是暂时有用，中间数据(RDD)产生以后，只用于下一步计算操作(图中的箭头)，而下一步计算操作完成后，中间数据可以被删除
+
+    一个大胆的想法：将这些计算操作串联起来，只用一个执行阶段来执行这些串联的多个操作，使得上一步操作在内存中生成的数据被下一步操作处理完后能够及时回收，减少内存消耗
+
+
+
+<img src="../../pics/spark/spark_163.png" align=left width=800>
+
+---
+
+基于这个串联思想，接下来需要解决的两个问题分别是：
+
+- 第一：每个RDD包含多个分区，而图中的RDD在每个分区的计算逻辑相同，可以独立计算，因此可以将每个分区上的操作串联为一个task，即最后的MapPartitionsRDD的每个分区分配一个task
+
+- 第二：将串联的顺序调整为从后往前，从图中最后的MapPartitionsRDD开始向前串联，当遇到ShuffleDependency时，将该分区所依赖的上游数据(parent RDD)及操作都纳入一个task中
+
+    > 仍然存在性能问题：当遇到 ShuffleDependency 时，task包含很多数据依赖和操作，导致划分出的 task 可能太大，而且会出现重复计算
+    >
+    > 例如，从rdd2到 UnionRDD所有的数据和操作都被纳入task0中，造成task0的计算量过大，而且其他task会重复处理这些数据，如使用虚线表示的task1仍然需 要计算rdd2=&gt;UnionRDD中的数据
+    >
+    > 当然可以在task0计算完后 缓存这些需要重复计算的数据，以便后续task的计算，但这样缓存会占 用存储空间，而且会使得task0与其他task不能同时并行计算，降低了并行度
+
+<img src="../../pics/spark/spark_164.png" align=left width=900>
+
+---
+
+- **想法三**：既然 ShuffleDependency 包含复杂的多对多的依赖关系，导致任务划分困难，为何不对该 ShuffleDependency 关系进行划分呢?如将 ShuffleDependency 前后的计算逻辑分开，形成不同的计算阶段和任务， 这样就不会出现 task 过大的情况
+
+## 2、Spark物理执行计划生成方法
+
+### (1) 执行步骤
+
+Spark 具体采用3个步骤来生成物理执行计划：
+
+- 首先，根据 action() 操作顺序将应用划分为作业(job)
+- 然后，根据每个 job 的逻辑处理流程中的 ShuffleDependency 依赖关系，将 job 划分为执行阶段(stage)
+- 最后，在每个stage中，根据最后生成的RDD的分区个数生成多个计算任务 (task)
+
+#### (1) 根据 action() 操作顺序将应用划分为作业(job)
+
+主要解决何时生成 job，以及如何生成 job 逻辑处理流程的问题
+
+- 当应用程序出现 action() 操作时，表示应用会生成一个 job，该 job 的逻辑处理流程为从输入数据到 resultRDD 的逻辑处理流程
+- 如果应用程序中有很多 action() 操作， 那么Spark会按照顺序为每个 action() 操作生成一个job，每个 job 的逻辑处理流程也都是从输入数据到最后action()操作
+
+#### (2) 根据 ShuffleDependency 依赖关系将 job 划分为执行阶段 (stage)
+
+对于每个job，从其最后的RDD往前回溯整个逻辑处理流程：
+
+- 如果遇到 NarrowDependency，则将当前RDD的parent RDD纳入，并继续往前回溯
+- 当遇到 ShuffleDependency 时，停止回溯，将当前已经纳入的所有 RDD按照其依赖关系建立一个执行阶段，命名为stage 
+
+---
+
+如图：
+
+- 首先从 results 之前的 MapPartitionsRDD 开始向前回溯，回溯到 CoGroupedRDD 时，发现其包含两个parent RDD，其中一个是 UnionRDD。因为CoGroupedRDD与UnionRDD的依赖关系是 ShuffleDependency，对其进行划分
+- 并继续从 CoGroupedRDD 的另一个 parent RDD回溯，回溯到ShuffledRDD时，同样发现了 ShuffleDependency，对其进行划分得到了一个执行阶段stage 2
+- 接着从 stage 2之前的UnionRDD开始向前回溯，由于都是NarrowDependency， 将一直回溯到读取输入数据的RDD2和RDD3中，形成stage 1
+- 最后，只 剩余RDD1成为一个stage 0
+
+<img src="../../pics/spark/spark_165.png" align=left width=900>
+
+#### (3) 根据分区计算将各个 stage 划分为计算任务(task)
+
+>  执行第2步后，可以发现整个job被划分成了大小适中、逻辑分明的执行阶段stage
+
+接下来的问题：**如何生成计算任务**
+
+**想法**：每个分区上的计算逻辑相同且独立，因此每个分区上的计算可以独立成为一个 task，根据每个 stage 中最后一个 RDD 的分区个数决定生成 task 的个数
+
+- 如在图中 stage 2 的最后一个MapPartitionsRDD的分区个数为 3，那么stage 2就生成3个task。在stage 2中，每 个task负责 ShuffledRDD=&gt;CoGroupedRDD=&gt; MapPartitionsRDD=&gt;MapPartitionsRDD 中一个分区的计算
+- 同样， 在stage 1中生成4个task，前2个task负责Data blocks=&gt;RDD2=&gt; MapPartitionsRDD=&gt;UnionRDD中2个分区的计算，后2个task负责 Data blocks=&gt;RDD3=&gt;UnionRDD中2个分区的计算
+- 在stage 0 中，生成3个task，负责Data blocks=&gt;RDD1的计算
+
+### (2) 相关问题
+
+> 经过以上3个步骤，Spark 可以将一个应用的逻辑处理流程划分为多 个job，每个job又可以划分为多个stage，每个stage可以生成多个task， 而同一个阶段中的task可以同时分发到不同的机器并行执行
+
+有3个执行方面的问题：
+
+- 一个应用生成了多个job、 stage和task，如何确定它们的计算顺序?
+- task内部如何存储和计算中间数据?
+- 前后 stage 中的 task 间如何传递和计算数据?
+
+#### (1) job、stage和task的计算顺序
+
+**计算顺序从包含输入数据的stage开始，从前到后依次执行，仅当上游的stage都执行完成后，再执行下游的stage**
+
+- job 提交时间与 action() 被调用时间有关，当应用程序执行到 rdd.action() 时，就会立即将 rdd.action() 形成的 job 提交给 Spark
+
+- job 的逻辑处理流程实际上是一个 DAG 图，经过 stage 划分后，仍然是 DAG 图形状
+
+- 每个 stage 的输入数据，要么是 job 的输入数据，要么是上游 stage 的输出结果
+
+#### (2) task内部数据的存储与计算问题(流水线计算)
+
+**“流水线”式计算的好处**：可以有效地减少内存使用空间，在task计算时只需要在内存中保留当前被处理的单个record即可，不需要保存其 他record或者已经被处理完的record
+
+> 例如，在第1个pattern中，没有必要在执行 *f* (record1)之前将record2和record3提前算出来放入内存中
+
+<img src="../../pics/spark/spark_166.png" align=left width=900>
+
+对于其他类型的操作，是否还可以采用“流水线”式计算呢?第2个 pattern中的 *g* ()函数、第3个pattern中的 *f* ()函数、第4个pattern中的 *f* ()和 *g* ()函数都需要一次性读取上游分区中所有的record来计算。 这样的函数主要出现在mapPartitions(func *f* )，zipPartitions(func *g* ) 等操作中。举个例子， *f* ()和 *g* ()函数可以是第3章中介绍的 mapPartitions(func)，具体代码如下，其中iter是读取上游分区中 record的迭代器
+
+<img src="../../pics/spark/spark_167.png" align=left width=900>
+
+在第2个pattern中，由于 *f* ()函数仍然是一一映射的，所以仍然可 以采用“流水线”式计算，计算流程如下:
+
+1、读取record1=&gt; *f* (record1)=&gt;record1 *′* =&gt; *g* (record1 *′* )=&gt;record1 *′* 进入 *g* ()函数中的iter.next()进行计算 =&gt; *g* ()函数将计算结果存入 *g* ()函数中的list。
+
+2、读取record2=&gt; *f* (record2)=&gt;record2 *′* =&gt; *g* (record2 *′* )=&gt;record2 *′* 进入 *g* ()函数中的iter.next()进行计算 =&gt; *g* ()函数将计算结果存入 *g* ()函数中的list。
+
+3、读取record3=&gt; *f* (record3)=&gt;record3 *′* =&gt; *g* (record3 *′* )=&gt;record3 *′* 进入 *g* ()函数中的iter.next()进行计算 =&gt; *g* ()函数将计算结果存入 *g* ()函数中的list。
+
+4、*g* ()函数一条条输出list中的record
+
+从计算流程可以看到， *f* ()函数每生成一条数据，都进入类似上 面mapPartitions()的例子 *g* ()函数的iter.next()中进行计算， *g* ()函数需要在内存中保存这些中间计算结果，并在输出时将中间结果 依次输出。当然，有些 *g* ()函数逻辑简单，不需要使用数据结构来保 存中间结果，如求record的max值，只需要保存当前最大的record即可。
+
+在第3个pattern中，由于 *f* ()函数需要将[record1，record2， record3]都算出后才能计算得到[record1 *′* ，record2 *′* ，record3 *′* ]，因此 会先执行 *f* ()函数，完成后再计算 *g* ()函数。实际的执行过程:首 先执行 *f* ()函数算出[record1 *′* ，record2 *′* ，record3 *′* ]，然后使用 *g* ()函数依次计算 *g* (record1 *′* )=&gt;record1 *′′* ， *g* (record2 *′* ) =&gt;record2 *′′* ， *g* (record3 *′* )=&gt;record3 *′′* 。也就是说， *f* () 函数的输出结果需要保存在内存中，而 *g* ()函数计算完每个record *′* 并得到record *′′* 后，可以对record *′* 进行回收。
+
+在第4个pattern中，计算顺序仍然是从前到后，但不能进行record 的“流水线”式计算。与第3个pattern类似， *f* ()函数需要一次性读取 [record1，record2，record3]后才能算出[record1 *′* ，record2 *′* ，record3 *′* ]，同样， *g* ()函数需要一次性读取[record1 *′* ，record2 *′* ，record3 *′* ] 且计算后才能输出[record1 *′′* ，record2 *′′* ，record3 *′′* ]。这两个函数只是 依次执行，“流水线”式计算退化到“计算-回收”模式:每执行完一个操 作，回收之前的中间计算结果。
+
+总结:Spark采用“流水线”式计算来提高task的执行效率，减少内存
+
+使用量。这也是Spark可以在有限内存中处理大规模数据的原因。然 而，对于某些需要聚合中间计算结果的操作，还是需要占用一定的内存 空间，也会在一定程度上影响流水线计算的效率。
+
+
+
+#### (3) task间的数据传递与计算问题
+
+不同stage之间的task如何传递数据进行计算。
+
+回顾一 下，stage之间存在的依赖关系是 ShuffleDependency，而 ShuffleDependency是部分依赖的，也就是下游stage中的每个task需要从 parent RDD的每个分区中获取部分数据。
+
+ShuffleDependency的数据划分 方法包括Hash划分、Range划分等，也就是要求上游stage预先将输出数 据进行划分，按照分区存放，分区个数与下游task的个数一致，这个过 程被称为“Shuffle Write”。
+
+按照分区存放完成后，下游的task将属于自己分区的数据通过网络传输获取，然后将来自上游不同分区的数据聚合在 一起进行处理，这个过程被称为“Shuffle Read”。
+
+总的来说，不同stage的 task之间通过Shuffle Write+Shuffle Read传递数据
+
+### (3) **stage**和**task**命名方式
+
+在MapReduce中，stage只包含两类：map stage和reduce stage
+
+- map stage中包含多个执行map()函数的任务，被称为map task
+- reduce stage中包含多个执行reduce()函数的任务，被称为reduce task
+
+> 在 Spark中，stage可以有多个，有些 stage 既包含类似 reduce() 的聚合操作，又包含 map() 操作，所以一般不区分是map stage还是reduce stage，而直接使用stage *i* 来命名
+
+对 stage 中的 task 使用不同的命名：
+
+- ShuffleMapTasks：如果task的输出结果需要进行Shuffle Write，以便传输给下一个 stage
+- ResultTasks：如果task的输出结果被 汇总到Driver端或者直接写入分布式文件系统
+
+## 3、常用数据操作生成的物理执行计划
+
+### (1) 基本概念回顾
+
+数据依赖关系：
+
+- 宽依赖(ShuffleDependency)和窄依赖(NarraowDependency)的区别是child RDD的各个分区中的数据是否完全依赖其parent RDD的一个或者多个分区
+- 完全依赖指 parent RDD 中的一个分区不需要进行划分就可以流入 child RDD 的分区中
+    - 如果是完全依赖，那么数据依赖关系是窄依赖
+    - 如果是不完全依赖，即 parent RDD 的一个分区中的数据需要经过划分(如HashPartition或者 RangePartition)后才能流入child RDD的不同分区中，那么数据依赖关系是宽依赖
+
+---
+
+NarrowDependency和ShuffleDependency的stage划分原则：
+
+- 对于NarrowDependency，parent RDD和child RDD的分区之间是完全依赖的，可以将parent RDD和child RDD直接合并为一 个stage。在合成的stage中(图4.12中为stage 0)，对于 OneToOneDependency，每个task读取parent RDD中的一个分区，并计算 child RDD中的一个分区
+- 对于ManyToOneDependency或者 ManyToManyDependency，每个task读取parent RDD中多个分区，并计算出child RDD中的一个分区
+- 对于ShuffleDependency，将parent RDD和child RDD进行划分，形成两个或多个stage，每个stage 产生多个task，stage之间通过Shuffle Write和Shuffle Read来传递数据
+
+<img src="../../pics/spark/spark_168.png" align=left width=900>
+
+<img src="../../pics/spark/spark_169.png" align=left width=900>
+
+### (2) **OneToOneDependency**类型的操作
+
+<img src="../../pics/spark/spark_170.png" align=left width=900>
+
+图中展示了 flatMap() 和 mapPartitionsWithIndex() 操作的 stage 和 task 划分图，这两个操作都生成了一个stage，stage中不同颜色的箭头表示不同的task。
+
+每个task负责处理一个分区，进行流水线计算，且计算逻辑清晰。
+
+这两个操作唯一不同的是：
+
+- flatMap()每读入一条record就处理和输出一条
+- mapPartitionsWithIndex()等到全部record都处理完后再输出record
+
+<img src="../../pics/spark/spark_171.png" align=left width=900>
+
+### (3) **RangeDependency**类型的操作
+
+<img src="../../pics/spark/spark_172.png" align=left width=900>
+
+图中展示了在一般情况下union()操作的stage和task划分图，该操作将两个RDD合并为一个RDD，只生成了一个stage，stage中不同颜色的箭头表示不同的task，每个task负责处理一个分区
+
+<img src="../../pics/spark/spark_173.png" align=left width=700>
+
+### (4) **ManyToOneDependency**类型的操作
+
+<img src="../../pics/spark/spark_174.png" align=left width=900>
+
+如图所示，coalesce(shuffle=false)、特殊情况下的union()、zipPartitions() 操作对应的数据依赖关系都是ManyToOneDependency，child RDD中的每个分区需要从parent RDD 中获取所依赖的多个分区的全部数据。
+
+由于ManyToOneDependency是窄依赖，所以Spark将parent RDD和child RDD组合为一个stage，该stage生成的task个数与最后的RDD的分区个数相等
+
+> 与OneToOneDependency形 成的task相比，这里每个task需要同时在parent RDD中获取多个分区中的数据
+
+<img src="../../pics/spark/spark_175.png" align=left width=900>
+
+### (5) **ManyToManyDependency**类型的操作
+
+<img src="../../pics/spark/spark_177.png" align=left width=900>
+
+如图所示，cartesian()操作对应的数据依赖关系是ManyToManyDependency，child RDD中的每个分区需要从两个parent RDD中获取所依赖的分区的全部数据
+
+Spark 将 parent RDD 和 child RDD 组合为一个stage，该stage生成的task个数与最后的 RDD的分区个数相等
+
+<img src="../../pics/spark/spark_178.png" align=left width=700>
+
+### (6) 单一**ShuffleDependency**类型的操作
+
+<img src="../../pics/spark/spark_179.png" align=left width=900>
+
+如图所示，aggregateByKey()和sortByKey()操作形成的是单一的ShuffleDependency数据依赖关系，也就是只与一个parent RDD形成ShuffleDependency。
+
+根据划分原则，Spark将parent RDD和child RDD 分开，分别形成一个stage，每个stage中的task个数与该stage中最后一个 RDD中的分区个数相等。
+
+为了进行跨stage的数据传递，上游stage中的task将输出数据进行Shuffle Write，child stage中的task 通过Shuffle Read 同时获取parent RDD中多个分区中的数据
+
+> 与NarrowDependency不同， 这里从parent RDD的分区中获取的数据是划分后的部分数据
+
+<img src="../../pics/spark/spark_180.png" align=left width=900>
+
+### (7) 多**ShuffleDependency**类型的操作
+
+<img src="../../pics/spark/spark_181.png" align=left width=900>
+
+如图所示，join()操作在不同配置下会生成多种不同类型的数据依赖关系
+
+- 图(d)中，由于rdd1、rdd2和CoGoupedRDD具有相同的partitioner，parent RDD和child RDD之间只存在窄依赖 ManyToOneDependency，因此只形成一个stage
+
+- 图(b)、图(c)都同时包含OneToOneDependency和ShuffleDependency，根据 Spark的stage划分原则，只对ShuffleDependency进行划分，得到两个 stage，stage 1中的task既需要读取上游stage中的多个分区中的数据，也需要处理通过OneToOneDependency连接的RDD中的数据
+- 图(a)最复杂，包含了多个ShuffleDependency，依据Spark的划分原则，需要对多个ShuffleDependency都进行划分，得到多个stage(这里划分出3个 stage)。下游stage需要等待上游stage完成后再执行，Shuffle Read获取 上游stage的输出数据
+
+<img src="../../pics/spark/spark_182.png" align=left width=1000>
+
+# 五、Shuffle 机制
+
+## 1、 Shuffle的意义及设计挑战
+
+**Shuffle机制**：上游和 游stage之间如何传递数据，即运行在不同stage、不同节点上的 task 间如何进行数据传递
+
+**Shuffle解决的问题**：如何将数据重新组织，使其能够在上游和下游 task 之间进行传递和计算
+
+---
+
+Shuffle的设计和实现需要面对多个挑战：
+
+- (1) **计算的多样性**：如何建立一个统一的Shuffle框架来支持这些操作呢?如何根据不同数据操作的特点，灵活地构建Shuffle Write/Read过程呢?如何确定聚合函数、数据分区、数据排序的执行顺序呢?
+
+    Shuffle机制分为Shuffle Write和Shuffle Read两 个阶段，前者主要解决上游stage输出数据的分区问题，后者主要解决下游stage从上游stage获取数据、重新组织、并为后续操作提供数据的问题
+
+    > 如图所示，在进行Shuffle Write/Read时，有些操作需要对数据进行一定的计算
+    >
+    > - groupByKey() 需要将 Shuffle Read的&lt;K，V&gt;record 聚合为&lt;K，list(V)&gt; record
+    >
+    >     > 第1个图中的&lt;K，CompactBuffer(V)&gt;， Spark 采用 CompactBuffer 来实现 list
+    >
+    > - reduceByKey() 需要在 Shuffle Write 端进行 combine()
+    >
+    > - sortByKey() 需要对Shuffle Read 的数据按照 Key 进行排序。那么，
+
+- (2) **计算的耦合性**：对于Shuffle Read数据需要聚合的情况，具体在什么时候调用这些聚合函数呢?是先读取数据再进行聚合，还是边读取数据边进行聚合呢?
+
+    > 如图所示，有些操作包含用户自定义聚合函数，如aggregateByKey (seqOp，combOp)中的seqOp和combOp，以及reduceByKey(func)中的func，这些函数的计算过程和数据的Shuffle Write/Read过程耦合在一起
+    >
+    > 例如，aggregateByKey(seqOp， combOp)在Shuffle Write数据时需要调用seqOp来进行combine()，在 Shuffle Read数据时需要调用combOp来对数据进行聚合
+
+- (3) **中间数据存储问题**：在Shuffle机制中需要对数据进行重新组织(分区、聚合、排序等)，也需要进行一些计算(执行聚合函数)， 那么在Shuffle Write/Read过程中的中间数据如何表示?如何组织?如何 存放?如果Shuffle的数据量太大，那么内存无法存下怎么办?
+
+<img src="../../pics/spark/spark_183.png" align=left width=1000>
+
+## 2、Shuffle的设计思想
+
+> 为了方便讨论，在单个ShuffleDependency情况下，我们将上游的 stage称为map stage，将下游stage称为reduce stage。相应地，map stage包 含多个map task，reduce stage包含多个reduce task
+
+### (1) 解决数据分区和数据聚合问题
+
+- **数据分区问题**：针对Shuffle Write阶段，如何对 map task 输出结果进行分区，使得 reduce task 可以通过网络获取相应的数据?
+
+    > 该问题包含两个子问题：
+    >
+    > - 第1个问题：**如何确定分区个数**?
+    >
+    >     > 分区个数与下游 stage 的 task 个数一致
+    >     >
+    >     > ---
+    >     >
+    >     > 分区个数可以由用户自定义，如groupByKey(numPartitions)中的 numPartitions一般被定义为集群中可用CPU个数的1~2倍，即将每个 map task的输出数据划分为 numPartitions 份，相应地，在 reduce stage 中启动 numPartitions 个 task 来获取并处理这些数据
+    >     >
+    >     > 如果用户没有定义，则默认分区个数是parent RDD的分区个数的最大值
+    >     >
+    >     > 如左图所示，没有定义join(numPartitions)中的分区个数numPartitions下，取两个parent RDD的分区的最大值为2
+    >     >
+    >     > <img src="../../pics/spark/spark_184.png" align=left width=1000>
+    >
+    > - 第2个问题：**如何对 map task 输出数据进行分区**?
+    >
+    >     > 解决方法：对 map task 输出的每一个&lt;K， V&gt;record，根据Key计算其partitionId，具有不同partitionId的record 被输出到不同的分区(文件)中
+    >     >
+    >     > 如上右图所示，下游 stage中只有两个task，分区个数为2。map task需要将其输出数据分为两份，方法是让map()操作计算每个输出record的partitionId=Hash(Key)%2，根据partitionId将record直接输出到不同分区中
+    >     >
+    >     > 备注：这种方法非常简单，容易 实现，但不支持Shuffle Write端的combine()操作
+
+- **数据聚合问题**：针对 Shuffle Read 阶段，即如何获取上游不同 task 的输出数据并按照 Key 进行聚合?
+
+    > 如 groupByKey() 中需要将不同 task 获取到的 &lt;K，V&gt;record 聚合为&lt;K，list(V) &gt;(实现时为&lt;K，CompactBuffer(V)&gt;)， reduceByKey()将&lt;K，V&gt;record聚合为&lt;K， func(list(V))&gt; 
+    >
+    > ---
+    >
+    > **数据聚合问题解决方案**：
+    >
+    > - 数据聚合的本质：将相同Key的record放在一起，并进行必要的计算，可以利用 HashMap 实现
+    > - 方法：**使用两步聚合(two-phase aggregation)**
+    >     - 先将不同 tasks 获取到的 &lt;K，V&gt;record 存放到HashMap中，HashMap中的Key是K，Value是list(V)
+    >     - 然后，对于 HashMap 中每一个 &lt;K， list(V)&gt;record，使用 func 计算得到&lt;K，func(list(V)) &gt;record
+    >
+    > 如上右图所示，join()在Shuffle Read阶段将来自不同 task 的数据以 HashMap 方式聚合在一起，由于join()没有聚合函数， 将record 按 Key 聚合后直接执行下一步操作，使用 cartesian() 计算笛卡儿积
+    >
+    > 而对于reduceByKey(func)来说，需要进一步使用func()对相同Key的record进行聚合。如下左图所示，两步聚合的第1步是将 record存放到HashMap中，第2步是使用func()(此处是sum())函 数对list(V)进行计算，得到最终结果
+    >
+    > <img src="../../pics/spark/spark_185.png" align=left width=1000>
+    >
+    > **两步聚合方案的优点**：可以解决数据聚合问题，逻辑清晰、容易实现
+    >
+    > **缺点**：所有 Shuffle 的 record 都会先被存放在HashMap中，占用内存空间较大。另外，对于包含聚合函数的操作，如 reduceByKey(func)，需要先将数据聚合到HashMap中以后再执行 func()聚合函数，效率较低
+    >
+    > **优化方案**：对于reduceByKey(func)等包含聚合函数的操作来说，可以采用一种在线聚合(Online aggregation)的方法来减少内 存空间占用。如右图所示，该方案在每个record加入HashMap 时，同时进行func()聚合操作，并更新相应的聚合结果
+    >
+    > 具体地，对于每一个新来的&lt;K，V&gt;record：
+    >
+    > - 首先，从HashMap中get出已经存在的结果V *′* =HashMap.get(K)
+    > - 然后，执行聚合函数得到新的中间结果 V *′′* =func(V，V *′* )
+    > - 最后，将V *′′* 写入HashMap中，即 HashMap.put(K，V *′′* )。
+    >
+    > 对于不包含聚合函数的操作，如groupByKey()等，在线聚合和两步聚合没有差别，因为这些操作不包含聚合函数，无法减少中间数据规模
+
+### (2) 解决 map() 端 combine 问题
+
+**考虑如何支持 Shuffle Write 端的 combine 功能**：
+
+- **需要进行 combine 操作**：进行 combine 操作的目的是减少 Shuffle 的数据量
+
+- - 只有包含聚合函数的数据操作需要进行 map() 端的 combine，具体包括reduceByKey()、foldByKey()、 aggregateByKey()、combineByKey()、distinct()等
+    - 对于不包含聚合函数的操作，即使进行combine操作， 也不能减少中间数据的规模，如 groupByKey()
+
+- **combine 解决方案**：采用Shuffle Read端基于HashMap的解决方案
+
+    - 首先利用HashMap进行combine
+    - 然后对HashMap中每一个record进行分区， 输出到对应的分区文件中
+
+    > - combine和Shuffle Read端的聚合过程没有区别，都是将&lt;K，V&gt;record聚合成&lt;K， func(list(V))>
+    > - 不同点：Shuffle Read 端聚合的是来自所有 map task 输出的数据，而combine聚合的是来自单一task输出的数据
+
+### (3) 解决 sort 问题
+
+考虑如何支持数据排序功能：
+
+- (1) **在哪里执行sort?**
+
+    - 首先，**在Shuffle Read端必须执行sort**，因为从每个task获取的数据组合起来以后不是全局按Key进行排序的
+
+    - 其次，理论上，在Shuffle Write端不需要排序，但如果进行了排序，那么Shuffle Read获取到(来 自不同task)的数据是已经部分有序的数据，可以减少Shuffle Read端排 序的复杂度
+
+- (2) **何时进行排序，即如何确定排序和聚合的顺序?**
+
+    > Spark选择的是第3种方案，设计了特殊的HashMap来高效完 成先聚合再排序的任务
+
+    - **第1种方案：先排序再聚合**，先使用线性数据结构如 Array，存储Shuffle Read的&lt;K，V&gt;record，然后对Key进行排序，排序后的数据可以直接从前到后进行扫描聚合，不需要再使用HashMap进行hash-based聚合
+
+        > 这种方案也是Hadoop MapReduce采用的方案
+        >
+        > 方案优点：既可以满足排序要求又可以满足聚合要求
+        >
+        > 缺点：需要较大内存空间来存储线性数据结构，同时排序和聚合过程不能同时进行，即不能使用在线聚合，效率较低
+
+    - **第2种方案：排序和聚合同时进行**，可以使用带有排序功能的 Map，如TreeMap来对中间数据进行聚合，每次Shuffle Read获取到一个 record，就将其放入TreeMap中与现有的record进行聚合，过程与 HashMap类似，只是TreeMap自带排序功能
+
+        > 方案优点：排序和聚合可以同时进行
+        >
+        > 缺点：相比HashMap，TreeMap的排序复杂度较高，TreeMap的插入时间复杂度是 *O* ( *n* log *n* )，而且需要不断调整树的结构，不适合数据规模非常大的情况
+
+    - **第3种方案：先聚合再排序**，即维持现有基于 HashMap 的聚合方案 不变，将 HashMap 中的 record 或 record 的引用放入线性数据结构中进行排序
+
+        > 方案优点：聚合和排序过程独立，灵活性较高，而且之前的在线聚合方案不需要改动
+        >
+        > 缺点：需要复制(copy)数据或引用，空间占用较大
+
+### (4) 解决内存不足问题
+
+解决方案：**使用内存+磁盘混合存储方案** 
+
+- 先在内存(如 HashMap)中进行数据聚合，如果内存空间不足，则将内存中的数据 spill 到磁盘上，此时空闲出来的内存可以继续处理新的数据。此过程可以不断重复，直到数据处理完成
+
+- 然而，问题是spill到磁盘上的数据实 际上是部分聚合的结果，并没有和后续的数据进行过聚合。因此，为了 得到完整的聚合结果，需要在进行下一步数据操作之前对磁盘上和 内存中的数据进行再次聚合，这个过程我们称为“全局聚合”
+
+    > 为了加速 全局聚合，我们需要将数据spill到磁盘上时进行排序，这样全局聚合才 能够按顺序读取spill到磁盘上的数据，并减少磁盘I/O
+
+## 3、Spark中Shuffle框架的设计
+
+在Shuffle机制中Spark典型数据操作的计算需求：
+
+<img src="../../pics/spark/spark_186.png" align=left width=1000>
+
+> 在Shuffle Write端，目前只支持combine功 能，并不支持按Key排序功能
+
+### (1) Shuffle Write 框架设计和实现
+
+> 在 Shuffle Write 阶段，数据操作需要**分区、聚合、排序**3个功能，但每个数据操作实际只需要其中的一个或两个功能
+
+Spark 为了支持所有的情况，设计了一个通用的Shuffle Write框架，**框架的计算顺序为“map()输出→数据聚合→排序→分区”输出**
+
+<img src="../../pics/spark/spark_187.png" align=left width=1000>
+
+如图所示：
+
+> 聚合 (aggregate，即combine)和排序(sort)过程可选，如果数据操作不需要聚合或排序，那么可以去掉相应的聚合或排序过程
+
+- map task 每计算出一个 record 及其 partitionId，就将 record 放入类似 HashMap 的数据结构中进行聚合
+
+- 聚合完成后，再将 HashMap中的数据放入类似 Array 的数据结构中进行排序，既可按照 partitionId，也可以按照 partitionId+Key 进行排序
+- 最后根据 partitionId 将数据写入不同的数据分区中，存放到本地磁盘上。其中
+
+---
+
+在实现过程中，Spark 对不同的情况进行分类，以及针对性的优化调整，形成了不同的 Shuffle Write 方式：
+
+- (1) **不需要 map() 端聚合(combine)和排序**
+
+    > 只需要实现分区功能
+    >
+    > ---
+    >
+    > 如图所示，map() 依次输出&lt;K，V&gt;record，并计算其partitionId(PID)，Spark根据 partitionId，将record依次输出到不同的buffer中，每当buffer填满就将 record 溢写到磁盘上的分区文件中
+    >
+    > 分配buffer的原因是map()输出 record的速度很快，需要进行缓冲来减少磁盘I/O
+    >
+    > ---
+    >
+    > 在实现中，Spark将这种Shuffle Write方式称为**BypassMergeSortShuffleWriter**，即不需要进行排序的Shuffle Write方式
+    >
+    > <img src="../../pics/spark/spark_188.png" align=left width=1000>
+    >
+    > **优点**：速度快，直接将 record 输出到不同的分区文件中
+    >
+    > **缺点**：资源消耗过高，每个分区都需要一个buffer(大小由 spark.Shuffle.file.buffer控制，默认为32KB)，且同时需要建立多个分区文件进行溢写，该Shuffle方案适合分区个数较少的情况(&lt;200)
+    >
+    > ---
+    >
+    > 该模式适用的操作类型：map()端不需要聚合(combine)、Key 不需要排序且分区个数较少(&lt; =spark.Shuffle.sort.bypassMergeThreshold，默认值为200)，如：groupByKey(100)，partitionBy(100)，sortByKey(100)
+
+- (2) **不需要map()端聚合(combine)，但需要排序**
+
+    > 在这种情况下需要按照 partitionId+Key 进行排序
+    >
+    > ---
+    >
+    > Spark 实现方法：建立一个Array(图中的 PartitionedPairBuffer)来存放map()输出的record，并对Array中元素 的Key进行精心设计，将每个&lt;K，V&gt;record转化为&lt; (PID，K)，V&gt;record存储；然后按照partitionId+Key对record进行排序；最后将所有record写入一个文件中，通过建立索引来标示每个分区
+    >
+    > - 如果Array存放不下，则会先扩容，如果还存放不下，就将Array中 的record排序后spill到磁盘上，等待map()输出完以后，再将Array中 的record与磁盘上已排序的record进行全局排序，得到最终有序的 record，并写入文件中
+    > - 该Shuffle模式被命名为**SortShuffleWriter(KeyOrdering=true)**，使用的 Array 被命名为 PartitionedPairBuffer
+    >
+    > <img src="../../pics/spark/spark_189.png" align=left width=1000>
+    >
+    > **优点**：只需要一个 Array 结构就可以支持按照 partitionId+Key 进行排序，Array大小可控，而且具有扩容和spill到磁盘上的功能，支持从小规模到大规模数据的排序，同时输出的数据已经按照partitionId进行排序，因此只需要一个分区文件存储，即可标 示不同的分区数据，克服了BypassMergeSortShuffleWriter中建立文件数过多的问题，适用于分区个数很大的情况
+    >
+    > **缺点**：排序增加计算时延
+    >
+    > ---
+    >
+    > 该 Shuffle 模式适用的操作：map() 端不需要聚合(combine)、 Key需要排序、分区个数无限制
+
+- (3) **需要map()端聚合(combine)，需要或者不需要按 Key 进行排序**
+
+    > 在这种情况下，需要实现按Key进行聚合(combine)的功能
+    >
+    > ---
+    >
+    > **Spark 实现方法**：建立一个类似 HashMap 的数据结构对 map() 输出的 record 进行聚合
+    >
+    > - HashMap 中的 Key 是“partitionId+Key”，HashMap 中的 Value 是经过相同 combine 的聚合结果
+    >
+    > - 聚合完成后，Spark对HashMap中的 record进行排序。如果不需要按 Key 进行排序，那么只按partitionId进行排序
+    > - 如果需要按Key进行排序，那么按 partitionId+Key 进行排序
+    > - 最后，将排序后的record写入一个分区文件中
+    >
+    > 如果HashMap存放不下，则会先扩容为两倍大小，如果还存放不下，就将HashMap中的record排序后spill到磁盘上
+    >
+    > 当map()输出完成后，将此时HashMap中的reocrd与磁盘上已排序的record进行再次聚合(merge)，得到最终的record，输出到分区文件中
+    >
+    > <img src="../../pics/spark/spark_190.png" align=left width=1000>
+    >
+    > **优点**：只需要一个 HashMap 结构就可以支持 map() 端的 combine 功能，HashMap具有扩容和 spill 到磁盘上的功能，支持小规模到大规模数据的聚合，也适用于分区个数很大的情况。 在聚合后使用Array排序，可以灵活支持不同的排序需求
+    >
+    > **缺点**：在内存中进行聚合，内存消耗较大，需要额外的数组进行排序，而且如果有数据spill到磁盘上，还需要再次进行聚合
+    >
+    > 在实现中，Spark在Shuffle Write端使用 PartitionedAppendOnlyMap，可以同时支持聚合和排序操作，相当于HashMap和Array的合体
+    >
+    > 该Shuffle模式适用的操作：适合map()端聚合(combine)、需要 或者不需要按Key进行排序、分区个数无限制的应用，如 reduceByKey()、aggregateByKey()等，称为 **sort-based Shuffle Write** 
+
+### (2) Shuffle Read 框架设计和实现
+
+在 Shuffle Read 阶段，数据操作需要3个功能：**跨节点数据获取、聚合、排序** 
+
+Spark 为了支持所有的情况，设计了一个通用的Shuffle Read框架，框架的计算顺序为“**数据获取→聚合→排序**”输出
+
+- reduce task 不断从各个map task的分区文件中获取数 据(Fetch records)
+- 然后使用类似 HashMap 的结构来对数据进行聚合 (aggregate)，该过程是边获取数据边聚合
+- 聚合完成后，将 HashMap 中的数据放入类似Array的数据结构中按照Key进行排序(sort by Key)
+- 最后将排序结果输出或者传递给下一个操作
+
+<img src="../../pics/spark/spark_191.png" align=left width=1000>
+
+- (1) **不需要聚合，不需要按Key进行排序**
+
+    > 这种情况最简单，只需要实现数据获取功能即可。如图6.9所示， 等待所有的map task结束后，reduce task开始不断从各个map task获取 &lt;K，V&gt;record，并将record输出到一个buffer中(大小为 spark.reducer.maxSizeInFlight=48MB)，下一个操作直接从buffer中获取 数据即可
+    >
+    > <img src="../../pics/spark/spark_192.png" align=left width=1000>
+    >
+    > 该Shuffle模式的优缺点:优点是逻辑和实现简单，内存消耗很小。
+    >
+    > 缺点是不支持聚合、排序等复杂功能。
+    >
+    > 该Shuffle模式适用的操作:适合既不需要聚合也不需要排序的应用，如partitionBy()等
+
+- (2)不需要聚合，需要按Key进行排序
+
+    > 在这种情况下，需要实现数据获取和按Key排序的功能。如图6.10 所示，获取数据后，将buffer中的record依次输出到一个Array结构 (PartitionedPairBuffer)中。由于这里采用了本来用于Shuffle Write端的 PartitionedPairBuffer结构，所以还保留了每个record的partitionId。然 后，对Array中的record按照Key进行排序，并将排序结果输出或者传递 给下一步操作。
+    >
+    > 当内存无法存下所有的record时，PartitionedPairBuffer将record排序 后spill到磁盘上，最后将内存中和磁盘上的record进行全局排序，得到 最终排序后的record。
+    >
+    > <img src="../../pics/spark/spark_193.png" align=left width=1000>
+    >
+    > 该Shuffle模式的优缺点:优点是只需要一个Array结构就可以支持 按照Key进行排序，Array大小可控，而且具有扩容和spill到磁盘上的功 能，不受数据规模限制。缺点是排序增加计算时延。
+    >
+    > 该Shuffle模式适用的操作:适合reduce端不需要聚合，但需要按 Key进行排序的操作，如sortByKey()、sortBy()等。
+
+- (3)需要聚合，不需要或需要按Key进行排序
+
+    > 在这种情况下，需要实现按照Key进行聚合，根据需要按Key进行 排序的功能。如图6.11的上图所示，获取record后，Spark建立一个类似 HashMap的数据结构(ExternalAppendOnlyMap)对buffer中的record进 行聚合，HashMap中的Key是record中的Key，HashMap中的Value是经过 相同聚合函数(func())计算后的结果。在图6.11中，聚合函数是 sum()函数，那么Value中存放的是多个record对应Value相加后的结 果。之后，如果需要按照Key进行排序，如图6.11的下图所示，则建立 一个Array结构，读取HashMap中的record，并对record按Key进行排序， 排序完成后，将结果输出或者传递给下一步操作
+    >
+    > <img src="../../pics/spark/spark_194.png" align=left width=1000>
+    >
+    > 如果HashMap存放不下，则会先扩容为两倍大小，如果还存放不 下，就将HashMap中的record排序后spill到磁盘上。此时，HashMap被清 空，可以继续对buffer中的record进行聚合。如果内存再次不够用，那么 继续spill到磁盘上，此过程可以重复多次。当聚合完成以后，将此时 HashMap中的reocrd与磁盘上已排序的record进行再次聚合，得到最终的 record，输出到分区文件中。
+    >
+    > 该Shuffle模式的优缺点:优点是只需要一个HashMap和一个Array结 构就可以支持reduce端的聚合和排序功能，HashMap 具有扩容和spill到 磁盘上的功能，支持小规模到大规模数据的聚合。边获取数据边聚合， 效率较高。缺点是需要在内存中进行聚合，内存消耗较大，如果有数据 spill到磁盘上，还需要进行再次聚合。另外，经过HashMap聚合后的数
+    >
+    > 据仍然需要拷贝到Array中进行排序，内存消耗较大。在实现中，Spark 使用的HashMap是一个经过特殊优化的HashMap，命名为 ExternalAppendOnlyMap，可以同时支持聚合和排序操作，相当于 HashMap和Array的合体，其实现细节将在6.4节中介绍。
+    >
+    > 该Shuffle模式适用的操作:适合reduce端需要聚合、不需要或需要 按Key进行排序的操作，如reduceByKey()、aggregateByKey()等
+
+Shuffle Read框架需要执行的3个步骤是“数据获取→聚合→排序输 出”。如果应用中的数据操作不需要聚合，也不需要排序，那么获取数 据后直接输出。对于需要按Key进行排序的操作，Spark 使用基于Array 的方法来对Key进行排序。对于需要聚合的操作，Spark提供了基于 HashMap的聚合方法，同时可以再次使用Array来支持按照Key进行排 序。总体来讲，Shuffle Read框架使用的技术和数据结构与Shuffle Write 过程类似，而且由于不需要分区，过程比Shuffle Write更为简单。当 然，还有一些可优化的地方，如聚合和排序如何进行统一来减少内存 copy和磁盘I/O等，这部分内容将在6.4节中介绍。
+
+## 4、支持高效聚合和排序的数据结构
+
+
+
+
+
+
+
+## 5、与Hadoop MapReduce的Shuffle机制对比
 
 
 
@@ -1221,8 +2016,7 @@ action() 数据操作是用来对计算结果进行后处理的，同时提交�
 
 
 
-
-
+# ===
 
 # 二、spark 使用
 
