@@ -1905,7 +1905,7 @@ Spark 为了支持所有的情况，设计了一个通用的Shuffle Write框架�
     > Spark 实现方法：建立一个Array(图中的 PartitionedPairBuffer)来存放map()输出的record，并对Array中元素 的Key进行精心设计，将每个&lt;K，V&gt;record转化为&lt; (PID，K)，V&gt;record存储；然后按照partitionId+Key对record进行排序；最后将所有record写入一个文件中，通过建立索引来标示每个分区
     >
     > - 如果Array存放不下，则会先扩容，如果还存放不下，就将Array中 的record排序后spill到磁盘上，等待map()输出完以后，再将Array中 的record与磁盘上已排序的record进行全局排序，得到最终有序的 record，并写入文件中
-    > - 该Shuffle模式被命名为**SortShuffleWriter(KeyOrdering=true)**，使用的 Array 被命名为 PartitionedPairBuffer
+    > - 该Shuffle模式被命名为**SortShuffleWriter(KeyOrdering=true)**，使用的 Array 被命名为 **PartitionedPairBuffer**
     >
     > <img src="../../pics/spark/spark_189.png" align=left width=1000>
     >
@@ -1941,7 +1941,7 @@ Spark 为了支持所有的情况，设计了一个通用的Shuffle Write框架�
     >
     > **缺点**：在内存中进行聚合，内存消耗较大，需要额外的数组进行排序，而且如果有数据spill到磁盘上，还需要再次进行聚合
     >
-    > 在实现中，Spark在Shuffle Write端使用 PartitionedAppendOnlyMap，可以同时支持聚合和排序操作，相当于HashMap和Array的合体
+    > 在实现中，Spark在Shuffle Write端使用 **PartitionedAppendOnlyMap**，可以同时支持聚合和排序操作，相当于HashMap和Array的合体
     >
     > 该Shuffle模式适用的操作：适合map()端聚合(combine)、需要 或者不需要按Key进行排序、分区个数无限制的应用，如 reduceByKey()、aggregateByKey()等，称为 **sort-based Shuffle Write** 
 
@@ -1951,62 +1951,388 @@ Spark 为了支持所有的情况，设计了一个通用的Shuffle Write框架�
 
 Spark 为了支持所有的情况，设计了一个通用的Shuffle Read框架，框架的计算顺序为“**数据获取→聚合→排序**”输出
 
-- reduce task 不断从各个map task的分区文件中获取数 据(Fetch records)
-- 然后使用类似 HashMap 的结构来对数据进行聚合 (aggregate)，该过程是边获取数据边聚合
-- 聚合完成后，将 HashMap 中的数据放入类似Array的数据结构中按照Key进行排序(sort by Key)
+- reduce task 不断从各个map task的分区文件中获取数据(Fetch records)
+- 然后使用类似 HashMap 的结构来对数据进行聚合(aggregate)，该过程是边获取数据边聚合
+- 聚合完成后，将 HashMap 中的数据放入类似 Array 的数据结构中按照Key进行排序(sort by Key)
 - 最后将排序结果输出或者传递给下一个操作
 
 <img src="../../pics/spark/spark_191.png" align=left width=1000>
 
 - (1) **不需要聚合，不需要按Key进行排序**
 
-    > 这种情况最简单，只需要实现数据获取功能即可。如图6.9所示， 等待所有的map task结束后，reduce task开始不断从各个map task获取 &lt;K，V&gt;record，并将record输出到一个buffer中(大小为 spark.reducer.maxSizeInFlight=48MB)，下一个操作直接从buffer中获取 数据即可
+    > 这种情况最简单，只需要实现数据获取功能即可
+    >
+    > ---
+    >
+    > 如图所示， 等待所有的 map task 结束后，reduce task 开始不断从各个 map task 获取 &lt;K，V&gt;record，并将 record 输出到一个 buffer 中(大小为 spark.reducer.maxSizeInFlight=48MB)，下一个操作直接从 buffer 中获取数据即可
     >
     > <img src="../../pics/spark/spark_192.png" align=left width=1000>
     >
-    > 该Shuffle模式的优缺点:优点是逻辑和实现简单，内存消耗很小。
+    > 优点：逻辑和实现简单，内存消耗很小
     >
-    > 缺点是不支持聚合、排序等复杂功能。
+    > 缺点：不支持聚合、排序等复杂功能
     >
-    > 该Shuffle模式适用的操作:适合既不需要聚合也不需要排序的应用，如partitionBy()等
+    > 该Shuffle模式适用的操作：适合既不需要聚合也不需要排序的应用，如partitionBy()等
 
-- (2)不需要聚合，需要按Key进行排序
+- (2) **不需要聚合，需要按 Key 进行排序** 
 
-    > 在这种情况下，需要实现数据获取和按Key排序的功能。如图6.10 所示，获取数据后，将buffer中的record依次输出到一个Array结构 (PartitionedPairBuffer)中。由于这里采用了本来用于Shuffle Write端的 PartitionedPairBuffer结构，所以还保留了每个record的partitionId。然 后，对Array中的record按照Key进行排序，并将排序结果输出或者传递 给下一步操作。
+    > 在这种情况下，需要实现数据获取和按 Key 排序的功能
     >
-    > 当内存无法存下所有的record时，PartitionedPairBuffer将record排序 后spill到磁盘上，最后将内存中和磁盘上的record进行全局排序，得到 最终排序后的record。
+    > ---
+    >
+    > 如图所示：
+    >
+    > - 获取数据后，将 buffer 中的 record 依次输出到一个 Array 结构(PartitionedPairBuffer)中
+    >
+    >     由于这里采用了本来用于Shuffle Write端的 PartitionedPairBuffer结构，所以还保留了每个record的partitionId
+    >
+    > - 然后，对 Array 中的 record 按照 Key 进行排序，并将排序结果输出或者传递给下一步操作
+    >
+    > - 当内存无法存下所有的 record 时，PartitionedPairBuffer 将 record 排序后spill到磁盘上
+    > - 最后将内存中和磁盘上的record进行全局排序，得到最终排序后的record
     >
     > <img src="../../pics/spark/spark_193.png" align=left width=1000>
     >
-    > 该Shuffle模式的优缺点:优点是只需要一个Array结构就可以支持 按照Key进行排序，Array大小可控，而且具有扩容和spill到磁盘上的功 能，不受数据规模限制。缺点是排序增加计算时延。
+    > 优点：只需要一个 Array 结构就可以支持按照 Key 进行排序，Array大小可控，而且具有扩容和spill到磁盘上的功 能，不受数据规模限制
     >
-    > 该Shuffle模式适用的操作:适合reduce端不需要聚合，但需要按 Key进行排序的操作，如sortByKey()、sortBy()等。
+    > 缺点：排序增加计算时延
+    >
+    > 该Shuffle模式适用的操作：适合 reduce 端不需要聚合，但需要按 Key进行排序的操作，如sortByKey()、sortBy()等。
 
-- (3)需要聚合，不需要或需要按Key进行排序
+- (3) **需要聚合，不需要或需要按Key进行排序** 
 
-    > 在这种情况下，需要实现按照Key进行聚合，根据需要按Key进行 排序的功能。如图6.11的上图所示，获取record后，Spark建立一个类似 HashMap的数据结构(ExternalAppendOnlyMap)对buffer中的record进 行聚合，HashMap中的Key是record中的Key，HashMap中的Value是经过 相同聚合函数(func())计算后的结果。在图6.11中，聚合函数是 sum()函数，那么Value中存放的是多个record对应Value相加后的结 果。之后，如果需要按照Key进行排序，如图6.11的下图所示，则建立 一个Array结构，读取HashMap中的record，并对record按Key进行排序， 排序完成后，将结果输出或者传递给下一步操作
+    > 在这种情况下，需要实现按照 Key进 行聚合，根据需要按 Key 进行排序的功能
+    >
+    > ---
+    >
+    > - 如图的上图所示，获取 record 后，Spark建立一个类似 HashMap 的数据结构(ExternalAppendOnlyMap)对 buffer 中的record 进行聚合，HashMap中的Key是record中的Key，HashMap中的Value是经过相同聚合函数(func())计算后的结果
+    > - 如果需要按照Key进行排序，如图下图所示，则建立 一个Array结构，读取HashMap中的record，并对record按Key进行排序， 排序完成后，将结果输出或者传递给下一步操作
+    >
+    > 如果HashMap存放不下，则会先扩容为两倍大小，如果还存放不 下，就将HashMap中的record排序后spill到磁盘上
+    >
+    > Spark 使用的HashMap是一个经过特殊优化的HashMap，命名为 **ExternalAppendOnlyMap**，可以同时支持聚合和排序操作
     >
     > <img src="../../pics/spark/spark_194.png" align=left width=1000>
     >
-    > 如果HashMap存放不下，则会先扩容为两倍大小，如果还存放不 下，就将HashMap中的record排序后spill到磁盘上。此时，HashMap被清 空，可以继续对buffer中的record进行聚合。如果内存再次不够用，那么 继续spill到磁盘上，此过程可以重复多次。当聚合完成以后，将此时 HashMap中的reocrd与磁盘上已排序的record进行再次聚合，得到最终的 record，输出到分区文件中。
+    > 优点：只需要一个 HashMap 和一个 Array 结构就可以支持 reduce 端的聚合和排序功能，HashMap 具有扩容和 spill 到磁盘上的功能，支持小规模到大规模数据的聚合。边获取数据边聚合， 效率较高
     >
-    > 该Shuffle模式的优缺点:优点是只需要一个HashMap和一个Array结 构就可以支持reduce端的聚合和排序功能，HashMap 具有扩容和spill到 磁盘上的功能，支持小规模到大规模数据的聚合。边获取数据边聚合， 效率较高。缺点是需要在内存中进行聚合，内存消耗较大，如果有数据 spill到磁盘上，还需要进行再次聚合。另外，经过HashMap聚合后的数
+    > 缺点：需要在内存中进行聚合，内存消耗较大，如果有数据 spill到磁盘上，还需要进行再次聚合。另外，经过HashMap聚合后的数据仍然需要拷贝到Array中进行排序，内存消耗较大
     >
-    > 据仍然需要拷贝到Array中进行排序，内存消耗较大。在实现中，Spark 使用的HashMap是一个经过特殊优化的HashMap，命名为 ExternalAppendOnlyMap，可以同时支持聚合和排序操作，相当于 HashMap和Array的合体，其实现细节将在6.4节中介绍。
-    >
-    > 该Shuffle模式适用的操作:适合reduce端需要聚合、不需要或需要 按Key进行排序的操作，如reduceByKey()、aggregateByKey()等
-
-Shuffle Read框架需要执行的3个步骤是“数据获取→聚合→排序输 出”。如果应用中的数据操作不需要聚合，也不需要排序，那么获取数 据后直接输出。对于需要按Key进行排序的操作，Spark 使用基于Array 的方法来对Key进行排序。对于需要聚合的操作，Spark提供了基于 HashMap的聚合方法，同时可以再次使用Array来支持按照Key进行排 序。总体来讲，Shuffle Read框架使用的技术和数据结构与Shuffle Write 过程类似，而且由于不需要分区，过程比Shuffle Write更为简单。当 然，还有一些可优化的地方，如聚合和排序如何进行统一来减少内存 copy和磁盘I/O等，这部分内容将在6.4节中介绍。
+    > 该Shuffle模式适用的操作：适合 reduce 端需要聚合、不需要或需要按Key排序的操作，如reduceByKey()、aggregateByKey()
 
 ## 4、支持高效聚合和排序的数据结构
 
+为了提高聚合和排序性能，Spark为Shuffle Write/Read的聚合和排序 过程设计了3种数据结构：
 
+> 基本思想：在内存中对record进行聚合和排序，如果存放不下，则进行扩容，如果还存放不下，就将数据排序后spill到磁盘上，最后将磁盘和内存中的数 据进行聚合、排序，得到最终结果
 
+- `PartitionedPairBuffer`：类似 Array，仅用于 map 和 reduce 端数据排序，包含 partitionId
+- `PartitionedAppendOnlyMap`：类似 HashMap + Array，用于 map 端聚合及排序，包含 partitionId
+- `ExternalAppendOnlyMap`：类似 HashMap + Array，用于 reduce 端聚合和排序
 
+> PartitionedAppendOnlyMap和 ExternalAppendOnlyMap都基于AppendOnlyMap实现
 
+Shuffle 机制中使用的数据结构的两个特征：
 
+- 一是只需要支持 record 的插入和更新操作，不需要支持删除操作，这样我们可以对数据结构进行优化，减少内存消耗
+- 二是只有内存放不下时才需要 spill  到磁盘上，因此数据结构设计以内存为主，磁盘为辅
+
+### (1) AppendOnlyMap的原理
+
+AppendOnlyMap 实际上是一个只支持 record 添加和对 Value 进行更新的 HashMap
+
+- AppendOnlyMap只使用数组来存储元素，根据元素的 Hash 值确定存储位 置，如果存储元素时发生Hash值冲突，则使用二次地址探测法来解决Hash值冲突
+
+- **扩容**：AppendOnlyMap 使用数组来实现的问题是，如果插入的 record太多，则很快会被填满
+
+    > 解决方案：若 AppendOnlyMap 利用率达到70%，则扩张一倍，并对所有Key进行rehash，重新排列每个Key的位置
+
+- **排序**：由于 AppendOnlyMap 采用了数组作为底层存储结构，可以支持快速排序等排序算法
+
+    > 实现方法：
+    >
+    > - 先将数组中所有的 &lt;K，V&gt;record转移到数组的前端，用begin和end来标示起始位置
+    >
+    > - 然后调用排序算法对[begin，end]中的record进行排序
+    >
+    >     > 对于需要按 Key进行排序的操作，如sortByKey()，可以按照Key值进行排序
+    >     >
+    >     > 对于其他操作，只按照Key的Hash值进行排序即可
+
+- **输出**：迭代AppendOnlyMap数组中的record，从前到后扫描输出即可
+
+---
+
+优点：能够将聚合和排序功能很好地结合在一 起
+
+缺点：只能使用内存，难以适用于内存空间不足的情况
+
+<img src="../../pics/spark/spark_195.png" align=left width=1000>
+
+### (2) ExternalAppendOnlyMap
+
+ExternalAppendOnlyMap 是基于内存+磁盘的 AppendOnlyMap 设计，用于Shuffle Read端大规模数据聚合
+
+> 由于Shuffle Write端聚合需要考虑partitionId，Spark也设计了带有 partitionId的ExternalAppendOnlyMap，名为PartitionedAppendOnlyHashMap
+
+**ExternalAppendOnlyMap 工作原理**：
+
+- 先持有一个  AppendOnlyMap 来不断接收和聚合新来的 record，AppendOnlyMap 快被装满时检查一下内存剩余空间是否可以扩展，可直接在内存中扩展，不可，则对AppendOnlyMap中的record进行排序，然后将record都spill到磁盘 上
+- 因为record不断到来，可能会多次填满AppendOnlyMap，所以这个 spill 过程可以出现多次，最终形成多个spill文件
+- 等record都处理完，此时 AppendOnlyMap 中可能还留存一些聚合后的 record，磁盘上也有多个 spill 文件
+- 最后，将内存中 AppendOnlyMap 的数据与磁盘上spill文件中的数据进行全局聚合，得到最终结果
+
+---
+
+上述过程中涉及3个核心问题：
+
+- (1) **如何获知当前 AppendOnlyMap 的大小?** 
+
+    > Spark设计了一个**增量式的高效估算算法**：
+    >
+    > - 在每个 record 插入或更新时根据历史统计值和当前变化量直接估算当前AppendOnlyMap的大小，算法的复杂度 是 *O* (1)，开销很小
+    >
+    > - 在record插入和聚合过程中，会定期对当前 AppendOnlyMap  中的 record 进行抽样，然后精确计算这些 record 的总大小、总个数、更新个数及平均值等，并作为历史统计值
+    >
+    >     > 抽样也会定期进行，更新统计值以获 得更高的精度
+
+- (2) **如何设计 spill 的文件结构，使得可以支持高效的全局聚合?** 
+
+    > 当 AppendOnlyMap 达到内存限制时，会将record排序后写入磁盘中，而排序是为了方便下一步全局聚合，即聚合内存和磁盘上的record时，可以采用更高效的 merge-sort(外部排序+聚合)
+    >
+    > Spark 采用按照 Key 的 Hash 值进行排序的方法，这样既可以进行 merge-sort，又不要求操作定义 Key 排序的方法
+    >
+    > 解决Hash值冲突：Spark在merge-sort的同时会比较Key的Hash值是否相等，以及Key的实际值是否相等
+    >
+    > <img src="../../pics/spark/spark_196.png" align=left width=1000>
+
+- (3) **怎样进行全局聚?** 
+
+    > **全局聚合的方法**：建立一个最小堆或最大堆，每次从各个 spill 文件中读取前几个具有相同Key或Hash值的record，然后与AppendOnlyMap 中的 record 进行聚合， 并输出聚合后的结果
+    >
+    > 如上图：
+    >
+    > - 在全局聚合时，Spark分别从4个 spill文件中提取第1个&lt;K，V&gt;record，与还留在AppendOnlyMap 中的第1个record组成最小堆，然后不断从最小堆中提取具有相同Key的 record进行聚合(merge)
+    > - 然后，Spark继续读取spill文件及 AppendOnlyMap中的record填充最小堆，直到所有record处理完成
+    >
+    > 由于每个spill文件中的record是经过排序的，按顺序读取和聚合可以保证能 够对每个record得到全局聚合的结果
+
+总结：ExternalAppendOnlyMap 是一个高性能的HashMap，只支持数据插入和更新，但可以同时利用内存和磁盘对大规模数据进行聚合和排序，满足了Shuffle Read阶段数据聚合、排序的需求
+
+### (3) PartitionedAppendOnlyMap
+
+PartitionedAppendOnlyMap用于在Shuffle Write端对record进行聚合 (combine)
+
+PartitionedAppendOnlyMap 与 ExternalAppendOnlyMap 的唯一区别：PartitionedAppendOnlyMap中的Key是“PartitionId+Key”，这样既可以根 据partitionId进行排序(面向不需要按Key进行排序的操作)，也可以根 据partitionId+Key进行排序(面向需要按Key进行排序的操作)，从而在 Shuffle Write阶段可以进行聚合、排序和分区
+
+### (4) PartitionedPairBuffer
+
+PartitionedPairBuffer本质上是一个基于内存+磁盘的Array，随着数据添加，不断地扩容，当到达内存限制时，就将Array中的数据按照 partitionId或partitionId+Key进行排序，然后spill到磁盘上，该过程可以进行多次，最后对内存中和磁盘上的数据进行全局排序，输出或者提供 给下一个操作
 
 ## 5、与Hadoop MapReduce的Shuffle机制对比
+
+Hadoop MapReduce 有明显的两个阶段：map stage 和 reduce stage
+
+- **map stage**：每个 map task 首先执行map(K,  V)函数，再读取每个record，并输出新的&lt;K，V&gt;record
+
+    > 这些 record 首先被输出到一个固定大小的 spill buffer 里(一般为100MB)， spill buffer如果被填满就将spill buffer中的record按照Key排序后输出到磁盘上
+    >
+    > 这个过程类似 Spark 将 map task 输出的 record 放到一个排序数组 (PartitionedPairBuffer)中，不同的是 Hadoop MapReduce是严格按照 Key进行排序的，而 PartitionedPairBuffer 排序更灵活(可以按照 partitionId进行排序，也可以按照partitionId+Key进行排序)
+    >
+    > 另外，由于 spill buffer 中的 record 只进行排序，不能完成聚合(combine)功能， 所以Hadoop MapReduce在完成 map()、等待所有的 record 都 spill 到磁盘上后，启动一个专门的聚合阶段(图中的merge phase)，使用 combine()将所有spill文件中的record进行全局聚合，得到最终聚合结果
+    >
+    > 注意：这里需要进行多次全局聚合，因为每次只针对某个分区的 spill文件进行聚合
+
+- **Shuffle Read 阶段**：Hadoop MapReduce 先将每个 map task 输出的相应分区文件通过网络获取，然后放入内存，如果内存放不下，就先对当前内存中的 record 进行聚合和排序，再 spill 到磁盘上
+
+    > 由于每个分区文件中包含的 record 已经按 Key 进行了排序，聚合时只需要一个最小堆或最大堆保存当前每个文件中的前几个record 即可，聚合效率比较高，但需要占用大量内存空间来存储这些分区文件
+    >
+    > 等获取所有的分区文件时，此时可能存在多个 spill 文件及内存中剩余的分区文件，这时再启动一个专门的reduce阶段来将这些内存和磁盘上的数据进行全局聚合，最后得到聚合后的结果
+
+<img src="../../pics/spark/spark_197.png" align=left width=1000>
+
+**优点**：
+
+1. Hadoop MapReduce 的 Shuffle 流程固定，阶段分明，每个阶段读取什么数据、进行什么操作、输出什么数据都是确定性的
+2. Hadoop MapReduce 框架的内存消耗也确定，map 阶段框架只需要一个大的 spill buffer，reduce 阶段框架只需要一个大的数组(MergeQueue)来存放获取的分区文件中的 record
+3. Hadoop MapReduce 对 Key 进行了严格排序，使得可以使用最小堆或最大堆进行聚合，非常高效。而且原生支持 sortByKey()
+4. Hadoop MapReduce 按 Key 进行排序和 spill 到磁盘上的功能，可以在 Shuffle 大规模数据时仍然保证能够顺利进行
+
+**缺点**：
+
+1. **强制按 Key 进行排序**：大多数应用不需要严格地按照 Key 进行排序，如 groupByKey()，排序增加计算量
+
+    > 解决方案：对操作类型进行分类，如 Spark提供了按partitionId排序、按Key排序等多种方式来灵活应对不同操作的排序需求
+
+2. **不能在线聚合**：不管是 map() 端还是 reduce() 端，都是先将数据存放到内存或磁盘上后，再执行聚合操作，存储这些数据需要消耗大量的内存和磁盘空间
+
+    > 如果能够一边获取record一边聚合，那么对于大多数聚合操作，可以有效地减少存储空间，并减少时延
+    >
+    > 解决方案：采用 hash-based 聚合，即利用 HashMap 的在线聚合特性，将 record 插入 HashMap 时自动完成聚合过程，即Spark为什么设计AppendOnlyMap等数据结构
+
+3. **产生的临时文件过多**：如果 map task 个数为 *M* ，reduce task 个数为 *N* ，那么 map 阶段集群会产生 *M×N* 个 分区文件，当 *M* 和 *N* 较大时，总的临时文件个数过多
+
+    > 将多个分区文件合并为一个文件，按照 partitionId 的顺序存储
+    >
+    > Spark 采用 hash+sort-based Shuffle 方法，融合 hash-based 和 sort-based Shuffle 的优点，根据不同操作的需求，灵活选择最合适的Shuffle方法
+
+另外，由于Hadoop MapReduce采用独立阶段聚合，而Spark采用在线聚合的方法
+
+两者的聚合函数的区别：
+
+- MapReduce 的聚合函数 reduce() 接收的是一个&lt;K，list(V)&gt;record，可以对每个 record 中的 list(V) 进行任意处理
+- Spark中的聚合函数每当接收到一个&lt;K，V&gt;record时，就要立即进行处理，在流程上有一些受 限
+
+> 在聚合过程中Spark需要对每个到来的record进行立即处理，而Hadoop MapReduce没有这个要求，所以更加灵活
+
+# 六、数据缓存机制
+
+## 1、数据缓存机制的设计原理
+
+### (1) 决定哪些数据需要被缓存
+
+```scala
+//共享mappedRDD的应用程序
+var inputRDD = sc.parallelize(Array[(Int,String)](1,"a"),(2,"b"),(3,"c"),(4,"d"),(3,"f"),(2,"g"),(1,"h"), 3)
+val mappedRDD = inputRDD.map(r => r._1 + 1, r._2)
+mappedRDD.cache()
+val reduceRDD = mappedRDD.reduceByKey((x,y) => x + "_" + y, 2)
+reduceRDD.foreach(println)
+val groupedRDD = mappedRDD.groupByKey(3).mapValues(V => V.tolist)
+groupedRDD.foreach(println)
+```
+
+示例应用：
+
+- 首先对输入数据进行map()计算，得到mappedRDD，然后对mappedRDD依次进行两种计算
+    - 一种是 reduceByKey + foreach(println)
+    - 另一种是 groupByKey + foreach(println)
+- 由于该应用有两个 foreach() 操作， 所以会形成两个 job。这两个job虽然都是在mappedRDD上进行计算的， 但由于用户没有对mappedRDD进行缓存，Spark仍然认为这两个job都是 从inputRDD开始计算的
+
+注意：
+
+1. cache() 操作表示将数据(此处是 mappedRDD)直接写入内存
+2. cache() 操作是 lazy 操作，不是立即执行，即执行到 mappedRDD.cache() 时，只标记mappedRDD需要被缓存到内存中，此时并不真正执行缓存操作，只有等到 reducedRDD.foreach(println)生成job，job运行时再将mappedRDD写入内存
+3. cache() 操作只是将数据缓存到内存中，如果用户想将数据缓存到内存和磁盘中，那么可以使用persist(MEMORY_AND_DISK) 接口
+
+<img src="../../pics/spark/spark_198.png" align=left width=1000>
+
+---
+
+如下图，对mappedRDD进行缓存后可以避免第2个job再进行 map()计算，但代价是需要占用空间来存储mappedRDD
+
+<img src="../../pics/spark/spark_199.png" align=left width=1000>
+
+缓存机制实际上是一种空间换时间的方法，如果数据满足以下3条，就可以进行缓存：
+
+- **(1) 会被重复使用的数据**：会被多个job共享使用的数据，被共享使用的次数越多，那么缓存该数据的性价比越高
+
+- **(2) 数据不宜过大**：过大会占用大量存储空间，导致内存不足， 也会降低数据计算时可使用的空间
+
+    > 虽然缓存数据过大时也可以存放到磁盘中，但磁盘的I/O代价比较高，有时甚至不如重新计算快
+
+- **(3) 非重复缓存的数据**：重复缓存的意思是如果缓存了某个 RDD，那么该RDD通过OneToOneDependency连接的parent RDD就不需 要被缓存
+
+    > 例如：上图中，已经对mappedRDD进行了缓存， 就没有必要再对inputRDD进行缓存，除非有新的job需要使用 inputRDD，且该 job 不使用 mappedRDD
+
+### (2) 包含数据缓存操作的逻辑处理流程和物理执行计划
+
+包含数据缓存操作的应用执行流程生成的规则：
+
+- 首先，假设应用没有数据缓存，按照第3章的规则正常生成逻辑处理流程(RDD之间的数据依赖关系)
+- 然后，从第2个job开始，将cached RDD之前的RDD都去掉，得到削减后的逻辑处理流程
+- 最后，按照第4章给出的正常规则将逻辑处理流程转化为物理执行计划
+
+```scala
+//复杂数据缓存示例CacheTest: 包含3个RDD cache()操作和生成3 个job
+var inputRDD = sc.parallelize(Array[(Int,String)](1,"a"),(2,"b"),(3,"c"),(4,"d"),(3,"f"),(2,"g"),(1,"h"), 3)
+val mappedRDD = inputRDD.map(r => r._1 + 1, r._2)
+mappedRDD.cache()
+
+val reduceRDD = mappedRDD.reduceByKey((x,y) => x + "_" + y, 2)
+reduceRDD.cache()
+reduceRDD.foreach(println)
+
+val groupedRDD = mappedRDD.groupByKey(3).mapValues(V => V.tolist)
+groupedRDD.cache()
+groupedRDD.foreach(println)
+
+val joinedRDD = reduceRDD.join(groupedRDD)
+joinedRDD.foreach(println)
+```
+
+根据生成原则，这个复杂的例子会生成3个job：
+
+- 第 1 个job是 inputRDD=&gt;mappedRDD=&gt;reducedRDD=&gt; foreach()
+- 第 2 个 job 是 mappedRDD=&gt;ShuffledRDD=&gt; groupedRDD=&gt;foreach()
+- 第 3 个job是(reducedRDD， groupedRDD)=&gt;CoGroupedRDD&MapPartitionsRDD=&gt; foreach()
+
+<img src="../../pics/spark/spark_201.png" align=left width=1000>
+
+> 如果没有对job0中的reducedRDD进行缓存，那么job2要从 mappedRDD开始计算，也就是要多计算stage 4和stage5中的 mappedRDD=&gt;reducedRDD
+>
+> 如果没有对job1中的groupedRDD进行缓存，那么job1执行完以后，job2仍然需要再次计算stage 6和stage 7中的 mappedRDD=&gt;ShuffledRDD=&gt;groupedRDD
+
+<img src="../../pics/spark/spark_200.png" align=left width=1000>
+
+### (3) 缓存级别
+
+为了满足不同的缓存需求，Spark从3个方面考虑了缓存级别(Storage_Level)：
+
+- (1) 存储位置：可以将数据缓存到内存和磁盘中，内存空间小但读写速度快，磁盘空间大但读写速度慢
+- (2) 是否序列化存储：如果对数据(record以Java objects形式)进行序列化，则可以减少存储空间，方便网络传输，但是在计算时需要对数据进行反序列化，会增加计算时延
+- (3) 是否将缓存数据进行备份：将缓存数据复制多份并分配到多个节点，可以应对节点失效带来的缓存数据丢失问题，但需要更多的存储空间
+
+---
+
+最终，Spark将缓存级别分为12类，缓存级别针对的是RDD中的全部分区，即对RDD中每个分区中的 数据(record)都进行缓存
+
+> 用户可以使用 rdd.persist(Storage_Level)对RDD按这些缓存级别进行缓存，如 `mappedRDD.persist(MEMORY_AND_DISK)` 
+
+<img src="../../pics/spark/spark_202.png" align=left width=1000>
+
+> MEMORY_ONLY_SER 和 MEMORY_AND_DISK_SER 将数据按照序列化方式存储，以减少存储空间，但需要序列化/反序列化，会增加计算延时
+>
+> 因为存储到磁盘前需要对数据进行序列化，所以DISK_ONLY级 别也需要序列化存储
+
+---
+
+Spark 需要用户在缓存数据时自己选择缓存级别，不同应用 的缓存级别需求不同，用户选择时需要考虑两个问题：
+
+1. 是否有足够内存、磁盘空间进行缓存：没有足够的内存、磁盘空间但又需要进行数据 缓存，可以选择MEMORY_AND_DISK或者 MEMORY_AND_DISK_SER级别缓存数据
+2. 如果数据缓存到磁盘上，那么读取数据的时间是否大于重新计算出该数据的时间：如果是， 则可以选择不缓存或者分配更大的内存来进行缓存
+
+### (4) 缓存数据的写入方法
+
+
+
+
+
+
+
+
+
+
+
+### (5) 缓存数据的读取方法
+
+
+
+
+
+### (6) 用户接口的设计
+
+
+
+
+
+### (7) 缓存数据的替换与回收方法
+
+
+
+
+
+## 2、对比 Hadoop MapReduce 缓存机制
 
 
 
