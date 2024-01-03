@@ -2304,35 +2304,268 @@ Spark 需要用户在缓存数据时自己选择缓存级别，不同应用 的�
 
 ### (4) 缓存数据的写入方法
 
+> 缓存操作是 lazy 操作，只有等到 action() 操作触发 job 运行时才实际执行缓存操作
 
+当要进行数据缓存时，Spark既要将数据写入内存或磁盘，也需要执行下一步数据操作，那么如何决定缓存和计算的先后顺序呢?
 
+案例：如图所示，在task0中的 map()、persist()、combine()的执行顺序
 
+- 根据流水线机制，map() 每计算出一个 record，如(1，a)=&gt;(2，a)后，就将其放入 HashMap结构中进行combine()聚合，聚合后，mappedRDD 中的 (2, a) 就可以清除
+- 然后，map()再读入下一个record，计算得到 (2，b)=&gt;(3，b)，放入HashMap进行聚合，清除mappedRDD 中的(3，b)
+- 最后，以同样操作读入 (3, c) 进行处理
 
+> 假设先执行 combine()，再执行 persist()，那么当 combine() 执行后， mappedRDD 中的数据就已经被清除，无法再进行persist()，所以正确的执行顺序是 map() 每计算出 mappedRDD 中的一个 record 后，就执行 persist() 将该 record 写入内存或磁盘，然后再执行下一步操作
 
+**缓存数据写入的实现细节**：在实现中，Spark在每个Executor进程中分配一个区域，以进行数据缓存，该区域由BlockManager来管理
 
+图中，task0 和 task1 运行在同一个Executor 进程中，task0和task1都将各自需要缓存的分区 存放到了LinkedHashMap中
 
+- 对于task0，当计算出 mappedRDD中的partition0后，将partition0存放到BlockManager中的 memoryStore内
+- memoryStore包含了一个LinkedHashMap，用来存储 RDD的分区
+- 该LinkedHashMap中的Key是blockId，即 rddId+partitionId，如rdd_1_1，Value是分区中的数据，LinkedHashMap 基于双向链表实现
 
+<img src="../../pics/spark/spark_203.png" align=left width=1000>
 
+<img src="../../pics/spark/spark_204.png" align=left width=1000>
+
+**总结**：**rdd.cache() 只是对RDD进行缓存标记，不是立即执行**，实际在action()操作的job计算过程中进行缓存
+
+> 当需要缓存的 RDD中的record被计算出来时，及时进行缓存，再进行下一步操作
 
 ### (5) 缓存数据的读取方法
 
+**读取缓存数据**：
 
+- 首先，Spark 如何判断一个 job 是否需要读取缓存数据：**当某个RDD 被缓存后，该RDD的分区成为CachedPartitions**
 
+- 具体的读取过程：
 
+    - 如图，假设 mappedRDD 的 partition0 和 partition1被Worker节点1中的 BlockManager 缓存，而 partition2 被 Worker 节点2中的 BlockManager 缓存
 
-### (6) 用户接口的设计
+        > RDD的分区被缓存到BlockManager的 memoryStore(也就是Linked HashMap)中
 
+    - 当第2个job 需要读取mappedRDD中的分区时，首先去本地的BlockManager中查找该分区是否被缓存
 
+        > - 第2个job的3个task都被分到了Worker节点1上，其中task3和task4对应的CachedPartition在本地，因此直接通过 Worker节点1的memoryStore读取即可
+        >
+        > - 而task5对应的CachedPartition在 Worker节点2上，需要通过远程访问，也就是通过getRemote()读取
+        >
+        >     远程访问需要对数据进行序列化和反序列化，远程读取时是一条条 record读取，并得到及时处理
+        >
+        > <img src="../../pics/spark/spark_205.png" align=left width=1000>
 
+### (6) 缓存数据的替换与回收方法
 
+> 注意：不管persist()还是unpersist()都只能针对用户可见的RDD进行操作
 
-### (7) 缓存数据的替换与回收方法
+- Spark 提供了一个通用的缓存操作 `rdd.persist(Storage_Level)` 可以使用不同类型的缓存级别，如 mappedRDD.persist(MEMORY_AND_DISK)。
 
+- spark也提供了一个 unpersisit() 操作来回收缓存数据， 如 `mappedRDD.unpersist()` 
 
+---
 
+> 在内存空间有限的情况下，Spark需要缓存替换与回收机制
+>
+> 缓存替换：指当需要缓存的RDD大于当前可利用的空间时，使用新的RDD替换旧的RDD(可能有多个)
 
+#### 1. 自动缓存替换
+
+在Spark中，自动缓存替换需要解决以下两个问题：
+
+- (1) **选择哪些RDD进行替换?**
+
+    > 当前Spark采用动态生成job的方式，即在执行到一个action()操作时才会生成一个job，仅当遇到下一个action()时再生成下一个job
+    >
+    > 在执行过程中，Spark只知道cached RDD是否会被当前job用到，而不能预知cached RDD是否会被后续的job用到，因此，**Spark决定一个cached RDD是否要被替换的权衡之计是根据该cached RDD的访问历史来判断**
+    >
+    > 目前Spark采用LRU替换算法：优先替换掉当前最长时间没有被使用过的RDD
+
+- (2) **需要替换多少个旧的RDD，才开始存储新的RDD?**
+
+    > **Spark采用动态替换策略**：在当前可用内存空间不足时，每次通过 LRU 替换一个或多个 RDD(具体数目与一个动态的阈值相关)，然后开始存储新的RDD， 如果中途存放不下，就暂停，继续使用LRU替换一个或多个RDD，依此类推，直到存放完新的RDD
+    >
+    > 如果替换掉所有旧的RDD都存不下新的RDD，那么需要分两种情况处理：
+    >
+    > - 如果新的RDD的存储级别里包含磁盘，那么可以将新的RDD存放到磁盘中
+    > - 如果新的RDD的存储级别只是内存，那么就不存储该RDD
+
+#### 2. **Spark LRU**算法的实现及讨论
+
+**LRU 替换策略的确切含义**：优先替换掉当前最久未被使用的 RDD，使用 LinkedHashMap 自带的 LRU 功能实现缓存替换
+
+> LinkedHashMap 使用双向链表实现，每当Spark插入 或读取其中的RDD分区数据时，LinkedHashMap自动调整链表结构，最近插入或者最近被读取的分区数据放在表头，这样链表尾部的分区数据就是最近最久未被访问的分区数据，替换时直接将链表尾部的分区数 据删除
+
+**补充**：在进行缓存替换时，RDD的分区数据不能被该RDD的其他分区数据替换，因此被替换的 RDD和要缓存的RDD 不能是同一个RDD
+
+> 比如：Spark不 能删除newRDD的partition0和partition1来缓存partition2
+
+#### 3. 用户主动回收缓存数据
+
+Spark 允许用户自己设置进行回收的 RDD 和回收的时间，方法是使用 unpersist()
+
+- 不同于 persist() 的延时生效，unpersist() 操作立即生效
+
+- 还可以设定 unpersist() 是同步阻塞还是异步执行
+
+    > 如：
+    >
+    > - unpersist(blocking=true)：默认设定，表示同步阻塞，即程序需要等待unpersist() 结束后再进行下一步操作
+    > - unpersist(blocking=false)：表示异步执行，即边执行unpersist()边进行下一步操作
+
+---
+
+**案例**：展示 unpersist() 语句放在不同位置，则得到不同的执行效果
+
+```scala
+var inputRDD = sc.parallelize(Array[(Int,String)](1,"a"),(2,"b"),(3,"c"),(4,"d"),(3,"f"),(2,"g"),(1,"h"), 3)
+val mappedRDD = inputRDD.map(r => r._1 + 1, r._2)
+mappedRDD.cache()
+
+val reduceRDD = mappedRDD.reduceByKey((x,y) => x + "_" + y, 2)
+//1. mappedRDD.unpersist()
+reduceRDD.foreach(println)
+
+val groupedRDD = mappedRDD.groupByKey(3).mapValues(V => V.tolist)
+//2. mappedRDD.unpersist()
+groupedRDD.foreach(println)
+
+//2. mappedRDD.unpersist() 正确
+```
+
+- (1) **将 mappedRDD.unpersist() 直接放在 reducedRDD 之后、 foreach之前**：导致的结果是不会对 mappedRDD 进行缓存
+
+    > 由于在 action() 之前既执行了cache() 又执行了 unpersist()，所以删除了 Spark 刚设置的 mappedRDD 缓存，意味着不对mappedRDD进行缓存
+    >
+    > 该情况生成的job信息，如图所示，可以看到WebUI中的job在图中没有以绿色点出现，即没有任何RDD被缓存
+    >
+    > <img src="../../pics/spark/spark_206.png" align=left width=1000>
+
+- (2) **将 mappedRDD.unpersist() 放在 groupedRDD 之后、foreach 之前**：该情况可以正常对mappedRDD进行缓存，但第2个job无法读到缓存数据
+
+    > 由于在第1个job中，即 reducedRDD.foreach() 运行前设置了 mappedRDD.cache()，所以mappedRDD被正常缓存
+    >
+    > 如图所示， 绿色点代表 mappedRDD 被成功缓存
+    >
+    > 然而，由于在第2个job中，即 groupedRDD.foreach() 运行前设置了mappedRDD.unpersist()，该操作立即回收了mappedRDD，因此在第2个job执行时不能读取到cached mappedRDD数据，需要重新计算 mappedRDD，也没有绿色点出现
+    >
+    > <img src="../../pics/spark/spark_207.png" align=left width=1000>
+
+- (3) **mappedRDD.unpersist() 被设置在末尾**：该情况可以正常缓存和读取数据
+
+    > 由于unpersist()被设置在末尾，第1个job和第2个job 正常执行，mappedRDD在第1个job中被缓存，也被第2个job正常读取
+    >
+    > 如图所示，两个job都以绿色点出现，两个job都结束后，mappedRDD被回收
+    >
+    > 此时如果还有下一个job且下一个job没有直接或间接使用mappedRDD，那么当前mappedRDD.unpersist()设置的位置合理
+    >
+    > <img src="../../pics/spark/spark_207.png" align=left width=1000>
 
 ## 2、对比 Hadoop MapReduce 缓存机制
+
+**Hadoop MapReduce DistributedCache 缓存机制**：
+
+- DistributedCache 不存放 job 运行的中间结果，而是用于缓存 job 运行所需的文件
+
+    > 所需的jar文件、每个map task需要读取的辅助文件(如一部词 典)、一些文本文件等
+
+- DistributedCache 将缓存文件存放在每个 worker 的本地磁盘上，并不是内存中
+
+---
+
+Spark 缓存机制的缺陷：
+
+- 缓存的 RDD 数据只读，不能修改
+- 当前的缓存机制不能根据 RDD 的生命周期进行自动缓存替换等
+
+- 当前的缓存机制只能用在每个Spark应用内部，即缓存数据只能在job之间共享，应用之间不能共享缓存数据
+
+    > 为了解决应用间缓存数据共享问题，Spark 研究者又开发了分布式内存文件系统 Alluxio
+
+# 七、错误容忍机制
+
+## 1、错误容忍机制的意义与挑战
+
+
+
+
+
+
+
+
+
+## 2、错误容忍机制的设计思想
+
+
+
+
+
+
+
+
+
+## 3、重新计算机制
+
+
+
+
+
+
+
+## 4、checkpoint 机制的设计与实现
+
+
+
+
+
+
+
+## 5、checkpoint 与数据缓存的区别
+
+
+
+
+
+
+
+
+
+
+
+# 八、内存管理机制
+
+## 1、内存管理机制的问题及挑战
+
+
+
+
+
+
+
+## 2、应用内存消耗来源及影响因素
+
+
+
+
+
+
+
+## 3、spark 框架内存管理模型
+
+
+
+
+
+
+
+## 4、spark 框架执行内存消耗与管理
+
+
+
+
+
+
+
+## 5、数据缓存空间管理
 
 
 
