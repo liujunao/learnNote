@@ -2485,91 +2485,1078 @@ Spark 缓存机制的缺陷：
 
 ## 1、错误容忍机制的意义与挑战
 
+> 错误容忍机制就是在应用执行失败时能够自动恢复应用执行，而且执行结果与正常执行时得到的结果一致
 
+对于Spark等大数据处理框架，错误容忍需要考虑以下 两方面的问题：
 
+1. **作业(job)执行失败问题**：Spark 在执行 job 时，可能因为软硬件环境、配置、数据等因素的影响，导致job执行失败
 
+    > Spark应用在运行时出现的错误：task长时间无响应、内存溢出、I/O异常、数据丢失
+    >
+    > 问题原因多种多样：
+    >
+    > - 硬件问题：如节点宕机、网络阻塞、磁 盘损坏等
+    > - 软件问题：如内存资源分配不足、partition配置过少导致task处理的数据规模太大、partition划分不当引起的数据倾斜，以及用户和系统Bug等
 
+2. **数据丢失问题**：Spark job 在执行过程中，会读取输入数据、 生成中间数据、输出结果
 
-
-
+    > 由于软硬件故障，如节点宕机，会导致某些输入/输出或中间数据丢失，例如：
+    >
+    > - task的输入数据既可以来自分布式文 件系统，也可以通过Shuffle获取，如果在Shuffle机制中数据丢失怎么办?
+    > - 如果对一些重要数据进行缓存后，缓存数据由于节点宕机等故障丢失怎么办?
+    > - 一个应用经常包含多个job，当前job的输出数据是下 一个job的输入数据，那么当前job的输出数据丢失怎么办?
 
 ## 2、错误容忍机制的设计思想
 
+Spark 优先解决一类较为简单的错误：
 
+- **对于执行环境改变而引发的应用执行失败**：通过重新计算来尝试修复的，如由于节点宕机、内存竞争、I/O异常导致的任务执行失败
+    - 节点突然宕机后，可以通过重新将计算任务调度到其他节点上，并继续执行
+    - 内存竞争会导致当前没有足够资源执行计算任务，这时可以将计算 任务提交到另外一台内存充足的机器上去执行
 
+- **对于数据丢失问题**：采用数据检查点持久化方案，即 checkpoint 机制
 
+---
 
+总的来说，Spark错误容忍机制的核心方法有以下两种：
 
+1. **通过重新执行计算任务来容忍错误**：当 job 抛出异常不能继续执行时，重新启动计算任务，再次执行
 
-
+2. **通过采用 checkpoint 机制，对一些重要的输入/输出、中间数据进行持久化**：这可以在一定程度上解决数据丢失问题，而且能够提高任务重新计算时的效率
 
 ## 3、重新计算机制
 
+### (1) 重新计算是否能够得到与之前一样的结果
 
+如果一个task正确计算出了结果但在输出时失败：
 
+- 那么再次执行该任务时，还能否得到与之前一致的结果?
+- 如果不能得到一致的结果，那么重新计算就没有意义
 
+要保证一致性，需要task的输入数据和计算逻 辑满足以下3个特性：
 
+1. **重新计算时，task输入数据与之前是一致的**
 
+    - **对于 map task**：其输入数据一般来自分布式文件系统或上一个job 的输出
+        - 由于分布式文件系统上的数据是静态可靠的，所以task再次执 行时仍然能够读取到相同的数据
+        - 同样，如果已经对上一个job的输出进行了持久化，那么task再次执行时仍然可以获得相同的数据
+
+    - **对于 reduce task**：其输入数据通过 Shuffle 获取，
+        - 由于在 Shuffle Write 时一般使用确定性的 partition() 函数来对数据进行划分，所以每个 reduce task 获取的数据也确定性
+        - 然而，由于计算延迟和网络延迟，在 Shuffle Read 过程中不能保证接收到的 record 的顺序性，可能先接收到来自map task 2的record，后接收到来自map task 1的record，因此，**reduce task再次运行时的输入数据与之前的数据是部分一致的** 
+
+    即接收到的数据集合与上次task一样，只是里面的record顺序可能不一样
+
+    这时，需要 task满足下面两个特性才能得到一致的结果：
+
+2. **task 的计算逻辑需要满足确定性**：如果输入数据确定，那么计算得到的结果也确定
+
+3. **task 的计算逻辑需要满足幂等性**：指对同样数据进行多次运算，结果都一致
+
+    > 对于 reduce task 通过 Shuffle 获取到的无序的 `<K，V>record`，需要**满足交换律和结合律**才能得到一致的结果
+
+总的来说，重新计算机制有效的前提条件：**task重新执行时能够读取与上次一致的数据，并且计算逻辑具有确定性和幂等性**
+
+### (2) 从哪里开始重新计算
+
+> Spark 运行应用时会按照 action() 操作的先后顺序提交 job，每个 job 被分为多个 stage，每个 stage 又包含多个 task，task 是最小的执行单位
+
+解决如何对数据和计算追根溯源的问题：
+
+- 根据重新计算思想：当某个job中的task运行出错时，需要重新执行该task，那么是否还需要执行其上游stage中的task呢?
+
+- 根据流水线机制：每个task一般会连续计算多个RDD，那么每个RDD都需要重新计算吗?
+- 缓存数据如果丢失也需要重新计算，那么该从哪里开始计算呢?
+
+<img src="../../pics/spark/spark_209.png" align=left width=1000>
+
+#### 1. 重新执行失效的task时，是否还需要执行其上游stage中的 task?
+
+如图所示：
+
+- stage 0和stage 1中的task的输入数据来自分布式文件系统上的固定数据，这些task在重新计算时，直接读取分布式文件系统 上的数据计算即可
+
+- 而下游stage 2中的task的输入数据是通过Shuffle Read读取上游stage输出数据的，如果stage 2中的某个task执行失败，重新运行时需要再次读取stage 0和stage 1的输出结果，那么如何能够再次 读到同样的数据而且避免对上游的task重新计算呢?
+
+    > Spark采用了“延时 删除策略”
+
+---
+
+**延时删除策略**：将上游 stage 的 Shuffle Write 的结果写入本地磁盘，只有在当前job完成后，才删除 Shuffle Write 写入磁盘的数据
+
+> Spark根据 ShuffleDependency 切分出的 stage 既保证了task的独立性，也方便了错误容忍的重新计算
+
+#### 2. 一个task一般会连续计算多个RDD，那么每个RDD都需要重 新被计算吗?
+
+这个问题的答案取决应用是否存在缓存数据：
+
+- **对于没有缓存数据的情况，每个RDD都需要重新被计算**。如图，
+    - 如果stage 1中的task3 执行失败，则需重新计算Data blocks=&gt;RDD2=&gt; MapPartitionsRDD=&gt;UnionRDD中相应的分区数据
+    - 如果task5执行失败，则需重新计算 Data blocks=&gt;RDD3=&gt;UnionRDD 中相应的分区数据
+    - 在stage 2中，task7或task8重新计算时需要计算 `ShuffledRDD=&gt;CoGroupedRDD=&gt;MapPartitionsRDD=&gt; result:MapPartitionsRDD=&gt;Output results
+- **对于有缓存的情况**，如图，
+    - 在stage 1中的task4，RDD2中相应的分区数据已经被缓存，那么直接从 RDD2开始计算即可
+    - 同样，在stage 2中，CoGroupedRDD 的第3个分区数据已经被缓存，task9直接从CoGroupedRDD计算即可
+
+#### 3. 缓存数据如果丢失也需要重新计算，那么从哪里开始计算呢?
+
+如图所示：
+
+- 如果 RDD2 的第2个分区的缓存数据丢失，那么需要再次启动task4，读取 Data blocks 数据，计算该分区数据
+- 如果 CoGroupedRDD 的第3个分区的缓存数据丢失，那么再次启动task9，通过Shuffle Read数据计算ShuffledRDD=&gt;CoGroupedRDD对应的分区数据
+
+#### 4. 统一实现3个问题的解决方案
+
+需要考虑的问题，如：
+
+- task 是否需要 Shuffle Read?
+- stage 中的计算步骤是什么?
+- 计算路径上的数据是否包含缓存数据?
+- 缓存数据是如何计算出来的?
+
+Spark采用了一种称为 **lineage** 的数据溯源方法：核心思想是在每个RDD中记录其上游数据是什么，以及当前RDD是如何通过上游数据(parent RDD)计算得到的。
+
+> 上图中
+>
+> - ShuffledRDD的parent RDD 是通过 Shuffle Read 得到的 RDD1
+> - CoGroupedRDD的parent RDD 是通过 Shuffle Read + 聚合得到的 ShuffleRDD 和 UnionRDD
+>
+> 这样在错误发生时，可以根据 lineage追根溯源，找到计算当前 RDD 所需的数据和操作
+
+**lineage 也叫计算链**：如果计算链上存在缓存数据，那么从缓存数据处截断计算链，即可得到简化后的操作
+
+> 不管当前RDD本身是缓存数据还是非缓存数据，都可以通过lineage回溯方法找到计算该缓存数据所需的操作和数据
 
 ## 4、checkpoint 机制的设计与实现
 
+**检查点 (checkpoint)机制**：将计算过程中某些重要数据进行持久化，这样在再次执行时可以从检查点执行，从而减少重新计算的开销
 
+### (1) 哪些数据需要使用checkpoint机制
 
+分析单个job和多个job的情况来总结哪些数据需要使用 checkpoint 机制：
 
+#### 1. 单个job的情况
 
+以下图为例，假设没有数据缓存(黄色的partition变为白色)，分析该 job 的每个 stage 中哪些数据需要使用 checkpoint 机制
 
+- 在 stage 0 中 RDD1 的计算代价较低，task 直接读取分布式文件系统上的数据块，进一步计算就得到 RDD1，因此不需要对RDD1进行checkpoint
+
+- stage 1中，UnionRDD 的计算代价中等，需要运行更多的 task、 经过更多的计算步骤才能得到
+
+    > 如果UnionRDD的数据量不大的话，则可以考虑对其进行checkpoint
+
+- 在 stage 2 中，对 RDD1 进行 Shuffle Read 直接得到 ShuffledRDD，ShuffledRDD 的计算代价较低，而 CoGroupedRDD 需要对ShuffleRDD 和上一阶段的 UnionRDD 聚合得到，依赖数据较多， 计算较为复杂耗时，建议对CoGroupedRDD进行checkpoint
+
+    > 这样，当task7、task8或task9执行出错再次运行时，可以从CoGroupedRDD直接开始计算，不需要进行Shuffle Read
+    >
+    > 补充：CoGroupedRDD 由 Spark 生成，对用户不可见，因此想要 Checkpoint CoGroupedRDD，则可以考虑对其可见的 parent RDD 和 child RDD 进行 checkpoint
+
+---
+
+**结论**：对于数据依赖较多、经过复杂计算才能得到的RDD，可以使用 checkpoint 对其进行持久化
+
+<img src="../../pics/spark/spark_209.png" align=left width=1000>
+
+#### 2. 多个job的情况
+
+> 相比单个job，多个 job 的情况需要考虑 job 之间传递的数据是否需要 checkpoint
+
+在应用中存在多个job，尤其是在多个job串联执行的情况 下，每执行完一个job后，Spark会将该job中上游stage的Shuffle Write数 据清空，以减少占用的磁盘空间。
+
+如图：
+
+- 一个迭代型应用每轮迭代都可能执行一个 job，每执行完一个 job 都会将该 job 中的 Shuffle Write 数据清空，只留下被缓存的数据，如cached RDD1、cached RDD2 和cached RDD3。
+
+    > 由于缓存替换机制，旧的缓存数据(如cached RDD1)也可能被清除，当不断被清除的缓存数据和清除的Shuffle Write 数据会导致下游task重新计算时，则要从更加上游的地方开始，从而增加了计算量
+
+- 假设 `task t` 运行节点和cached RDD2中第1个分区所在的节点是同一个，那么当该节点宕机时，需要重新执行第1轮迭代的job1 以获得RDD2，之后再重新执行 `task t`
+    - 假设是第 *n* 轮迭代出错，且前面缓存的数据已被替换或因为节点宕机而丢失，那么需要重新执行第1 轮到第 *n* 轮迭代，计算代价非常高
+    - 所以，对于串联执行的job，尤其是迭代型job，需要每隔几个job(或每迭代 *m* 轮)就对一些中间数据进行checkpoint，这样在出错时，可以从最近的 checkpoint 数据恢复执行
+
+- cached RDD1 在每轮迭代中都被使用，所以除了对其进行缓存，也最好对其进行checkpoint，这样不仅可以提高读取效率，也可以避免因为缓存替换或宕机引起的每轮迭代RDD1都需要重新计算的问题
+
+---
+
+**需 checkpoint 的 RDD 满足的特征**：RDD的数据依赖关系比较复杂且重新计算代价较高，如关联的数据过多、计算链过 长、被多次重复使用等
+
+<img src="../../pics/spark/spark_214.png" align=left width=1000>
+
+### (2) checkpoint数据的写入及接口
+
+解决 checkpoint 数据的存放位置问题：
+
+- checkpoint 的目的是对重要数据进行持久化，在节点宕机时也能够恢复，因此需要可靠地存储
+- checkpoint 的数据量可能很大，因此需要大的存储空间
+    - 一般采用分布式文件系统，如HDFS来存储
+    - 如果内存空间足够大，且想加速存储与读取过程，则也可以选择基于内存的分布式文件系统 Alluxio
+
+在 Spark 中，提供了 `sparkConext.setCheckpointDir(directory)` 接口来设置 checkpoint 的存储路径，同时提供 `rdd.checkpoint()` 来实现 checkpoint
+
+---
+
+案例：一个简单的checkpoint应用，对中间数据进行checkpoint
+
+``` scala
+val sc = spark.sparkConext
+//首先设置持久化路径，一般是 HDFS
+sc.setCheckpointDir("hdfs://checkpoint")
+val data = Array[(Int, Char)]((1,'a'),(2,'b'),(3,'c'),(4,'d'),(5,'e'),(3,'f'),(2,'g'),(1,'h'))
+//对输入数据进行一些计算
+val pairs = sc.parallelize(data,3).map(r => (r._1 + 10, r._2))
+//对中间数据 pairs: MapPartitionsRDD 进行 checkpoint
+pairs.checkpoint()
+//生成第一个job
+pairs.count()
+//在 checkpoint 的数据上进行再次计算
+val result = pairs.groupByKey(2)
+result.checkpoint()
+result.foreach(println) //生成第二个job
+```
+
+上述案例生成了两个 job：
+
+- 第 1 个 job 计算 count() 结果，并将 `pairs: MapPartitionsRDD` 所有的 partition checkpoint 到 HDFS 中
+- 第 2 个 job 首先从 checkpoint 文件中读取 `pairs:RDD`，然后进行 groupByKey() 和 foreach() 计算
+
+<img src="../../pics/spark/spark_215.png" align=left width=1000>
+
+### (3) checkpoint时机及计算顺序
+
+> 问题：
+>
+> - 在job运行过程中，什么时候进行 checkpoint?
+> - checkpoint 与其他操作计算的顺序是什么?
+
+对于需要缓存的RDD，每计算出其中的一个record，就将其缓存到内存或磁盘中，这种方式效率很低：
+
+- 首先，checkpoint 将数据持久化到分布式文件系统(如HDFS)时需要写入磁盘，而且一般要复制3份进行跨节点存储，且写入时延高
+- 同时，后续操作需要从HDFS中读取数据，读取代价也很高。如果需要checkpoint的RDD包含的数据量很 大，则将会严重影响job的执行时间，造成很高的磁盘I/O代价
+
+如何提高 checkpoint 的效率：简单粗暴的方法是
+
+- 用户设置 `rdd.checkpoint()` 后只标记某个RDD需要持久化，计算过程也像正常一样计算，等到当前 job 计算结束时再重新启动该job 计算一遍，对其中需要 checkpoint 的 RDD 进行持久化
+- 即，当前 job 结束后会另外启动专门的 job 去完成 checkpoint，需要 checkpoint 的 RDD 会被计算两次
+
+---
+
+**如上图**：
+
+- 用户设置 pairs.checkpoint() 后，Spark将 `pairs:RDD` 标记为需要被 checkpoint，然后正常执行第1个job
+- 执行完以后， 重新执行该 job，计算 rdd1=&gt;pairs，每计算出 pairs 中的一个 record， 就将其持久化写入HDFS
+- 当所有 record 写入完成后，job 结束，不需要执行后续的count()操作
+
+---
+
+**checkpoint 启动额外 job 来进行持久化会增加计算开销**，为了解决这个问题，Spark推荐用户将需要被checkpoint的数据先进行缓存， 这样额外启动的任务只需要将缓存数据进行checkpoint即可，不需要再重新计算RDD，可以在一定程度上提高效率
+
+### (4) checkpoint数据的读取
+
+checkpoint 数据存储在分布式文件系统(HDFS)上，读取方式与从分布式文件系统读取输入数据没什么太大区别，都是启动task来读取 的，并且每个task读取一个分区，只有以下2个不同点：
+
+1. checkpoint 数据格式为序列化的 RDD，因此需要进行反序列化重新恢复 RDD 中的 record
+
+2. checkpoint 时存放了 RDD 的分区信息，如使用了什么 partitioner，这样重新读取后不仅恢复了RDD数据，也可以恢复其分区方法信息， 便于决定后续操作的数据依赖关系
+
+    > 例如，决定之后的join()操作应该采用的数据依赖关系是OneToOneDependency还是 ShuffleDependency
+
+### (5) checkpoint数据写入和读取的实现细节
+
+在实现中，RDD需要经过 `[Initialized→CheckpointingInProgress→Checkpointed]` 这3个阶段才能真正被checkpoint
+
+1. `Initialized`：当应用程序使用 rdd.checkpoint() 设定某个 RDD 需要被 checkpoint 时，Spark 为该 RDD 添加一个 checkpointData 属性，用来管理该 RDD 相关的 checkpoint 信息
+2. `CheckpointingInProgress`：当前 job 结束后，会调用该 job 最后 一个 RDD(finalRDD)的doCheckpoint() 方法，该方法根据finalRDD 的 computing chain 回溯扫描，遇到需要被 checkpoint 的 RDD 就将其标记为 CheckpointingInProgress
+3. `Checkpointed`：再次提交的 job 对 RDD 完成 checkpoint 后，Spark 会建立一个 newRDD，类型为 ReliableCheckpointRDD，用来表示被 checkpoint 到磁盘上的 RDD
+
+---
+
+**结论**：checkpoint 的写入过程不仅对 RDD 进行持久化，而且会切断该 RDD 的 lineage，将该 RDD 与持久化到磁盘上的 Checkpointed RDD 进行关联，这样读取该RDD时，即读取 Checkpointed RDD
+
+### (6) checkpoint语句位置的影响
+
+讨论一些复杂的 checkpoint 语句使用情况
+
+#### 1. checkpoint一个RDD且放在count()之前
+
+见上文 4-(2)。。。
+
+#### 2. checkpoint多个RDD
+
+```scala
+val sc = spark.sparkConext
+//首先设置持久化路径，一般是 HDFS
+sc.setCheckpointDir("hdfs://checkpoint")
+val data = Array[(Int, Char)]((1,'a'),(2,'b'),(3,'c'),(4,'d'),(5,'e'),(3,'f'),(2,'g'),(1,'h'))
+//对输入数据进行一些计算
+val pairs = sc.parallelize(data,3).map(r => (r._1 + 10, r._2))
+//对中间数据 pairs: MapPartitionsRDD 进行 checkpoint
+pairs.checkpoint()
+//生成第一个job
+pairs.count()
+//在 checkpoint 的数据上进行再次计算
+val result = pairs.groupByKey(2)
+result.checkpoint()
+
+//改动。。。
+result.checkpoint()
+//改动。。。
+
+result.foreach(println) //生成第二个job
+```
+
+在 foreach() 语句之前添加 result.checkpoint() 语句，会发现在 checkpoint 文件夹下确实生成了 rdd-1 和 rdd-3 两个RDD文件，分别代 表 Checpointed pairs 和 result
+
+> rdd-3 还包含了一个分区信息文件` _partitioner`，里面标注了 result 使用的划分方法为 Hash 划分
+>
+> 这样，读取 rdd-3时既可以还原 result RDD 的数据也可以还原其分区信息，就像是在 运行过程中动态计算出来的
+
+checkpoint 两个RDD对计算流程有什么影响：根据checkpoint的设计原理分析，对 result:RDD 进行 checkpoint 会多增加一个 job
+
+> 实际执行时确实比示例程序多了一个 job 3：job 3计算得到 result:RDD，并对其进行 checkpoint
+>
+> <img src="../../pics/spark/spark_216.png" align=left width=1000>
+
+#### 3. checkpoint语句放置在action()语句之后
+
+``` scala
+val sc = spark.sparkConext
+//首先设置持久化路径，一般是 HDFS
+sc.setCheckpointDir("hdfs://checkpoint")
+val data = Array[(Int, Char)]((1,'a'),(2,'b'),(3,'c'),(4,'d'),(5,'e'),(3,'f'),(2,'g'),(1,'h'))
+//对输入数据进行一些计算
+val pairs = sc.parallelize(data,3).map(r => (r._1 + 10, r._2))
+pairs.count() //生成第一个job
+pairs.checkpoint() //对中间数据 pairs: MapPartitionsRDD 进行 checkpoint
+
+val result = pairs.groupByKey(2)
+result.foreach(println) //生成第二个job
+result.checkpoint()
+```
+
+将 checkpoint 放在 count() 和 foreach() 之后：pairs 和 result 两个 RDD 都没有被 checkpoint
+
+> 生成的 job 如图：没有用于被 checkpoint 的 job
+
+没有对 result RDD 进行 checkpoint 的原因：
+
+> 这个思路并不能解释 `pairs:RDD` 为什么没有被 checkpoint?
+
+- checkpoint语句只是标识某个RDD需要进行checkpoint，需要在运行 action job的过程中完成标识，然后再启动真正的job进行实际的 checkpoint
+- 当action job已经运行完成，就不会将对应RDD进行标识， 自然也就不会 checkpoint
+
+<img src="../../pics/spark/spark_217.png" align=left width=1000>
+
+#### 4. 在一个job中对多个RDD进行checkpoint
+
+```scala
+val sc = spark.sparkConext
+sc.setCheckpointDir("hdfs://checkpoint") //首先设置持久化路径，一般是 HDFS
+val data = Array[(Int, Char)]((1,'a'),(2,'b'),(3,'c'),(4,'d'),(5,'e'),(3,'f'),(2,'g'),(1,'h'))
+val pairs = sc.parallelize(data,3).map(r => (r._1 + 10, r._2)) //对输入数据进行一些计算
+
+pairs.checkpoint()
+val result = pairs.groupByKey(2)
+result.checkpoint()
+result.foreach(println) //只有一个job
+```
+
+结果：只有 `result:rdd-2` 被 checkpoint
+
+如图，只有针对 result:RDD 的 checkpoint job
+
+原因：
+
+- 目前 checkpoint 的实现机制：从后往前扫描，先碰到 result:RDD，对其进行 checkpoint，同时将其上游依赖关系(lineage)设置为空，表示重新运行时从这里读取数据即可，不需要再回溯到 parent RDD
+
+- 这个机制导致 pairs 在从后往前的 checkpoint 搜索过程中不能被访问到，因此没有被 checkpoint
+
+解决方法：从前往后扫描，先对parent RDD进行checkpoint，然后再对 child RDD进行checkpoint
+
+<img src="../../pics/spark/spark_218.png" align=left width=1000>
+
+### (7) cache+checkpoint
+
+> Spark 建议用户在 checkpoint RDD 的同时对其进行缓存
+>
+> - 那么在这种情况下生成的 job 与只进行缓存有什么异同呢?
+> - 缓存和 checkpoint的顺序是怎样的呢?
+
+---
+
+提前总结：**对某个RDD进行缓存和checkpoint 时，先对其进行缓存，然后再次启动job对其进行checkpoint**
+
+#### 1. 对 pairs:RDD 既进行缓存也进行 checkpoint
+
+```scala
+val sc = spark.sparkConext
+sc.setCheckpointDir("hdfs://checkpoint") //首先设置持久化路径，一般是 HDFS
+val data = Array[(Int, Char)]((1,'a'),(2,'b'),(3,'c'),(4,'d'),(5,'e'),(3,'f'),(2,'g'),(1,'h'))
+val pairs = sc.parallelize(data,3).map(r => (r._1 + 10, r._2)) //对输入数据进行一些计算
+
+pairs.cache()
+pairs.checkpoint()
+pairs.count()
+
+val result = pairs.groupByKey(2)
+result.foreach(println)
+```
+
+如图，示例生成 3 个job
+
+- 第1个由 count() 生成的 job 在运行时对 pairs:RDD 进行缓存
+
+- 然后启动第 2 个 job 读取 cached pairs: RDD，并对 pairs 进行 checkpoint
+
+- 最后启动第 3 个job，其中 stage 2 读取 pairs 缓存数据并进行 Shuffle Write，stage 3 进行 groupByKey() 操作， 输出结果
+
+    > 即，应用先对 pairs 进行缓存，然后再 checkpoint，读取时读取缓存数据而非 checkpoint 数据
+
+<img src="../../pics/spark/spark_219.png" align=left width=1000>
+
+#### 2. 对两个RDD既进行缓存又进行checkpoint
+
+```scala
+val inputRDD = sc.parallelize(Array[(Int, String)]((1,"a"),(2,"b"),(3,"c"),(4,"d"),(5,"e"),(2,"g")), 3)
+
+val mappedRDD = inputRDD.map(r => (r._1 + 10, r._2))
+mappedRDD.cache()
+
+val reduceRDD = mappedRDD.reduceByKey((x,y) => x + "_" + y, 2)
+reduceRDD.cache()
+reduceRDD.checkpoint() //添加 checkpoint
+reduceRDD.foreach(println)
+
+val groupRDD = mappedRDD.groupByKey().mapValues(V => V.tolist)
+groupRDD.cache()
+groupRDD.checkpoint() //添加 checkpoint
+groupRDD.foreach(println)
+
+val joinedRDD = reduceRDD.join(groupRDD)
+joinedRDD.foreach(println)
+```
+
+**如果去掉 checkpoint 语句**，示例会生成3个job
+
+- job2 的 lineage 非常长，包括了整个应用的所有 RDD 及操作，因为 reducedRDD和groupedRDD已经被缓存，job 2可以直接读取，所以stage 4和stage 6被忽略
+
+- 总的来说，缓存语句并不能切断 lineage，RDD还是保存了其上游依赖的数据和操作
+
+    > 保留lineage的原因是缓存数据并不可靠，一旦丢失，还需要根据lineage进行重新计算
+
+<img src="../../pics/spark/spark_220.png" align=left width=1000>
+
+---
+
+**添加checkpoint语句**，会生成5个job
+
+- job0 正常计算，并对 mappedRDD 和 reducedRDD 进行缓存，如绿色圆圈所示，由于reducedRDD被设置为需要被 checkpoint，需要启动 job1 对 reducedRDD 进行 checkpoint
+
+    > 此时，stage 2被忽略，原因是当前 Spark 实现 checkpoint 的方式问题
+
+- 之后，启动 job2 读取被缓存的 mappedRDD，正常计算得到 groupedRDD，并对其进行缓存。
+
+- 由于 groupedRDD 也需要被 checkpoint，因此启动 job3 对 groupedRDD 进行 checkpoint
+
+    > stage 6被忽略的原因和stage 2一样
+
+- 最后，启动 job4，读取被缓存的reducedRDD和groupedRDD进行join()操作，得到最后的结果
+
+**对比 job4和上图的 job2 可以发现**：checkpoint切断了 lineage，使得 job4 不需要再保存整个应用的数据依赖图。
+
+**checkpoint 可以这样做的原因**：RDD被持久化到了可靠的分布式文件系统上，该RDD不需要通过再次计算得到，也就没有必要保存其lineage
+
+> 如果单纯为了降低 job lineage 的复杂程度而不是为了持久化，Spark还提供了 localCheckpoint() 方法，功能上等价于“数据缓存”加上“checkpoint 切断 lineage ”的功能
+
+<img src="../../pics/spark/spark_221.png" align=left width=1000>
+
+<img src="../../pics/spark/spark_222.png" align=left width=380>
 
 ## 5、checkpoint 与数据缓存的区别
 
+数据缓存和checkpoint的用法、存储与读取过程确实很相似，但也有不少区别：
 
-
-
-
-
-
-
-
-
+1. **目的不同**：
+    - 数据缓存的目的：加速计算，即加速后续运行的 job
+    - checkpoint的目的：在job运行失败后能够快速恢复，即加速当前需要重新运行的 job
+2. **存储性质和位置不同**：
+    - 数据缓存：为了读写速度快，因此主要使用内存，偶尔使用磁盘作为存储空间
+    - checkpoint：为了能够可靠读写，因此主要使用分布式文件系统作为存储空间
+3. **写入速度和规则不同**
+    - 数据缓存速度较快，对job的执行时间影响较小，因此可以在job运行时进行缓存
+    - checkpoint 写入速度慢， 为了减少对当前job的时延影响，会额外启动专门的job进行持久化
+4. 对 lineage 的影响不同
+    - 对某个 RDD 进行缓存后，对该 RDD 的 lineage 没有影响，这样如果缓存后的 RDD 丢失还可以重新计算得到
+    - 对某个 RDD 进行 checkpoint 以后，会切断该 RDD 的lineage，因为该RDD 已经被可靠存储，所以不需要再保留该RDD是如何计算得到的
+5. 应用场景不同
+    - 数据缓存适用于会被多次读取、占用空间不是非常大的RDD
+    - checkpoint适用于数据依赖关系比较复杂、重新计算代价较高的RDD，如关联的数据过多、计算链过长、被多次重复使用等
 
 # 八、内存管理机制
 
 ## 1、内存管理机制的问题及挑战
 
+除了在内存中处理大量数据，Spark 还在内存中缓存大量数据来避免重复计算，所以Spark内存管理机制面临更多挑战：
 
+1. **内存消耗来源多种多样，难以统一管理**：Spark 在运行时内存消耗主要包括3个方面
+    - 第 1 个方面：框架本身在处理数据时需要消耗内存，如Spark在Shuffle Write/Read过程中使用类似HashMap和Array的数据结构对数据进行聚合和排序
+    - 第2个方面：数据缓存，如将需要重复使用的数据缓存到内存中避免重复计算
+    - 第3个方面：用户代码消耗的内存，如用户可以在reduceByKey(func)、mapPartitions(func)的 func中自己定义数据结构，暂存中间处理结果
 
+2. **内存消耗动态变化、难以预估，为内存分配和回收带来困难**：Spark运行时的内存消耗与多种因素相关，如
+    - Shuffle机制中的内存用量与Shuffle数据量、分区个数、用户自定义的聚合函数等相关，并且难以预估
+    - 用户代码的内存用量与func的计算逻辑、输入数据量有关， 也难以预估
 
+3. **task 之间共享内存，导致内存竞争**：
+    - 在Hadoop MapReduce 中，框架为每个 task 启动一个单独的 JVM 运行，task之间没有内存竞争
+    - 在Spark中，多个task以线程方式运行在同一个Executor JVM中， task之间还存在内存共享和内存竞争，如何平衡内存共享和内存竞争的问题也具有挑战性
 
-
+> Spark不断改进内存管理机制，最终目的是：构建一个高效、可靠的内存管理机制
 
 ## 2、应用内存消耗来源及影响因素
 
+**定义内存消耗**：
+
+- Hadoop MapReduce 应用内存消耗指的是：map/reduce task 进程的内存消耗
+
+    > 在Hadoop MapReduce中，map/reduce task 以 JVM 进程方式运行
+
+- Spark 应用内存消耗：其task(名为ShuffleMapTask或ResultTask)以线程方式运行在Executor JVM中
+
+    - 在微观上指的是 task 线程的内存消耗
+    - 在宏观上指的是 Executor JVM 的内存消耗
+
+由于 Exectuor JVM 中可以同时运行多个 task，存在内存竞争，为了简化分析，主要关注单个task的内存消耗，必要时再分析Executor JVM 的内存消耗
+
+如图，单个 task 的内存消耗来源主要包含3个方面：用户代码(User code)、框架执行(如Shuffle Write/Read中间数据)、数据存储(如cached RDD)
+
+<img src="../../pics/spark/spark_210.png" align=left width=1000>
+
+### (1) 内存消耗来源1：用户代码
+
+**Spark 中的用户代码**：指用户采用的数据操作和其中的 func，如 map(func)，reduceByKey(func) 等，这些操作的内存使用模式大致有两种：
+
+- 一种：每读入一条数据，立即调用 func 进行处理并输出结果， 产生的中间计算结果并不进行存储
+
+    > 如：在 filter(record=&gt; record&gt ;10)计算过程中，读入的 record 如果大于 10 就输出，否则直接丢弃，内存消耗忽略不计
+
+- 另一种：对中间计算结果进行一定程度的存储
+
+    > 如：用户在flatMap()操作中定义了名为 arr1 的数组，并在该数组存放了中间计算结果，这些中间计算结果会造成内存消耗
+    >
+    > 用户代码造成内存消耗的GroupByTest示例如下所示：
+    >
+    > ```scala
+    > val pairs1 = spark.sparkContext.parallelize(0 until numMappers, numMappers).flatMap {
+    >     val ranGen = new Random
+    >     val arr1 = new Array[(Int, Array[Byte])](numKVPairs) //占用内存空间
+    >     for (i <- 0 until numKVPairs) {
+    >         val byteArr = new Array[Byte](valSize)
+    >         ranGen.nextBytes(byteArr)
+    >         arr1(i) = (ranGen.nextInt(Int.MaxValue), byteArr)
+    >     }
+    >     arr1
+    > }.cache()
+    > ```
+
+**用户代码内存消耗影响因素**：影响因素包括数据操作的输入数据大小，以及func的空间复杂度。
+
+- **输入数据大小**：决定用户代码会产生多少中间计算结果
+- **func 的空间复杂度**：决定有多少中间计算结果会被保存在内存中
+
+> Spark 在运行时可以获得数据操作的输入数据信息，如map()读入了多少个record，groupByKey()通过Shuffle Read读取了多少个record等，至于这些 record 产生多大的中间计算结果，中间计算结果又有多少会被存放在内存中由用户代码的空间复杂度决定
+
+### (2) 内存消耗来源2：Shuffle机制中产生的中间数据
+
+> - 除了执行用户定义的数据操作，Spark 还需要执行 Shuffle Write/Read 阶段，将上游 stage 中的数据传递给下游 stage
+> - 在 Shuffle Write/Read 过程中，Spark 需要对数据进行分区、聚合、排序等操作，而这些操作需要在内存中存储和处理大量中间数据
+
+Shuffle 机制具体包括 Shuffle Write 和 Shuffle Read 这两个阶段，这两个阶段的内存消耗如下：
+
+- **Shuffle Write 阶段**：
+
+    - 首先，对 map task 输出的 Output records 进行分区，以便后续分配给不同的 reduce task，在这个过程中只需要计算每个 record 的 partitionId，因此内存消耗可以忽略不计
+
+    -  然后，如果需要进行 combine() 聚合，那么 Spark 会将 record 存放到类似 HashMap 的数据结构中进行聚合，这个过程中HashMap 会占用大量内存空间
+
+    - 最后，Spark 会按照 partitionId 或 Key 对 record 进行排序，这个过程中可能会使用数组保存 record，也消耗一定的内存空间
 
 
+    > <img src="../../pics/spark/spark_211.png" align=left width=1000>
+
+- **Shuffle Read 阶段**：该阶段将来自不同map task的分区数据进行聚 合、排序，得到结果后进行下一步计算
+
+    - 首先，分配一个缓冲区(buffer)暂存从不同 map task 获取的 record，这个 buffer 需要消耗 一些内存
+    - 然后，如果需要对数据进行聚合，那么 Spark 将采用类似 HashMap 的数据结构对这些 record 进行聚合，会占用大量内存空间
+    - 最 后，如果需要对 Key 进行排序，那么可能会建立数组来进行排序，需要消耗一定的内存空间
+
+    > <img src="../../pics/spark/spark_212.png" align=left width=1000>
 
 
+**Shuffle 机制中内存消耗影响因素**：
 
+- 首先，Shuffle 方式影响内存消耗，不同类型的操作会使用不同类型的 Shuffle 方式
+
+    > 如：sortByKey() 不需要聚合(Aggregate)过程，而 reduceByKey(func) 需要
+
+- 其次，Shuffle Write/Read 的数据量影响中间数据大小，进而影响内存消耗
+
+- 最后，用户定义的聚合函数的空间复杂度影响中间计算结果大小，进而影响内存消耗
+
+> Spark 采用动态监测的方法，在 Shuffle 机制中动态监测 HashMap 等数据结构大小，动态调整数据结构长度，并在内存不足时将数据 spill 到磁盘中
+
+### (3) 内存消耗来源3：缓存数据
+
+> 一些复杂应用，特别是迭代型应用会生成多个 job，当前 job 在运行中产生的数据可能被后续job重用，因此 Spark 会将 一些重用数据缓存到内存中，提升应用性能
+
+如图：mappedRDD、reducedRDD、groupedRDD 都被缓存到内存中，以减少下一个 job 的计算开销
+
+<img src="../../pics/spark/spark_213.png" align=left width=1000>
+
+**缓存数据的内存消耗影响因素**：需要缓存的RDD的大小、缓存级别、是否序列化等
+
+- 当某个 RDD 需要缓存时，Spark 需要在计算该 RDD 的过程中将其 record 写入内存或磁盘
+- Spark 无法提前预测缓存数据大小，只能在写入过程中动态监控当前缓存数据的大小
+- 另外，缓存数据还存在替换和回收机制，因此缓存数据在运行过程中大小也是动态变化
 
 ## 3、spark 框架内存管理模型
 
+Spark 中的 task 是 Executor JVM 中的一个线程，多个 task 共享 Executor JVM 的进程空间，因此 Spark 内存管理不仅要平衡各种来源的内存消耗，也要解决 task 的内存共享与竞争
 
+### (1) 静态内存管理模型
 
+简述：由于内存消耗包含三种来源且内存空间连续，所以，一个简单的解决方法是将内存空间划分为3个分区，每个分区负责存储三种内存消耗来源中的一种，并根据经验确定三者的空间比例
 
+Spark早期版本(Spark 1.6之前的版本)采用了这个方法，用静态内存管理模型(StaticMemoryManger)将内存空间划分为如下3个分区：
 
+- **数据缓存空间**：约占 60% 的内存空间，用于存储 RDD 缓存数据、广播数、task 的一些计算结果等
+- **框架执行空间**：约占 20% 的内存空间， 用于存储 Shuffle 机制中的中间数据
+- **用户代码空间**：约占 20% 的内存空间，用于存储用户代码的中间计算结果、Spark框架本身产生的内部对象，以及 Executor JVM自身的一些内存对象等
 
+---
+
+- 优点：各个分区的角色分明、实现简单
+
+- 缺点：分区之间存在“硬”界限，难以平衡三者的内存消耗
+
+    > 为了缓解这个问题，Spark 允许用户自己设定三者的空间比例，但对于普通用户来说很难确定一个合适的比例，而且内存用量在运行过程中不断变化，并不存在一个最优的静态比例，也就容易造成内存资源浪费、内存溢出等问题
+
+### (2) 统一内存管理模型
+
+- **希望**：为了能够平衡用户代码、Shuffle机制中的中间数据，以及数据缓存的内存空间需求，最理想的方法是为三者分配一定的内存配额，并且在 运行时根据三者的实际内存用量，动态调整配额比例
+
+- **现状**：Shuffle 机制中的中间数据、缓存数据的内存消耗可以被监控，但用户代码的内存消耗很难被监控和估计
+
+- **方案**：主要根据监控得到的内存用量信息，来动态调节用于 Shuffle 机制和用于缓存数据内存空间
+
+- **问题**：当三者的内存消耗量超过实际内存大小时怎么办?因此，除了内存动态调整还需要进行一定的内存配额限制
+
+    **解决**：为每个内存消耗来源设定一个上下界，其内存配额在上下界范围内动态可调
+
+**统一内存管理模型**：使用“软”界限来调整分区(数据缓存空间、框架执行空间、用户代码空间)的占用比例
+
+- **Framework memory**：由数据缓存空间和框架执行空间组成(共享)
+    - 其大小固定且为数据缓存空间和框架执行空间设置了初始比例，但这个比例可以在应用执行过程中动态调整，如框架执行空间不足时可以借用数据存储空间来“Shuffle”中间数据
+    - 同时，两者之间比例也有上下界，使得一方不能完全“侵占”另一方的空间，从而避免因为某一方空间占满导致后续的数据缓存操作或Shuffle操作无法执行
+- **用户代码空间**：其为固定大小，因为难以在运行时获取用户代码的真实内存消耗， 也就难以动态设定用户代码空间的比例
+
+**补充**：
+
+- 当框架执行空间不足时，会将 Shuffle 数据 spill 到磁盘上
+- 当数据缓存空间不足时，Spark 会进行缓存替换、移除缓存数据等操作
+- 为了限制每个 task 的内存使用，也会对每个 task 的内存使用进行限额
+
+---
+
+Spark 统一内存管理模型将 Executor JVM 的内存空间划分如下：
+
+> 该内存管理模型可以使用 Executor JVM 的堆内内存和堆外内存
+
+<img src="../../pics/spark/spark_223.png" align=left width=1000>
+
+Executor JVM 的整个内存空间划分为以下3个部分：
+
+- **系统保留内存**：使用较小的空间存储 Spark 框架产生的内部对象，如 Spark Executor 对象、TaskMemoryManager 对象等
+
+    > 通过 `spark.testing.ReservedMemory` 默认设置为 300MB
+
+- **用户代码空间**：用于存储用户代码生成的对象，如 map() 中用户自定义的数据结构
+
+    > 用户代码空间默认约为 40% 的内存空间
+    >
+    > - 虽然 Spark 内存模型可以限制框架使用的空间大小，但无法控制用户代码的内存消耗量
+    > - 用户代码运行时的实际内存消耗量可能超过用户代码空间的界限，侵占框架使用的空间，此时如果框架也使用了大量内存空间，则可能造成内存溢出
+
+- **框架内存空间**：包括框架执行空间和数据缓存空间，总大小为 `spark.memory.fraction (default 0.6)×(heap-Reserved memory)`，约等于 60% 的内存空间，两者共享这个空间，其中一方空间不足时可以动态向另一方借用
+
+    > - 当数据缓存空间不足时，可以向框架执行空间借用其空闲空间，后续当框架执行需要更多空间时，数据缓存空间需要“归还”借用的空间，这时候 Spark 可能将部分缓存数据移除内存来归还空间
+    > - 当框架执行空间不足时，可以向数据缓存空间借用空间，但至少要保证数据缓存空间具有约50%左右(spark.memory.storageFraction (default 0.5) ×Framework memory大小)的空间
+    >
+    > 说明：在框架执行时借走的空间不会归还给数据缓存空间，原因是难以代码实现
+
+---
+
+**Framework Memory 的堆外内存空间**：为了减少 GC 开销，允许使用堆外内存，通过 `spark.memory.offHeap.size` 设置大小
+
+> 堆外内存类似使用C/C++语言分配的 `malloc` 空间，该空间不受 JVM 垃圾回收机制管理， 在结束使用时需要手动释放空间
+
+- **堆外内存主要存储序列化对象数据**，而用户代码处理的是普通 Java 对象，因此堆外内存只用于框架执行空间和数据缓存空间，而不用于用户代码空间
+- Spark 按照堆内内存使用的 `spark.memory.storageFraction` 比例将堆外内存分为框架执行空间和数据缓存空间，而且堆外内存的管理方式和功能与堆内内存的 Framework Memory 一样
+- 在运行应用时，Spark 会根据应用的 Shuffle 方式及用户设定的数据缓存级别来决定使用堆内内存还是堆外内存
 
 ## 4、spark 框架执行内存消耗与管理
 
+1. **内存共享与竞争**：由于 Executor 中存在多个 task，因此框架执行空间实际上是由多个 task(ShuffleMapTask 或 ResultTask)共享
 
+    - 运行过程中，Executor 中活跃的 task 数目在 `[0，#ExectuorCores]` 内变化
 
+        > `#ExectuorCores` 表示为每个 Executor 分配的 CPU 个数
 
+    - 每个 task 可使用的内存空间被均分，即空间大小被控制在 `[1/2 *N* ，1/ *N* ]×ExecutorMemory` 内
 
+        > *N* 是当前活跃的 task 数目
 
+2. **内存使用**：
+
+    - 框架执行空间主要用于 Shuffle 阶段，Shuffle 阶段的主要工作是对上游 stage 的输出数据进行划分，并将其传递到下游stage进行 聚合等进一步处理
+
+        > 在这个过程中需要对数据进行 partition、sort、 merge、fetch、aggregate 等操作，执行这些操作需要 buffer、HashMap等数据结构
+
+    - 由于中间数据量很大，这些数据结构会消耗大量内存。 当框架执行内存不足时，Spark会像MapReduce一样将部分数据spill到磁 盘中，然后通过排序等方式来merge内存和磁盘上的数据，并用于下一 步数据操作
+
+---
+
+下面详细分析 `Shuffle Write/Read` 过程中内存消耗变化及消耗位置(堆内还是堆外)：
+
+### (1) Shuffle Write 阶段内存消耗及管理
+
+根据 Spark 应用是否需要 map() 端聚合 (combine)，是否需要按 Key 进行排序，将 Shuffle Write 方式分为4种：
+
+1. 无 `map()` 端聚合、无排序且 partition 个数不超过200的情况：采用基于 buffer 的 `BypassMergeSortShuffleWriter` 方式
+2. 无 `map()` 端聚合、无排序且 partition 个数大于 200 的情况：采用 `SerializedShuffleWriter` 
+3. 无 `map()` 端聚合但需要排序的情况：采用基于数组的 `SortShuffleWriter(KeyOrdering=true)` 方式
+4. 有 `map()` 端聚合的情况：采用基于HashMap的 `SortShuffleWriter(mapSideCombine=true)` 方式
+
+**不同的 Shuffle Write 方式及特点**：
+
+| Map 端聚合 | 按 Key 排序 | partition 个数 |     类别     |           Shuffle Write 实现类           |                     内存消耗                     |
+| :--------: | :---------: | :------------: | :----------: | :--------------------------------------: | :----------------------------------------------: |
+|     No     |     No      |     <=200      | Unserialized |      `BypassMergeSortShuffleWriter`      |             `Fixed buffers(on-heap)`             |
+|     No     |     No      | 200~16,777,216 |  Serialized  |        `SerializedShuffleWriter`         | `PointerArray + Data pages(on-heap or off-heap)` |
+|     No     |     Yes     |   Unlimited    | Unserialized |  `SortShuffleWriter(KeyOrdering=true)`   |                 `Array(on-heap)`                 |
+|    Yes     |   Yes/No    |   Unlimited    | Unserialized | `SortShuffleWriter(mapSideCombine=true)` |                `HashMap(on-heap)`                |
+
+第 1、2、4 这三种方式都是利用堆内内存来聚合、排序record对象，属于 Unserialized Shuffle 方式：
+
+- 这种方式处理的 record 对象是普通  Java 对象，有较大的内存消耗，也会造成较大的 JVM 垃圾回收开销。 
+
+- Spark 为了提高Shuffle效率，在2.0版本中引入了 Serialized Shuffle 方式
+
+    -  核心思想是直接在内存中操作序列化后的 record 对象(二进制数据)， 降低内存消耗和GC开销，同时也可以利用堆外内存
+
+    - 然而，由于 Serialized Shuffle 方式处理的是序列化后的数据，也有一些适用性上的不足
+
+        > 如在 Shuffle Write 中，只用于无 map() 端聚合且无排序的情况
+
+#### 1. 不需要 map() 端聚合，不需要按 Key 进行排序，且分区个数较小(≤200)
+
+- **在这种情况下，Shuffle Write 只需要实现数据分区功能即可**：
+
+    - Spark 采用的 shuffle 方式为 `buffer-based Shuffle`，具体实现为 BypassMergeSortShuffleWriter
+
+    - 如图，map() 依次输出 `<K，V>record`，并根据 record 的 partitionId，将其输出到不同的 buffer 中，每当 buffer 填满就将 record 溢写到磁盘上的分区文件中
+
+        > 分配 buffer 的原因是 map() 输出 record 的速度很快，需要进行缓冲来减少磁盘 I/O
+        >
+        > ---
+        >
+        > 不需要map()端聚合、不需要按Key进行排序的Shuffle Write流程 (BypassMergeSortShuffleWriter)：
+        >
+        > <img src="../../pics/spark/spark_225.png" align=left width=1000>
+
+- **内存消耗**：整个 Shuffle Write 过程中只有 buffer 消耗内存，buffer 被分配在堆内内存(On-heap)中，buffer 的个数与分区个数相等，并且生命周期直至 Shuffle Write 结束
+    - 每个 task 的内存消耗为 BufferSize(默认32KB)×partition number
+    - 如果 partition 个数较多，task 数目也较多，那么总的内存消耗会很大
+    - 该Shuffle方式只适用于 分区个数较小(如小于200)的情况
+
+#### 2. 不需要 map() 端聚合，不需要按 Key 进行排序，且分区个数较大(&gt;200)
+
+- **BypassMergeSortShuffleWriter 的缺点**：在分区个数太多时 buffer 内存消耗过大
+
+    - 降低内存消耗的办法：采用基于数组排序的方法，核心思想是分配一个大的数组，将 map() 输出的 &lt; K，V&gt;record 不断放进数组，然后将数组里的 record 按照 partitionId 排序，最后输出即可
+    - 该方法的不足：
+        - 然而普通的 record 对象是 Java对象， 占用空间较大，需要大的数组，而太大的数组容易造成内存不足
+        - 大量 record 对象存放到内存中也会造成频繁 GC
+
+- **Serialized Shuffle方式(SerializedShuffleWriter)**：为了提升内存利用率
+
+    - **方案**：将 record 对象序列化后再存放到可分页存储的数组中，序列化可以减少存储开销，分页可以利用不连续的空间
+
+    - **优点**：
+
+        - 序列化后的 record 占用的内存空间小
+
+        - 不需要连续的内存空间，Serialized Shuffle 将存储 record 的数组进行分页，分页可以利用内存碎片，不需要连续的内存空 间，而普通数组需要连续的内存空间
+
+        - 排序效率高，对序列化后的 record 按 partitionId 进行排序时，排序的不是record本身，而是record序列化后字节数组的指针(元数据)
+
+            > 由于直接基于二进制数据进行操作，所以在这里面没有序列化和反序列化 的过程，内存和GC开销降低
+
+        - 可以使用 cache-efficient sort 等优化技术，提高排序性能
+
+        - 可以使用堆外内存，分页也可以方便统一管理堆内内存和堆外内存
+
+    - **使用 Serialized Shuffle 需要满足4个条件**：
+
+        - 不需要 map() 端聚合，也不需要按 Key 进行排序
+
+        - 使用的序列化类(serializer)支持序列化 Value 的位置互换功能 (relocation of serialized Value)
+
+            > 目前 KryoSerializer 和 Spark SQL 的 custom serializers 都支持该功能
+
+        - 分区个数小于 16,777,216
+
+        - 单个 Serialized record 小于 128MB
+
+    - **实现方式**：Serliazed Shuffle 采用分页技术，将内存空间划分为 Page，每个 Page 大小在 1MB~64MB，既可以在堆内内存上分配，也可以在堆外内存上分配
+
+        > Page 由 Executor 中的 TaskMemoryManager 对象来管理，其包含一个 PageTable，可以最多寻址 8192 个 Page
+        >
+        > ---
+        >
+        > 如图：
+        >
+        > - 对于 map() 输出的每个 &lt;K，V&gt;record， Spark 将其序列化后写入某个 Page 中，再将该 record 的索引，包括 partitionId、所在的 PageNum、在该 Page 中的 Offset 放到 PointerArray 中，然后通过 partitionId 来对 record 排序
+        > - 当 Page 总大小达到 task 的内存限制时，将这些 Page 中的 record 按照 partitionId 进行排序，并 spill 到磁盘上，这样在Shuffle Write过程中可能会形成多个spill文件，最后 task 将这些 spill 文件归并即可
+        >
+        > 更具体的实现细节：
+        >
+        > - 首先将新来的&lt;K，V&gt;record 序列化写入一个 1MB 的缓冲区(serBuffer)
+        > - 然后将 serBuffer 中序列化的 record 放到 ShuffleExternalSorter 的 Page 中进行排序
+        > - 插入和排序方法是，首先分配一个LongArray来保存record的指针，指针为64位，前24位存储record的partitionId，中间13位存储record所在的Page Num，后27位存储(13+27)record在该Page中的偏移量。也就是说LongArray最多可以管理2 =8192×128MB=1TB的内存
+        > - 随着 record 不断地插入 Page 中，如果 LongArray 不够用或 Page 不够用，则会通过 allocatePage() 向 TaskMemoryManager 申请，如果申请不到，就启动spill()程序，将中间结果spill到磁盘上
+        > - 最后再由 UnsafeShuffleWriter 进行统一的merge 
+        >
+        > Page 由 TaskMemoryManager 管理和分配，可以存放在堆内内存或者堆外内存
+        >
+        > <img src="../../pics/spark/spark_226.png" align=left width=1000>
+
+    - **内存消耗**：PointerArray、存储 record 的Page、sort 算法所需的额外空间，总大小不超过 task 的内存限制
+
+        > 注意：单个数据结构 (如PointerArray、serialized record)不能同时使用堆内内存和堆外内存
+        >
+        > 因此使用堆外内存最大的问题：在Shuffle Write 时不能同时利用堆内内存和堆外内存，可能会造成更多的 spill 次数
+
+#### 3. 不需要 map() 端 combine，但需要排序
+
+Spark采用了基于数组的“按照 partitionId+Key 进行排序”方法，名为 `SortShuffleWriter(KeyOrdering=true)` 
+
+- 具体方法：
+    - 建立一个 Array (图中的PartitionedPairBuffer)来存放 map() 输出的 record，并对 Array 中元素的 Key 进行精心设计，将每个 &lt;K，V&gt;record 转化为 &lt; (PID，K)，V&gt;record 存储
+    - 然后按照 PID+Key 对 record 进行排序
+    - 最后将所有 record 写入一个文件中，通过建立索引来标示每个分区
+    - 如果 Array 存放不下，就会先扩容，如果还存放不下，就将 Array 中的元素排序后 spill 到磁盘上，等待 map() 输出完以后，再将 Array 中的元素与磁盘上已排序的 record 进行全局排序，得到最终有序的 record，并写入文件中
+
+- 内存消耗：最大的内存消耗是存储 record 的数组 PartitionedPairBuffer，占用堆内内存，具有扩容能力，但大小不超过 task 的内存限制
+
+<img src="../../pics/spark/spark_227.png" align=left width=1000>
+
+> 不需要map()端combine，需要排序的Shuffle Write流程 SortShuffleWriter(KeyOrdering=true)
+
+#### 4. 需要 map() 端聚合，需要或不需要按 Key 排序
+
+Spark 采用基于 HashMap 的聚合方法：
+
+- **具体实现方法**：建立一个类似 HashMap 的数据结构 PartitionedAppendOnlyMap 对 map() 输出的 record 进行聚合，HashMap 中的 Key 是“partitionId+Key”，HashMap 中的 Value 是经过相同 combine() 的聚合结果
+    - 如果不需要按 Key 进行排序，则只根据 partitionId 进行排序
+    - 如果需要按 Key 进行排 序，那么根据 partitionId+Key 进行排序
+    - 最后，将排序后的 record 写入一个分区文件中
+
+- **内存消耗**：HashMap 在堆内分配，需要消耗大量内存
+    - 如果 HashMap 存放不下，则会先扩容为两倍大小，如果还存放不下，就将 HashMap 中的record 排序后 spill 到磁盘上
+    - 放入堆内 HashMap 或 buffer 中的 record 大小，如果超过 task 的内存限制，那么会 spill 到磁盘上
+
+- **优缺点**：
+    - 优点：通用性强、对分区个数也无限制
+    - 缺点：内存消耗高(record是普通Java对象)、不能使用堆外内存
+
+<img src="../../pics/spark/spark_228.png" align=left width=1000>
+
+> 需要map()端聚合，需要或不需要排序的Shuffle Write流程SortShuffleWriter (mapSideCombine=true)
+
+### (2) Shuffle Read 阶段内存消耗及管理
+
+- 在Shuffle Read阶段，数据操作需要跨节点数据获取、聚合和排序3 个功能，每个数据操作需要其中的部分功能
+
+- Spark 设计了一个通用的 Shuffle Read 框架，框架的计算顺序为“数据获取 →聚合→排序”
+
+---
+
+根据 Shuffle Read 端是否需要聚合(Aggregate)， 是否需要按 Key 进行排序，将 Shuffle Read 方式分为3种：
+
+> 这3种方式都是利用堆内内存来完成数据处理 的，属于UnSerialized Shuffle方式
+
+1. 无聚合且无排序的情况：采用基于 buffer 获取数据并直接处理的方式，适用的典型操作如 partitionBy
+2. 无聚合但需要排序的情况：采用基于数组排序的方式，适用的典型操作如 sortByKey
+3. 有聚合的情况：采用基于 HashMap 聚合的方式，适用的典型操作如 reduceByKey
+
+**不同的 Shuffle Read 方式及特点**：
+
+| reduce 端聚合 | 按 Key 排序 |                     Shuffle Read 实现类                      |        内存消耗         |   典型操作    |
+| :-----------: | :---------: | :----------------------------------------------------------: | :---------------------: | :-----------: |
+|      No       |     No      | `BlockStoreShuffleReader`<br/>`(aggregate=false, Keysort=false)` | `Small buffer(on-heap)` | `partitionBy` |
+|      No       |     Yes     | `BlockStoreShuffleReader`<br/>`(aggregate=false, Keysort=yes)` |    `Array(on-heap)`     |  `sortByKey`  |
+|      Yes      |     No      | `BlockStoreShuffleReader`<br/>`(aggregate=yes, Keysort=false)` |   `HashMap(on-heap)`    | `reduceByKey` |
+
+#### 1. 无聚合且无排序的情况
+
+其内存消耗非常简单，只包含一个大小为 `spark.reducer.maxSizeInFlight=48MB` 的缓冲区
+
+#### 2. 无聚合但需要排序的情况
+
+> 这种情况只需要实现数据获取和按 Key 进行排序的功能
+
+Spark 采用基于数组的排序方式：
+
+- **如图**：
+    - 下游的 task 不断获取上游 task 输出的 record，经过缓冲后，将 record 依次输出到一个 Array 结构(PartitionedPairBuffer)中
+    - 然后对 Array 中的 record 按照 Key 进行排序，并将排序结果输出或传递给下一步操作
+    - 当内存无法存下所有的 record 时，PartitionedPairBuffer 会将 record 排序后 spill 到磁盘上
+    - 最后将内存中和磁盘上的 record 进行归并排序，得到最终排序后的 record
+
+- **内存消耗**：由于 Shuffle Read 端获取的是各个上游 task 的输出数据， 因此需要较大的 Array(PartitionedPairBuffer) 来存储和排序这些数据。
+
+    > Array 大小可控，具有扩容和 spill 到磁盘上的功能，并在堆内分配
+
+<img src="../../pics/spark/spark_229.png" align=left width=1000>
+
+#### 3. 有聚合的情况
+
+> 在这种情况下，需要实现数据聚合功能，同时提供按 Key 进行排序的功能
+
+Spark 采用基于 HashMap 的聚合方法和基于数组的排序方法：
+
+- 如图：
+    - 获取 record 后，Spark 建立一个类似 HashMap 的数据结构(ExternalAppendOnlyMap) 对 buffer 中的 record 进行聚合， HashMap 中的 Key 是 record 中的 Key，HashMap 中的 Value 是具有相同 Key 的 record 经过聚合函数(func)计算后的结果。
+    - 由于 ExternalAppendOnlyMap底层实现是基于数组来存放&lt;K，V&gt; record的，因此若要排序，则可以直接对数组中的 record 按Key 进行排序，排序完成后，将结果输出或传递给下一步操作
+    - 如果 HashMap 存放不下，则会先扩容为两倍大小，如果还存放不下，就将 HashMap 中的 record 排序后 spill 到磁盘上
+    - 最后将磁盘文件和内存中的 record 进行全局 merge
+
+- **内存消耗**：
+    - 由于 Shuffle Read 端获取的是各个上游 task 的输出数据， 用于数据聚合的 HashMap 结构会消耗大量内存，而且只能使用堆内内存
+    - 当然，HashMap 的内存消耗量也与 record 中不同 Key 的个数及聚合函数的复杂度相关
+    - HashMap 具有扩容和 spill 到磁盘上的功能，支持小规模到大规模数据的聚合
+
+<img src="../../pics/spark/spark_230.png" align=left width=1000>
 
 ## 5、数据缓存空间管理
 
+如图：
 
+- 数据缓存空间主要用于存放3种数据：RDD缓存数据(RDD partition)、广播数据(Broadcast data)、task 的计算结果(TaskResult)
+- 还有临时空间，如：用于反序列化(展开 iterator为Array[])的临时空间、用于存放 Netty 网络数据传输的临时空间等
 
+<img src="../../pics/spark/spark_231.png" align=left width=1000>
 
+- 与框架执行内存空间一样，数据缓存空间也可以同时存放在堆内和堆外，而且由 task 共享
+
+- 不同的是，每个 task 的存储空间并没有被限制为1/ *N* 
+
+    > 在缓存时如果发现数据缓存空间不够，且不能从框架执行内存空间借用空间时，就只能采取缓存替换或者直接丢掉数据的方式
+
+下面具体介绍3种缓存数据的存储与管理：
+
+### (1) RDD缓存数据
+
+数据缓存空间最主要存储的是 RDD 缓存数据，Spark 中的数据缓存级别如下：
+
+> 缓存方法是调用 rdd.persist(Storage_Level)，不同的 Storage_Level 代表不同的存储模式
+
+|         缓存级别          |  存储位置   | 序列化存储 | 内存不足放磁盘 |
+| :-----------------------: | :---------: | :--------: | :------------: |
+| `MEMORY_ONLY`，如 cache() |    内存     |     No     |  No，重新计算  |
+|     `MEMORY_AND_DISK`     | 内存 + 磁盘 |     No     |      Yes       |
+|     `MEMORY_ONLY_SER`     |    内存     |    Yes     |       No       |
+|   `MEMORY_AND_DISK_SER`   | 内存 + 磁盘 |    Yes     |      Yes       |
+|        `OFF_HEAP`         |  堆外内存   |    Yes     |       No       |
+
+> 另外，还有 `MEMORY_ONLY_2、MEMORY_AND_DISK_2` 等模式，可以将缓存数据复制到多台机器上
+
+1. `MEMORY_ONLY/MEMROY_AND_DISK` 模式
+
+    - 实现方式：如图
+
+        - 蓝色的 MapPartitionsRDD 是需要被缓存的数据，task 在计算该 RDD partition 的过程中会将该 partition 缓存到 Executor的 memoryStore 中，可以认为 memoryStore 代表了堆内的数据缓存空间
+        - memoryStore 持有一个链表 (LinkedHashMap)来存储和管理缓存的 RDD partition，在链表中，
+            - Key 的形式是(rddId= *m* ，partitionId= *n* )，表示其 Value 存储的数据来自RDD *m* 的第 *n* 个分区
+            - Value 是该 partition 的引用，引用指向一个名为 DeserializedMemoryEntry 的对象
+                - 该对象包含一 个Vector，里面存放了 partition 中的 record
+                - 由于缓存级别没有被设置为序列化存储，这些 record 以普通 Java 对象的方式存放在 Vector 中
+        - 注意：一个 Executor 中可能同时运行多个 task，因此，链表被多个 task 共用，即数据缓存空间由多个 task 共享
+
+        <img src="../../pics/spark/spark_232.png" align=left width=1000>
+
+    - 内存消耗：由存放到其中的 RDD record 大小决定，即等于所有 task 缓存的 RDD partition 的 record 总大小
+
+2. `MEMORY_ONLY_SER/MEMORY_AND_DISK_SER` 模式
+
+    - 实现方式：与 MEMORY_ONLY 的实现方式基本相同，唯一不同是，这里的 partition 中的 record 以序列化的方式存储在一个 ChunkedByteBuffer(不连续的ByteBuffer数组)中，如图
+        - 使用不连续的 ByteBuffer 数组的目的是方便分配和回收，因为如果 record 非常多，序列化后就需要一个非常大的数组来存储，而此时的内存空间如 果没有连续的一大块空间，就无法存储
+        - 之前的 MEMORY_ONLY 模式不存在这个问题，因为单个普通 Java 对象可以存放在内存中的任意位置
+
+    <img src="../../pics/spark/spark_233.png" align=left width=1000>
+
+    - 内存消耗：由存储的 record 总大小决定，即等于所有 task 缓存的 RDD partition 的 record 序列化后的总大小
+
+3. `OFF_HEAP` 模式
+
+    - 实现方式：该缓存模式的存储方式与 `MEMORY_ONLY_SER/MEMORY_AND_DISK_SER` 模式基本相同，需要缓存的 partition 中的record 也是以序列化的方式存储在一个 ChunkedByteBuffer(不连续的ByteBuffer数组)中的，只是存放位置是堆外内存
+
+    <img src="../../pics/spark/spark_234.png" align=left width=1000>
+
+    - 内存消耗：存放到 OFF-HEAP 中的 partition 的原始大小
+
+---
+
+结论：目前堆内内存和堆外内存独立使用，并没有可以同时存放到堆内内存和堆外内存的缓存级别，即堆内内存和堆外内存并没有协作
+
+### (2) 广播数据
+
+有些应用在运行前，需要将多个 task 的公用数据广播到每个节点， 如当 map stage 中的 task 都需要一部词典时，可以先将该词典广播给各个 Executor，然后每个 task 从 Executor 中读取词典，因此广播数据的存储位置是 Executor 的数据缓存空间
+
+- 实现方式：Broadcast 默认使用类似 BT 下载的 TorrentBroadcast 方式，如图
+
+    - 需要广播的数据一般预先存储在 Driver 端，Spark 在 Driver 端将要广播的数据划分大小为 `spark.Broadcast.blockSize=4MB` 的数据块(block)
+
+    - 然后，赋予每个数据块一个 blockId 为 BroadcastblockId(id，“piece”+ *i* )，id表示block的编号，piece 表示被划分后的第几个block
+
+    - 之后，使用类似 BT 的方式将每个 block 广播到每个 Executor 中
+
+    - Executor 接收到每个 block 数据块后，将其放到堆内的数据缓存空间的 ChunkedByteBuffer 里面，缓存模式为 MEMORY_AND_DISK_SER
+
+        > 因此，这里的 ChunkedByteBuffer 构造与 MEMORY_ONLY_SER 模式中的一样，都是用不连续的空间来存储序列化数据
+
+    <img src="../../pics/spark/spark_235.png" align=left width=1000>
+
+- 内存消耗：序列化后的 Broadcast block 总大小
+
+- 内存不足：Broadcast data 的存放方式是内存 + 磁盘，内存不足时放入磁盘
+
+### (3) task 的计算结果
+
+许多应用需要在 Driver 端收集 task 的计算结果并进行处理，
+
+- 如调用了rdd.collect() 的应用：
+    - 当 task 的输出结果大小超过 `spark.task.maxDirectResultSize=1MB` 且小于 1GB 时，需要先将每个 task 的输出结果缓存到执行该task 的 Executor 中，存放模式是 MEMORY_AND_DISK_SER
+    - 然后 Executor 将task的输出结果发送到 Driver端进一步处理
+
+- 如图，Driver 端需要收集 task1 和 task2 的计算结果，那么 task1和task2计算得到结果Result1和Result2后
+    - 先将其缓存到Executor的数据缓存空间中，缓存级别为MEMORY_AND_DISK_SER，缓存结构仍然采用ChunkedByteBuffer
+    - 然后，Executor 将 Result1 和 Result2 发送到 Driver 端进行进一步处理
+
+<img src="../../pics/spark/spark_236.png" align=left width=1000>
+
+- 内存消耗：序列化后的 task 输出结果大小，不超过 1GB，在 Executor 中一般运行多个 task，如果每个 task 都占用了 1GB 以上的话，则会引起 Executor 的数据缓存空间不足
+
+- 内存不足：因为缓存方式是内存 + 磁盘，所以在内存不足时放入磁盘
 
 
 

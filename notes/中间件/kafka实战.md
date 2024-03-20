@@ -3700,135 +3700,578 @@ topic 被创建后，允许对 topic 的分区数、副本因子、topic 级别�
 
 ### (1) preferred leader 选举
 
+- **问题**：随着集群的不断运行，leader 的不均衡现象开始出现，即集群中的 一小部分 broker 上 承载了大量的分区 leader 副本
 
+    > 一旦 broker 服务器宕机或崩溃，就必须要求 Kafka 把这些分区的 leader 转移到其他的 broker 上，即使崩溃 broker 重启回来，其上的副本也只能作为 follower 副本加入 ISR 中，不能再对外提供服务
 
+- **解决**：为了校正这种情况，Katka 引入了 `preferred replica`(首选副本)的概念
 
+    > 假设为一个分区分配了 3 个副本，分别是 0、1、2，则节点 0 就是该分区的 preferred replica，并且不会发生变更
+    >
+    > 选择节点 0 的原因仅仅是它是副本列表中的第一个副本
 
+- **preferred leader 选举**：帮助用户把指定分区的 leader 调整回它们的 prefered replica，Katka 提供了两种方式：
 
+    - **第一种方式**：使用 Kafka 自带的 `kafka-preferred-replica-election.sh(bat)` 脚本
 
-### (2) 分区冲分配
+        > `.sh` 脚本位 于 Kafka 路径的 `/bin` 子目录下，而 `.bat` 脚本位于 Katka 路径的 `/bin/windows `子目录下
+        >
+        > | 参数名                | 参数含义                                                     |
+        > | --------------------- | ------------------------------------------------------------ |
+        > | `--zookeeper`         | 指定 Zookeeper 连接信息                                      |
+        > | `--path-to-json-file` | 指定 json 文件路径，该文件包含了要为哪些分区执行 preferred leader 选举<br/>若不指定该参数，则表明为集群中所有分区都执行 preferred leader 选举 |
 
+    - **第二种方式**：Kafka 还提供了一个 broker 端参数 `auto.leader.rebalance.enable` 帮助用户自动地执行此项操作
 
+        > 默认值是 true ，表明每台 broker 启动后都会在后台自动地定期执行 preferred leader 选举 
 
+        与之关联的还有两个broker 端参数
 
+        - `leader.imbalance.check.interval.seconds`：控制阶段性操作的时间间隔，默认值是 300 秒，即 Kafka 每5分钟就会尝试在后台运行—个 preferred leader 选举
 
+        - `leader.imbalance. per.broker:percentage`：用于确定需要执行 preferred leader 选举的目标分区，默认值是 10，表示若 broker 上 leader 不均衡程度超过了10%，则 Kafka 需要为该 broker 上的分区执行 preferred leader 选举
 
+            > Kafka 计算不均衡程度逻辑：该 broker 上的 leader 不是 preferredreplica 的分区数 / broker 上总的分区数
 
+### (2) 分区重分配
 
+- **问题**：新增的 broker 不会自动地分担己有 topic 的负载，只会对增加 broker 后新创建的 topic 生效
+
+- **分区重分配操作 `partition reasignment`**：让新增 broker 为己有的 topic 服务，用户必须手动地调整己有 topic 的分区分布，将 一部分分区搬移到新增 broker 上
+- **实现**：Kafka 提供了分区重分配脚本工具 `kafka-reasign-partitions.sh(bat)` 
+    - 用户使用该工具时需提供一组要执行分区重分配的 topic 列表以及对应的一组 broker
+    -  该脚本接到用户这些信息后会尝试制作一个重分配方案，它会力求保证均匀地分配给定 topic 的所有分区到目标 broker 上
+
+---
+
+在实际生产环境中，用户一定要谨慎地发起分区重分配操作，因为分区在不同 broker 间进行数据迁移会极大地占用 broker 机器的带宽资源，从而显著地影响 clients 端业务应用的性能
 
 ### (3) 增加副本因子
 
-
-
-
-
-
-
-
+- Kafka 支持力己有 topic 的分区増加副本因子(replication factor)
+- 方法：使用 `kafka-reasign-partitions.sh` 并为 topic 分区增加额外的副本
 
 ## 6、kafka 常见脚本工具
 
 ### (1) kafka-console-producer 脚本
 
+> kafka-console-producer 脚本与kafka-console-consumer 脚本允许用户在控制台上方便地对 Kafka 集群进行 producer 和 consumer 测试
 
+`kafka-console-producer` 脚本从控制台读取标准输入，然后将其发送到指定的 Kafka topic 上
 
+> 该脚本位于 Kafka 路径的 `/bin` 子目录下(Windows 平台位于 Kafka 路径的 /bin/windows 下)  
 
+其主要参数及其含义如下：
 
-
-
-
+| 参数名                         | 参数含义                                                     |
+| ------------------------------ | ------------------------------------------------------------ |
+| `--broker-list`                | 指定 kafka 集群连接信息，若是多台 broker 需要以 CSV 格式指定 |
+| `--topic`                      | 指定 producer 将消息发送到哪个 topic                         |
+| `--producer-property`          | 指定 producer 的其他定制属性，如 acks、compression.type 等   |
+| `--producer.config`            | 将 producer 其他定制属性保存在文件中，指定给该 producer      |
+| `--compression-codec`          | 指定 producer 消息压缩类型                                   |
+| `--timeout`                    | 指定 producer 的 linger.ms 值                                |
+| `--request-required-acks`      | 指定 producer 的 acks 值                                     |
+| `--max-memory-bytes`           | 指定 producer 的 buffer.memory 值                            |
+| `--message-send-max-retries`   | 指定 producer 的 retries 值                                  |
+| `--max-partition-memory-bytes` | 指定 producer 的 batch.size 值                               |
 
 ### (2) kafka-console-consumer 脚本
 
+kafka-console-consumer 脚本也运行在控制台上，从 Katka topic 中读取消息并写入标准输出
 
+> 脚本位于 Katka 路径的 /bin 子目录下(Windows 平台位于Katka 路径的 /bin/windows 下)
 
+主要参数及其含义如下：
 
-
-
-
-
+| 参数名                 | 参数含义                                                     |
+| ---------------------- | ------------------------------------------------------------ |
+| `--bootstrap-server`   | 指定 kafka 集群连接信息，若是多台 broker，需要以 CSV 格式指定 |
+| `--topic`              | 指定 consumer 消费的 topic                                   |
+| `--from-begining`      | 类似于设置 consumer 属性 auto.offset.reset=earliest，即从当前最早位移处开发消费 |
+| `--zookeeper`          | 指定使用老版本 consumer，不可与 `--bootstrap-server` 同时使用 |
+| `--consumser-property` | 指定 consumer 端参数                                         |
+| `--consumer.config`    | 以文件方式指定 consumer 端参数                               |
+| `--partition`          | 指定要消费的特定分区                                         |
 
 ### (3) kafka-run-class 脚本
 
+> 上述所有 Kafka 脚本工具虽然实现了各自不同的功能，但底层都是使用 kafka-run-class 脚本实现
 
-
-
-
-
-
-
+`katka-run-class.sh(bat)` 是一个通用脚本，允许用户直接指定一个可执行的 Java 类和一组可选的参数列表，从而调用该类实现的逻辑
 
 ### (4) 查看消息元数据
 
+- 特定需求：查询特定 topic 的消息元数据
 
-
-
-
-
+- **元数据信息**：包括消息的位移、创建时间戳、压缩类型、字节数等
+- Kafka 提供的工具：`kafka.tools.DumpLogSegments ` 
 
 ### (5) 获取 topic 当前消息数
 
-
-
-
-
-
-
-
+- 需求：了解当前总共为 topic 生产了多少条消息
+- Kafka 提供了 `GetShellOffset` 类帮助用户实时计算特定 topic 总的消息数
 
 ### (6) 查询 __consumer_offsets
 
+> 新版本 consumer 的位移保存在 Kafka 的内部 topic 中，即 consumer_offsets
 
-
-
-
-
+Kafka 提供 kafka-simple-consumer-shell.sh(bat) 脚本来查询_ consumer_offsets
 
 ## 7、API 方式管理集群
 
+- 服务器端 API：主要是指利用 Kafka 服务器端代码(kafka_core)实现的各种 API 功能
+- 客户端 API：由客户端代码(katka clients)提供
+
 ### (1) 服务器端 API 管理 topic
 
+Katka 官方提供了两个脚本来管理 topic，包括 topic 的增删改查
 
+- `kafka-topics.sh(bat)` 脚本负责 topic 的创建与删除 
+- `kafka-configs.sh(bat)` 脚本负责 topic 参数的修改和查询
 
+---
 
+很多用户更倾向于使用程序API的方式对 topic 进行操作
 
+- Maven 版本：
 
+    ``` 
+    <dependency>
+        <groupId>org.apache.kafka</groupId>
+        <artifactId>kafka_2.13</artifactId>
+        <version>3.6.1</version>
+    </dependency>
+    ```
+
+- 使用服务器端的 API — AdminUtils 类来管理 topic：
+
+    -  **创建 topic**：
+
+        ``` 
+        //构造一个 zkUtils 创建与 zookeeper 的连接：连接地址、会话超时时间、连接超时时间
+        zkUti1s zkUti1s = ZkUtils.apply("1ocalhost:2181"，30000，30000，JaasUti1s.isZkSecurityEnabled());
+        
+        //创建一个单分区、单副本名为 t1 的 topic
+        Adminuti1s.createTopic(zkUtils, "t1", 1, 1, new Properties() , RackAwareMode.Enforced$.MODULE$);
+        
+        //显式关闭 zkUtils，即与 Zookeeper 的连接
+        zkUtils.close();
+        ```
+
+    - **删除 topic**：
+
+        ```
+        //构造一个 zkUtils 创建与 zookeeper 的连接：连接地址、会话超时时间、连接超时时间
+        zkUti1s zkUti1s = ZkUtils.apply("1ocalhost:2181"，30000，30000，JaasUti1s.isZkSecurityEnabled());
+        
+        //删除 topic
+        AdminUtils.deleteTopic(zkUtils, "t1");
+        
+        //显式关闭 zkUtils，即与 Zookeeper 的连接
+        zkUtils.close();
+        ```
+
+    - 查询 topic 级别属性：
+
+        ```
+        //构造一个 zkUtils 创建与 zookeeper 的连接：连接地址、会话超时时间、连接超时时间
+        zkUti1s zkUti1s = ZkUtils.apply("1ocalhost:2181"，30000，30000，JaasUti1s.isZkSecurityEnabled());
+        
+        //荻取 topic 'test' 的 topic 属性
+        Properties props = AdminUtils.fetchEntityConfig(zkUtils,ConfigTMype.Topic(), "test")
+        
+        //查询 topic-level 属性：使用 AdminUtils.fetchEntityConfig 方法便利输出 topic 的所有 topic 級別参数
+        Iterator it = props.entrySet().iterator(); 
+        while(it.hasNext()) {
+        	Map.Entry entry = (Map.Entry) it.next(); 
+        	Object key= entry.getkey();
+        	Object value = entry.getValue();
+        	System.out.printin(key + " = " + value); 
+        }	
+        zkUtils.close();
+        ```
+
+    - 変更topic-level 参数：
+
+        ```
+        //构造一个 zkUtils 创建与 zookeeper 的连接：连接地址、会话超时时间、连接超时时间
+        zkUti1s zkUti1s = ZkUtils.apply("1ocalhost:2181"，30000，30000，JaasUti1s.isZkSecurityEnabled());
+        
+        //荻取 topic 'test' 的 topic 属性
+        Properties props = AdminUtils.fetchEntityConfig(zkUtils,ConfigTMype.Topic(), "test")
+        
+        //増加topic級別属性
+        props.put("min.cleanable.dirty.ratio", "0.3");
+        //刪除topic級别属性
+        props.remove("max.message.bytes");
+        //修改topic 'test' 的属性
+        Adminutils.changeTopicConfig(zkutils, "test", props);
+        
+        zkUtils.close();
+        ```
+
+---
+
+说明：目前 Kafka 实现的方式都是后台异步操作， 而且没有提供任何回调机制或返回任何结果给用户，所以用户除了捕获异常以及查询topic 状态之外似乎并没有特别好的办法可以检测操作是否成功
 
 ### (2) 服务器端 API 管理位移
 
+> 这里的位移主要指新版本 consumer 的位移信息
 
+- 编写程序查询当前集群下的所有 consumer group 信息：
 
+    ```java
+    Properties props = new Properties();
+    props.put("bootstrap.servers", "1ocalhost :9092"); //设置Kafka集群连接信息 
+    AdminClient client = AdminClient.create(props);
+    Map<Node, List<GroupOverview>> groups = JavaConversions.mapAsJavaMap(client.listAllGroups());
+    
+    for(Map.Entry<Node, List<GroupOverview>> entry : groups.entrySet()) { 
+        Iterator<GroupOverview> groupOverviewList = 
+            JavaConversions.asJavaIterator(entry.getValue().iterator()); 
+        while(groupOverviewList.hasNext()) {
+            GroupOverview overview = groupOverviewList.next();
+            System.out.printin(overview.groupId());
+        }
+    client.close();
+    ```
 
+- 查询给定 consumer group 的位移信息：
 
-
-
-
+    ```java
+    Properties props = new Properties();
+    props.put("bootstrap.servers", "localhost: 9092"); 
+    AdminClient client = AdminClient.create(props);
+    
+    String groupID = "al";
+    Map<TopicPartition, Object> offsets = JavaConversions.mapAsJavaMap(client.listGroupOffsets(groupID));
+    Long offset = (Long) offsets.get(new TopicPartition("test", 0)); 
+    System.out.println(offset);
+    
+    client.close();
+    ```
 
 ### (3) 客户端 API 管理 topic
 
+Kafka 白己实现了一套二进制协议(binaryprotocol)用于各种功能的实现，比如发送消息、 获取消息、提交位移以及创建topic 等
 
+这套协议的具体使用流程如下：
 
+- 客户端创建对应协议的请求
+- 客户端发送请求给对应的 broker
+- broker 处理请求，并发送 response 给客户端
 
+---
 
+尝试给出一个 Java API 底层框架的范例，同时针对“创建 topic” 和“查看位移”这两个主要功能给出对应的例子：
 
+- Maven：
+
+    ```
+    <dependency>
+    	<groupId>org.apache.kafka</groupId>
+        <artifactId>kafka-clients</artifactId>
+        <version>3.2.3</version>
+    </dependency>
+    ```
+
+- 构建底层发送请求框架：
+
+    ```java
+    	/**
+         * 发送请求主方法
+         *
+         * @param host    目标 broker 主机名
+         * @param port    目标 broker 服务端口
+         * @param request 请求对象
+         * @param apiKeys 请求类型
+         * @return 序列化后的 response
+         * @throws IOException
+         */
+        public ByteBuffer send(String host, int port, AbstractRequest request, ApiKeys apiKeys) throws IOException {
+            Socket socket = connect(host, port);
+            try {
+                return send(request, apiKeys, socket);
+            } finally {
+                socket.close();
+            }
+        }
+    
+        /**
+         * 创建 socket 连接
+         *
+         * @param hostName 目标 broker 主机名
+         * @param port     目标 broker 服务端口，比如 9092
+         * @return 创建的 socket 连接
+         * @throws IOException
+         */
+        private Socket connect(String hostName, int port) throws IOException {
+            return new Socket(hostName, port);
+        }
+    
+        /**
+         * 向给定 Socket 发送请求
+         *
+         * @param request 请求对象
+         * @param apiKeys 请求类型，即属于哪种请求
+         * @param socket  连向目标 broker 的 socket
+         * @return 序列化后的 response
+         * @throws IOException
+         */
+        private ByteBuffer send(AbstractRequest request, ApiKeys apiKeys, Socket socket) throws IOException {
+            RequestHeader header = new RequestHeader(apiKeys, request.version(), "client-id", 0);
+    
+            ByteBuffer buffer = RequestHeader.serialize(header, request);
+            byte[] serializedRequest = buffer.array();
+            byte[] response = issueRequestAndWaitForResponse(socket, serializedRequest);
+            ByteBuffer responseBuffer = ByteBuffer.wrap(response);
+            return responseBuffer;
+        }
+    
+        /**
+         * 发送序列化请求并等待 response 返回
+         *
+         * @param socket  连向目标 broker 的 socket
+         * @param request 序列化后的请求
+         * @return 序列化后的 response
+         * @throws IOException
+         */
+        private byte[] issueRequestAndWaitForResponse(Socket socket, byte[] request) throws IOException {
+            sendRequest(socket, request);
+            return getResponse(socket);
+        }
+    
+        /**
+         * 发送序列化请求给 socket
+         *
+         * @param socket  连向目标 broker 的 socket
+         * @param request 序列化后的请求
+         * @throws IOException
+         */
+        private void sendRequest(Socket socket, byte[] request) throws IOException {
+            DataOutputStream dos = new DataOutputStream(socket.getOutputStream());
+            dos.writeInt(request.length);
+            dos.write(request);
+            dos.flush();
+        }
+    
+        /**
+         * 从给定 Socket 处获取 response
+         *
+         * @param socket 连向目标 broker 的 socket
+         * @return 获取到的序列化后的 response
+         * @throws IOException
+         */
+        private byte[] getResponse(Socket socket) throws IOException {
+            DataInputStream dis = null;
+            try {
+                dis = new DataInputStream(socket.getInputStream());
+                byte[] response = new byte[dis.readInt()];
+                dis.readFully(response);
+                return response;
+            } finally {
+                if (dis != null) dis.close();
+            }
+        }
+    ```
 
 ### (4) 客户端 API 查看位移
 
+- 使用相同的底层请求发送框架构造特定的请求类型，分别查询某个 c o n s u m e r g r o u p 下所 有 t o p i c 的 位 移 信 息 以 及 特 定 t o p i c 的 位 移 信 息:
 
+    ```java
+    	/**
+         * 获取某个 consumer group 下所有 topic 分区的位移信息
+         *
+         * @param groupID group id
+         * @return topic 分区➡分区信息的 map
+         * @throws IOException
+         */
+        public Map<TopicPartition, OffsetFetchResponse.PartitionData> getAllOffsetsForGroup(String groupID) throws IOException {
+            OffsetFetchRequest request = new OffsetFetchRequest.Builder(groupID, false, null, false).build((short) 2);
+            ByteBuffer response = send("localhost", 9092, request, ApiKeys.OFFSET_FETCH);
+            OffsetFetchResponse resp = OffsetFetchResponse.parse(response, request.version());
+            return resp.partitionDataMap(groupID);
+        }
+    ```
 
+- 再获取特定topi c 的位移信息:
 
-
-
+    ```java
+    	/**
+         * 获取某个 consumer group 下的某个 topic 分区的位移
+         *
+         * @param groupID   group id
+         * @param topic     topic 名
+         * @param partition 分区号
+         * @throws IOException
+         */
+        public void getOffsetForPartition(String groupID, String topic, int partition) throws IOException {
+            TopicPartition tp = new TopicPartition(topic, partition);
+            OffsetFetchRequest request = new OffsetFetchRequest.Builder(groupID, false, Collections.singletonList(tp), false).build((short) 2);
+            ByteBuffer response = send("localhost", 9092, request, ApiKeys.OFFSET_FETCH);
+            OffsetFetchResponse resp = OffsetFetchResponse.parse(response, request.version());
+            OffsetFetchResponse.PartitionData partitionData = resp.partitionDataMap(groupID).get(tp);
+            System.out.println(partitionData.offset);
+        }
+    ```
 
 ### (5) 0.11.0.0 版本客户端 API
 
+AdminClient 和 KafkaAdminClient  意在统一所有的集群管理 API
 
+- 使用该类的方式与 Java clients 的使用方式一致，不用连接 ZooKeeper，而是直接给定集群中的 broker 列表
+- 该类是线程安全的，因此可以放心地在多个线程中使用该类的实例 
 
+该工具提供的所有功能如下：
 
+- 创建 topic
+- 查询所有 topic
+- 查询单个 topic 详情
+- 删除 topic
+- 修改 config (包括 BROKER 和 TOPIC 资源的 config)
+- 查询资源 config 详情
+- 创建 ACL
+- 查询 ACL 详情
+- 删除 ACL
+- 查询整个集群详情
 
+代码演示：
 
+```java
+import org.apache.kafka.clients.admin.*;
+import org.apache.kafka.common.KafkaFuture;
+import org.apache.kafka.common.Node;
+import org.apache.kafka.common.config.ConfigResource;
 
+import java.util.*;
+import java.util.concurrent.ExecutionException;
 
+public class UtilsTest {
+    private static final String TEST_TOPIC = "test-topic"; //测试 kafka topic
+
+    public static void main(String[] args) throws Exception {
+        Properties props = new Properties();
+        props.put(AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG, "localhost:9092,localhost:9093"); //kafka 集群连接信息
+
+        try (AdminClient client = AdminClient.create(props)) {
+            describeCluster(client); //描述集群信息
+            createTopics(client); //创建 topic
+            listAllTopics(client); //查询集群所有 topic
+            describeTopics(client); //查询 topic 信息
+            alterConfigs(client); //修改 topic 参数配置信息
+            describeConfig(client); //查询所有配置信息
+
+        }
+
+    }
+
+    /**
+     * 获取 kafka 集群信息
+     *
+     * @param client AdminClient 客户端
+     * @throws ExecutionException
+     * @throws InterruptedException
+     */
+    public static void describeCluster(AdminClient client) throws ExecutionException, InterruptedException {
+        DescribeClusterResult ret = client.describeCluster();
+        System.out.println(String.format("Cluster id: %s, controller: %s", ret.clusterId().get(), ret.controller().get()));
+        System.out.println("Current cluster nodes info: ");
+        for (Node node : ret.nodes().get()) {
+            System.out.println(node);
+        }
+    }
+
+    /**
+     * 创建 topic
+     *
+     * @param client AdminClient 客户端
+     * @throws ExecutionException
+     * @throws InterruptedException
+     */
+    public static void createTopics(AdminClient client) throws ExecutionException, InterruptedException {
+        NewTopic newTopic = new NewTopic(TEST_TOPIC, 3, (short) 3);
+        CreateTopicsResult ret = client.createTopics(Arrays.asList(newTopic));
+        ret.all().get();
+    }
+
+    /**
+     * 获取集群 topic 列表
+     *
+     * @param client AdminClient 客户端
+     * @throws ExecutionException
+     * @throws InterruptedException
+     */
+    public static void listAllTopics(AdminClient client) throws ExecutionException, InterruptedException {
+        ListTopicsOptions options = new ListTopicsOptions();
+        options.listInternal(true); //include internal topics such as__consumer__offsets
+        ListTopicsResult topics = client.listTopics(options);
+        Set<String> topicNames = topics.names().get();
+        System.out.println("Current topics in this cluster: " + topicNames);
+    }
+
+    /**
+     * 获取 topic 详情数据，包括分区数据(如 leader、ISR 等)
+     *
+     * @param client AdminClient 客户端
+     * @throws ExecutionException
+     * @throws InterruptedException
+     */
+    public static void describeTopics(AdminClient client) throws ExecutionException, InterruptedException {
+        DescribeTopicsResult ret = client.describeTopics(Arrays.asList(TEST_TOPIC, "__consumer_offsets"));
+        Map<String, TopicDescription> topics = ret.all().get();
+        for (Map.Entry<String, TopicDescription> entry : topics.entrySet()) {
+            System.out.println(entry.getKey() + " ==> " + entry.getValue());
+        }
+    }
+
+    /**
+     * 修改 topic 级别
+     *
+     * @param client AdminClient 客户端
+     * @throws ExecutionException
+     * @throws InterruptedException
+     */
+    public static void alterConfigs(AdminClient client) throws ExecutionException, InterruptedException {
+        Config topicConfig = new Config(Arrays.asList(new ConfigEntry("cleanup.policy", "compact")));
+        client.alterConfigs(Collections.singletonMap(new ConfigResource(ConfigResource.Type.TOPIC, TEST_TOPIC), topicConfig)).all().get();
+    }
+
+    /**
+     * 获取测试 topic 的 topic 级别参数配置信息
+     *
+     * @param client AdminClient 客户端
+     * @throws ExecutionException
+     * @throws InterruptedException
+     */
+    public static void describeConfig(AdminClient client) throws ExecutionException, InterruptedException {
+        DescribeConfigsResult ret = client.describeConfigs(Collections.singleton(new ConfigResource(ConfigResource.Type.TOPIC, TEST_TOPIC)));
+        Map<ConfigResource, Config> configs = ret.all().get();
+        for (Map.Entry<ConfigResource, Config> entry : configs.entrySet()) {
+            ConfigResource key = entry.getKey();
+            Config value = entry.getValue();
+            System.out.println(String.format("Resource type: %s, resource name: %s", key.type(), key.name()));
+            for (ConfigEntry each : value.entries()) {
+                System.out.println(each.name() + " = " + each.value());
+            }
+        }
+    }
+
+    /**
+     * 删除给定 topic
+     *
+     * @param client AdminClient 客户端
+     * @throws ExecutionException
+     * @throws InterruptedException
+     */
+    public static void deleteTopics(AdminClient client) throws ExecutionException, InterruptedException {
+        KafkaFuture<Void> futures = client.deleteTopics(Arrays.asList(TEST_TOPIC)).all();
+        futures.get();
+    }
+
+}
+```
 
 ## 8、MirrorMaker
 
@@ -4108,19 +4551,91 @@ topic 被创建后，允许对 topic 的分区数、副本因子、topic 级别�
 
 # 八、调优kafka集群
 
-## 1、确定调优目标
+## 1、集群基础调优
 
+在 Kafka 中经常碰到的操作系统级别错误可能包括如下几种：
 
+- connection refused
+- too many open files
+- address in use: connect
 
+> 本节将从以下几个方面分别探讨 OS 级别的调优
 
+### (1) 禁止 atime 更新
 
-## 2、集群基础调优
+>  由于 Kafka 大量使用物理磁盘进行消息持久化，故文件系统的选择是重要的调优步骤
 
+**禁掉 atime 更新**：避免了 inode 访问时间的写入操作，因此极大地减少了文件系统写操作数，从而提升了集群性能
 
+- 对于 Linux 系统上的任何文件系统 ， Kafka 都推荐用户在挂载文件系统(mount)时设置 noatime 选项，即取消文件atime (最新访问时间)属性的更新
 
+    > Kafka 并没有使 用atime，因此禁掉它是安全的操作
 
+- 用户可以使用mount -o noatime 命令进行设置
+
+### (2) 文件系统选择
+
+- 对于使用 `EXT4` 的用户而言，Kafka 建议设置以下选项：
+
+    - **设置 data=writeback**：
+
+        - `data=ordered`(默认)：所有数据在其元数据被提交到日志(journal)前，必须要依次保存到文件系统中
+
+        - `data=writeback`：不要求维持写操作顺序，数据可能会在元数据提交之后才被写入文件系统
+
+            > - 好处：提升吞吐量，同时还维持了内部文件系统的完整性 
+            > - 不足：文件系统从崩溃恢复后过期数据可能出现在文件中
+            >
+            > 用户需要修改 `/etc/fstab` 和使用 `tune2f` 命令来设置该选项
+
+    - **禁掉记日志操作**：日志化会极大地降低系统从崩溃中恢复的速度，但同时也引入了锁竞争导致写操作性能下降
+
+        > 对那些不在乎启动速度但却想要降低写操作延时的用户而言，禁止日志化是一个不错的选择
+
+    - **commit=N_secs**：该选项设置每 N 秒同步一次数据和元数据，默认是 5 秒
+
+        > - 若该值设置得比较小，则可减少崩溃发生时带来的数据丢失
+        > - 若设置较大，则会提升整体吞吐量以及降低延时
+        >
+        > 鉴于 Kafka 己经在软件层面提供了元余机制，故在实际生产环境中推荐用户设置一个较大的值，比如1~2分钟
+
+    - **nobh**：将阻止缓存头部与数据页文件之间的关联，从而进一步提升吞吐量(data=writeback 时生效)
+
+        > 设置方法为修改 `/etc/fstab` 中的 mount 属性，比如 `noatim,data=writeback,nobh,errors=remount-ro` 
+
+- 对于 `XFS` 用户而言，推荐设置以下参数：
+
+    - `largeio`：影响 `stat` 调用返回的 IO 大小，largeio是标准的mount属性，故可使用与nobh相同的方式设置
+
+        > 对于大数据量的磁盘写入操作而言，能够提升一定的性能
+
+    - `nobarrier`：禁止使用数据块层的写屏障(write barrier)
+
+        > 大多数存储设备在底层都提供了基于电池的写缓存，故设置 nobarrier 可以禁掉阶段性的“写冲刷” 操作，从而提高写性能
+
+### (3) 设置 swapiness
+
+- 将 swap 限定为小值，如1~10间：既预留了大部分的物理内存，同时也能保证 swap 机制可以帮助用户及时发现并处理 OOM
+
+- 修改方式：
+    - 临时修改 swapiness 可以使用 `sudo sysctl vm.swappines=N` 来完成
+    - 若要永久生效，用户需要修改 `/etc/sysctl.conf` 文件增加 `vm.swappiness=N`，然后重启机器
+
+### (4) JVM 设置
+
+由于 Kafka 并未大量使用堆上内存 (on-the-heap memory)而是使用堆外内存 (off-the- heap memory)，故不需要为Kafka 设定太大的堆空间
+
+### (5) 其他调优
+
+**`too many files open` 错误**：为 broker 所在机器调优最大文件部署符上限
+
+> 参考公式：broker 上可能的最大分区数 x (每个分区平均数据量 / 平均的日志段大小 + 3)，3 是索引文件的个数
 
 ## 3、调优吞吐量
+
+
+
+
 
 
 
