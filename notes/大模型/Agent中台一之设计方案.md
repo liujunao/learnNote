@@ -26,7 +26,7 @@
 
 - **Function calling**：
 
-- - 函数定义：name、description、params
+- 函数定义：name、description、params
 
 ```python
 tools = [
@@ -51,13 +51,13 @@ tools = [
     ]
 ```
 
-- - 函数调用：
+- 函数调用：
 
-    - - step1：将 description 组装进 prompt；
-        - step2：校验 model 返回的结果，如果满足 tool_calls 条件，则进行 step3；
-        - step3：解析输出(建议json格式)，获取 function_name  + function_args(若有)；
-        - step4：将 function_args 作为入参，来调用对应的 function；
-        - step5(针对 Action Agent 的实现)：使用 function 响应来组装 prompt，再次调用 model。
+  - step1：将 description 组装进 prompt；
+  - step2：校验 model 返回的结果，如果满足 tool_calls 条件，则进行 step3；
+  - step3：解析输出(建议json格式)，获取 function_name  + function_args(若有)；
+  - step4：将 function_args 作为入参，来调用对应的 function；
+  - step5(针对 Action Agent 的实现)：使用 function 响应来组装 prompt，再次调用 model。
 
 - **Embedding(RAG)**：
 
@@ -65,19 +65,19 @@ tools = [
 >
 > <img src="../../pics/llm/llm_1.webp">
 
-- - 使用场景：检索、相似性分组、推荐、异常检测、相似性分布、分类
+- 使用场景：检索、相似性分组、推荐、异常检测、相似性分布、分类
 
-    - 数据写入步骤：
+  - 数据写入步骤：
 
-    - - load：加载数据
-        - split：文档分块
-        - embedding：向量嵌入
-        - save：存储
+  - load：加载数据
+    - split：文档分块
+    - embedding：向量嵌入
+    - save：存储
 
-    - 数据使用步骤：
+  - 数据使用步骤：
 
-    - - retriever：检索
-        - splice prompt：增强(拼接prompt)
+  - retriever：检索
+    - splice prompt：增强(拼接prompt)
 
 - **其他模块**：fine-tuning、image-generation、vision、text-switch-speech、moderation
 
@@ -86,12 +86,10 @@ tools = [
 > 可参考：https://python.langchain.com/docs/get_started/introduction
 
 - **model**：
-
-- - LLM Stream
-    - LLM Cache
+  - LLM Stream
+  - LLM Cache
 
 - **prompt**：
-
 - - prompt template：由 template + input_variables 组成
 
 ```python
@@ -222,9 +220,8 @@ output_parser.parse(output)
 <img src="../../pics/llm/llm_2.png">
 
 - **chain**：将一系列执行功能通过硬编码的方式进行组装(prompt + LLM + outputparser 等)；
-
-- - sequential chain：将多个组件顺序链接；
-    - router chain：根据给定输入动态选择下一个执行链条的 chain；
+  - sequential chain：将多个组件顺序链接；
+  - router chain：根据给定输入动态选择下一个执行链条的 chain；
 
 - **agent**：使用 LLM 作为推理引擎来确定要采取的动作及顺序；
 
@@ -233,27 +230,18 @@ output_parser.parse(output)
 - - 组成元素：prompt + LLM(控制大脑) + tools
 
     - tool 的定义：可以执行一定逻辑的功能函数，可以是 function、chain、其他 agent 等
-
     - agent 执行器(如 AgentExecutor、BabyAGI、AutoGPT)：以 AgentExecutor 为例，其执行步骤为：
-
     - - 步骤一：处理用户输入，即将 history(可选) 与 input 组装在一起；
 
         - 步骤二：while 循环条件判断(循环次数、执行时间)；
-
-        - 步骤三：执行 agent.plan 逻辑(补充：plan 逻辑支持个性化的硬编码实现)；
-
+    - 步骤三：执行 agent.plan 逻辑(补充：plan 逻辑支持个性化的硬编码实现)；
         - 步骤四：判断 agent 的输出类型；
-
-        - - 如果是 agentFinish，则直接返回结果 agentFinish；
-            - 如果是 agentAction，则获取内部参数 tool_name 来调用 tool 执行，并拿到执行结果 observation，将 agentAction + observation 组合返回；
-
-        - 步骤五：while 中断条件，判断 output 输出
-
-        - - 如果是 agentFinish，直接返回；
-            - 如果是 agentAction + observation 的组合，则跳转到步骤二；
-
-        - 步骤六：解析输出结果，并返回；
-
+      - 如果是 agentFinish，则直接返回结果 agentFinish；
+          - 如果是 agentAction，则获取内部参数 tool_name 来调用 tool 执行，并拿到执行结果 observation，将 agentAction + observation 组合返回；
+    - 步骤五：while 中断条件，判断 output 输出
+          - 如果是 agentFinish，直接返回；
+          - 如果是 agentAction + observation 的组合，则跳转到步骤二；
+    - 步骤六：解析输出结果，并返回；
     - **callback 函数**：允许在 LLM 应用程序的各个阶段进行钩子操作，可用于日志记录、监控、流式传输等任务
 
 ## 3、agentScope 项目
@@ -279,23 +267,18 @@ output_parser.parse(output)
 
 - - 执行逻辑：
 
-    - - 用户给 Agent 一个任务
-        - 思考： Agent “思考 “要做什么
-        - 行动/行动输入： Agent 决定采取什么行动（又称使用什么工具）以及该工具的输入应该是什么
-        - 工具的输出
-
-    - 记忆方式：
-
-    - - memory：使用传统存储记录输入、输出
-        - 步骤记忆：保留一个与该任务相关的中间 Agent 步骤，并将完整的列表传递给LLM调用
-
+    - 用户给 Agent 一个任务
+      - 思考： Agent “思考 “要做什么
+      - 行动/行动输入： Agent 决定采取什么行动（又称使用什么工具）以及该工具的输入应该是什么
+      - 工具的输出
+- 记忆方式：
+      - memory：使用传统存储记录输入、输出
+  - 步骤记忆：保留一个与该任务相关的中间 Agent 步骤，并将完整的列表传递给LLM调用
     - Action Agent 存在的问题：
-
-    - - Calculation Error： 由于计算错误带来的回答答案错误；
-        - Missing-step Error： 当涉及多个步骤时，有时会遗漏一些中间推理步骤；
-        - Semantic Misunderstanding Error：对用户输入问题的语义理解和推理步骤的连贯性方面的其他错误，可能是由于 LLM（语言模型）能力不足导致
-
-    - 局限：只适合处理简单场景，不适合处理复杂场景
+      - Calculation Error： 由于计算错误带来的回答答案错误；
+  - Missing-step Error： 当涉及多个步骤时，有时会遗漏一些中间推理步骤；
+      - Semantic Misunderstanding Error：对用户输入问题的语义理解和推理步骤的连贯性方面的其他错误，可能是由于 LLM（语言模型）能力不足导致
+- 局限：只适合处理简单场景，不适合处理复杂场景
 
 <img src="../../pics/llm/llm_3.png">
 
@@ -562,3 +545,14 @@ with msghub(
 ## 2、单Agent：B/C端招聘/求职助手
 
 <img src="../../pics/llm/llm_10.png" align="left">
+
+# 七、agent 论文补充
+
+## 1、ReAct
+
+
+
+
+
+## 2、plan-and-executor
+
