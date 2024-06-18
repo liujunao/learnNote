@@ -1,3 +1,85 @@
+# 零、核心点前瞻
+
+https://blog.csdn.net/feng_zi0yhv/article/details/124714590
+
+## 1、hbase
+
+- 机器配置：64C-256G-16320G，其中 256G 的一半给了hdfs一半给了hbase，128G 的一部分给了MemStore一部分给了blockcache
+
+<img src="../../pics/hbase/hbase_152.png">
+
+- 分表：单表最多两个 family、每个 family 最多20个 qualifer
+- 数据有效期：默认表级别的有效期为两天
+
+- compaction：每天6点40进行一次 compaction，且之后不允许 bulkload 写入
+- bulkload：
+
+```java
+private void computeWork(SparkSession sparkSession, HbaseConfig hbaseConfig, BulkLoadHFiles bulkLoader) 
+    throws IOException {
+    //spark 查询
+    Dataset<Row> dataset = sparkSession.sql(hiveSql());
+
+    //预处理
+    Dataset<Row> rowDataset = dataset.withColumn("key", callUDF("fetchKey", col("user_id")))
+            .select(col("key"), col("fetchWork"))
+            .repartition(2000)
+            .sort(col("key")); //排序
+
+    //转换
+    JavaPairRDD<ImmutableBytesWritable, KeyValue> pairRDD = rowDataset.toJavaRDD()
+            .mapToPair(row -> {
+                byte[] rowKey = Bytes.toBytes(row.getString(row.fieldIndex("key")));
+                String fetchWork = row.getString(row.fieldIndex("fetchWork"));
+                byte[] value = StringUtils.isNotEmpty(fetchWork) ? Bytes.toBytes(fetchWork) : null;
+
+                KeyValue keyValue = 
+                    new KeyValue(rowKey, FAMILY_BYTES, QUALIFIER_BYTES, fetchWorkValue);
+                keyValue.setTimestamp(System.currentTimeMillis());
+                return new Tuple2<>(new ImmutableBytesWritable(rowKey), keyValue);
+            }).coalesce(32);
+
+    //写入
+    String hdfsOutputPath = "/tmp/_hbase_workspace/" + "xxx-" 
+                            + System.currentTimeMillis() 
+                            + "-" + UUID.randomUUID();
+    pairRDD.saveAsNewAPIHadoopFile(hdfsOutputPath, ImmutableBytesWritable.class, 
+                                   KeyValue.class, HFileOutputFormat2.class, hbaseConfig.getConf());
+    bulkLoader.bulkLoad(hbaseConfig.getTableName(), new Path(hdfsOutputPath));
+}
+```
+
+## 2、对比 rocksdb
+
+**HBase** 是一个在 Hadoop 上的开源非关系型分布式数据库，基于 Google BigTable 模型开发，用于存储非结构化和半结构化的稀疏数据。主要包含以下特性：
+
+1. 横向可扩展：无论数据增长到何种程度，只要增加更多的机器就可以
+2. 丰富的 Java API 供开发者调用：通过这些 API，开发者可以非常方便地进行查询，分析，更新等操作
+3. 强一致读写
+4. 自动故障支持：当部分机器出现故障，HBase 有能力自动恢复
+5. 集成了 Hadoop 的生态系统：例如 MapReduce 和 Spark
+
+---
+
+**RocksDB** 是 Facebook 开源的一个嵌入式的 Key-Value 类型数据库，是 LevelDB 的一个分支。RocksDB 主要设计为在多核，大内存机器上运行，它的许多特性都为了支持这种场景。RocksDB 的特性如下：
+
+1. 高性能：针对 SSD 硬盘做了优化，读写性能更好
+2. 高度可配置和可扩展：可以根据存储系统的特点，调整 RocksDB 的配置提高性能。也可以为 RocksDB 开发新的特性和扩展
+3. 支持快照和手动压缩
+4. 支持将数据持久化到本地的硬盘上
+
+在 Apache Flink 等流计算平台中，常常会使用 RocksDB 来做状态存储
+
+---
+
+以下是两者的对比:
+
+1. 数据模型：HBase 是一种列式存储的数据库，而 RocksDB 是 key-value 的
+2. 使用场景：HBase 适用于处理大数据，查询操作比较频繁的情况。而 RocksDB 适用于在 SSD 等硬盘上，存储 Key-Value 类型的数据
+3. 性能：RocksDB 的读写性能会更好一些
+4. 依赖环境：Hbase 基于 Hadoop，环境依赖较大，而 RocksDB 是一种嵌入式数据库，独立性更强
+5. 扩展性：HBase 具有很好的水平扩展性，适合处理 PB 级别以上的数据，RocksDB 具备垂直扩展性，适用于存储 TB 级别以下的数据
+
 # 第一章 HBase 概述
 
 ## 1、HBase 数据模型
@@ -1708,7 +1790,7 @@ Block 缓存到 Block Cache 之后会构建一 个Map，Map 的 Key 是 BlockKey
 
 根据文件索引提供的 Block Offset 以及 Block DataSize 可以在 HDFS 上读取到对应的 Data Block 内容，这个阶段 HBase 会下发命令给HDFS，HDFS 执行真正的 Data Block 查找工作，如图：
 
- <img src="../../pics/hbase/hbase_22.png">
+<img src="../../pics/hbase/hbase_22.png">
 
 - HBase 会在加载 HFile 时，为每个 HFile 新建一个从 HDFS 读取数据的输入流——FSDataInputStream，之后所有对该 HFile 的读取操作都会使用这个文件级别的 InputStream 进行操作
 

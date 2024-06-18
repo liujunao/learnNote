@@ -1,4 +1,29 @@
+# 零、核心点前瞻
+
+https://blog.csdn.net/qq_32727095/article/details/123070634
+
+Spark Opts 参数：
+
+- `deploy-mode`
+- `driver-cores`：驱动程序的CPU核心数
+- `driver-memory`：应用运行时driver的内存量，主要考虑如果使用map side join或一些类似于collect的操作，那么要相应调大内存量
+- `executor-memory`：应用运行时executor的内存，推荐`4-8G`比较合适
+- `executor-cores`：应用运行时executor的CPU核数，推荐`2-4`个比较合适
+- `num-executors`：应用运行时executor的数量，推荐`50-100`左右比较合适
+
+Spark Conf 参数：
+
+- `spark.driver.maxResultSize`：Spark action 算子返回的结果最大多大
+- `spark.default.parallelism`：默认的并行度（例如，对于没有明确指定并行度的RDD操作）
+- `spark.executor.memoryOverhead`：分配给每个执行器的额外内存，用于非堆内存需求(如：序列化缓冲区、执行器的JVM开销)
+- `spark.driver.memoryOverhead`：分配给每个驱动器器的额外内存
+- `spark.yarn.maxAppAttempts`
+- `spark.yarn.submit.waitAppCompletion`
+- `spark.sql.shuffle.partitions`：默认情况下，SQL和DataFrame的shuffle操作使用的分区数量
+
 # 一、Spark 简介：一站式分析引擎
+
+实战文档：https://zhenchao125.github.io/bigdata_spark-project_atguigu/
 
 ## 1、saprk 简介
 

@@ -1,5 +1,84 @@
 - 推荐阅读：==[kafka中文教程](https://www.orchome.com/kafka/index)== 
 
+# 零、前瞻
+
+## 1、consumer
+
+```java
+@KafkaListener(topics = {"bg_action"}, containerFactory = "bgActionContainerFactory")
+public void listenerBgAction(List<ConsumerRecord<String, Object>> records) throws Exception {
+}
+
+@Bean(value = "bgActionContainerFactory")
+public KafkaListenerContainerFactory<ConcurrentMessageListenerContainer<String, String>> 
+        recallExpectContainerFactory() {
+    ConcurrentKafkaListenerContainerFactory<String, String> factory = 
+                new ConcurrentKafkaListenerContainerFactory<String, String>();
+    factory.setConsumerFactory(bgActionConsumer());
+    factory.setConcurrency(15);
+    factory.setBatchListener(true);
+    return factory;
+}
+
+//bg_action:https://datastar.kanzhun-inc.com/dashboard/kafka/topic_detail/28264
+private ConsumerFactory<String, String> bgActionConsumer() {
+    Map<String, Object> properties = new HashMap<String, Object>();
+    properties.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, bg_action_server);
+    properties.put(ConsumerConfig.GROUP_ID_CONFIG, "arc-four-" + springUtils.getActiveProfile());
+    properties.put(ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG, "true");
+    properties.put(ConsumerConfig.AUTO_COMMIT_INTERVAL_MS_CONFIG, "1000");
+    properties.put(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "latest");
+    properties.put(ConsumerConfig.SESSION_TIMEOUT_MS_CONFIG, "30000");
+    properties.put(ConsumerConfig.MAX_POLL_RECORDS_CONFIG, "100");
+    properties.put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class);
+    properties.put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class);
+    properties.put("security.protocol", "SASL_PLAINTEXT");
+    properties.put("sasl.mechanism", "SCRAM-SHA-256");
+    properties.put("sasl.jaas.config", "org.apache.kafka.common.security.scram.ScramLoginModule required username=\"xxx\" password=\"xxx\";");
+    return new DefaultKafkaConsumerFactory<String, String>(properties);
+}
+```
+
+## 2、producer
+
+```java
+@Slf4j
+@Configuration
+public class LogProducer {
+    private final static String TOPIC_NAME = "xxx";
+
+    private Producer<String, String> producer;
+
+    @Resource
+    private ExecutorSupport executorSupport;
+
+    @PostConstruct
+    private void init() {
+        log.info("#TimeUtils.init#start...");
+        Properties props = new Properties();
+        props.put("bootstrap.servers", "xxx");
+        props.put("acks", "all");
+        props.put("key.serializer", "org.apache.kafka.common.serialization.StringSerializer");
+        props.put("value.serializer", "org.apache.kafka.common.serialization.StringSerializer");
+        props.put("compression.type", "gzip"); // 开启GZIP压缩
+
+        //权限需要添加的配置
+        props.put("security.protocol", "SASL_PLAINTEXT");
+        props.put("sasl.mechanism", "SCRAM-SHA-256");
+        props.put("sasl.jaas.config", "org.apache.kafka.common.security.scram.ScramLoginModule required username=\"xxx\" password=\"xxx\";");
+
+        producer = new KafkaProducer<>(props);
+        log.info("#TimeUtils.init#end...");
+    }
+
+    public void log2Hive(String log) {
+        Map<String, String> map = Maps.newHashMap();
+        map.put("log", log);
+        producer.send(new ProducerRecord<>(TOPIC_NAME, JSON.toJSONString(map)));
+    }
+}
+```
+
 # 一、认识 Kafka
 
 ## 1、快速入门

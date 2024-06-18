@@ -545,14 +545,3 @@ with msghub(
 ## 2、单Agent：B/C端招聘/求职助手
 
 <img src="../../pics/llm/llm_10.png" align="left">
-
-# 七、agent 论文补充
-
-## 1、ReAct
-
-
-
-
-
-## 2、plan-and-executor
-
