@@ -38,6 +38,18 @@ ReAct：模型推理分成两部分，Reason和Action
 
 <img src="../../pics/llm/llm_4.png">
 
+## 3、十种Agent规划实现
+
+参考链接：https://liduos.com/llm-agent-planning.html
+
+### 3.1 很重要。。。待补充
+
+
+
+
+
+
+
 # 二、流式处理
 
 ## 1、Flowable

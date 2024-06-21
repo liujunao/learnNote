@@ -2664,7 +2664,7 @@ end repeat 【标签】;
 |    `query_cache_limit`     | 单次查询能使用的缓冲区大小，缺省为 1MB                       |
 | `query_cache_min_res_unit` | 指定分配缓冲区空间的最小单位，缺省为 4KB<br/>**估计值**：`(query_cache_size - Qcache_free_memory) / Qcache_queries_in_cache` |
 
-<img src="/Users/yinren/allText/learnNote/pics/mysql/global/mysql_3.png" align=left width="550">
+<img src="../../../pics/mysql/global/mysql_3.png" align=left width="550">
 
 ### (2) 缓存命中率
 
@@ -2672,7 +2672,7 @@ end repeat 【标签】;
 
 **缓存使用率**：`(query_cache_size – Qcache_free_memory) / query_cache_size`
 
-<img src="/Users/yinren/allText/learnNote/pics/mysql/global/mysql_4.png" align=left width="550">
+<img src="../../../pics/mysql/global/mysql_4.png" align=left width="550">
 
 |           参数            | 含义                                                         |
 | :-----------------------: | ------------------------------------------------------------ |
@@ -2724,7 +2724,7 @@ end repeat 【标签】;
 
 **InnoDB 缓冲池命中率**：
 
-<img src="/Users/yinren/allText/learnNote/pics/mysql/global/mysql_5.png">
+<img src="../../../pics/mysql/global/mysql_5.png">
 
 ## 2、解析器和预处理器
 
@@ -2755,7 +2755,7 @@ end repeat 【标签】;
 
 > MySQL 对任何关联都执行嵌套循环关联操作
 
-<img src="/Users/yinren/allText/learnNote/pics/mysql/global/mysql_6.png" align=left width="800">
+<img src="../../../pics/mysql/global/mysql_6.png" align=left width="800">
 
 ## 6、存储引擎
 
@@ -2772,11 +2772,11 @@ end repeat 【标签】;
 
 ## 架构回顾
 
-<img src="/Users/yinren/allText/learnNote/pics/mysql/global/mysql_7.png">
+<img src="../../../pics/mysql/global/mysql_7.png">
 
 # 二、库表设计详解
 
-<img src="/Users/yinren/allText/learnNote/pics/mysql/global/mysql_8.png" align=left width="800">
+<img src="../../../pics/mysql/global/mysql_8.png" align=left width="800">
 
 ## 1、规范
 
@@ -2794,7 +2794,7 @@ end repeat 【标签】;
 
 ### (1) 索引类型
 
-<img src="/Users/yinren/allText/learnNote/pics/mysql/global/mysql_9.png" align=left>
+<img src="../../../pics/mysql/global/mysql_9.png" align=left>
 
 |        特性        | B+ 树                                                        | Hash 索引                                      |
 | :----------------: | ------------------------------------------------------------ | ---------------------------------------------- |
@@ -2812,7 +2812,7 @@ end repeat 【标签】;
 
     > 因存储引擎而异，InnoDB 存放主键和索引键值，MyISAM 存放数据库指针
 
-<img src="/Users/yinren/allText/learnNote/pics/mysql/global/mysql_10.png" align=left>
+<img src="../../../pics/mysql/global/mysql_10.png" align=left>
 
 ### (3) 索引设计
 
@@ -2834,7 +2834,7 @@ end repeat 【标签】;
 
 ### (4) 索引优化
 
-<img src="/Users/yinren/allText/learnNote/pics/mysql/global/mysql_11.png" align=left width="800">
+<img src="../../../pics/mysql/global/mysql_11.png" align=left width="800">
 
 ## 3、字符集和校对集
 
@@ -2852,11 +2852,11 @@ end repeat 【标签】;
 
 - `show character set;` 
 
-    <img src="/Users/yinren/allText/learnNote/pics/mysql/global/mysql_12.png" align=left width="700">
+    <img src="../../../pics/mysql/global/mysql_12.png" align=left width="700">
 
 - `show collation;`
 
-    <img src="/Users/yinren/allText/learnNote/pics/mysql/global/mysql_13.png" align=left width="700">
+    <img src="../../../pics/mysql/global/mysql_13.png" align=left width="700">
 
 ---
 
@@ -2866,7 +2866,7 @@ end repeat 【标签】;
 
     > 未指定时，通过如下继承关系得到默认的字符集：
     >
-    > <img src="/Users/yinren/allText/learnNote/pics/mysql/global/mysql_14.png" align=left width="700">
+    > <img src="../../../pics/mysql/global/mysql_14.png" align=left width="700">
 
 - 服务器和客户端通信时，可通过配置，实现不同编码间的转换
 
@@ -2878,11 +2878,11 @@ end repeat 【标签】;
     > | `character_set_connection` | MySQL Server 接收客户端发布的查询请求后，将其统一转换成该字符集，之后交由服务器内部处理 |
     > | `character_set_results`    | MySQL Server 将结果集和错误信息返回给客户端时设置的字符集    |
     >
-    > <img src="/Users/yinren/allText/learnNote/pics/mysql/global/mysql_15.png" align=left>
+    > <img src="../../../pics/mysql/global/mysql_15.png" align=left>
 
 ---
 
-<img src="/Users/yinren/allText/learnNote/pics/mysql/global/mysql_16.png" align=left>
+<img src="../../../pics/mysql/global/mysql_16.png" align=left>
 
 ## 4、分库分表
 
@@ -2954,7 +2954,7 @@ end repeat 【标签】;
     > - C：单表建议记录数(小于 1KW，不要超过 2 亿)
     > - D：单库建议容量(小于 300GB)
     >
-    > <img src="/Users/yinren/allText/learnNote/pics/mysql/global/mysql_17.png" align=left width="700">
+    > <img src="../../../pics/mysql/global/mysql_17.png" align=left width="700">
 
 - **全局主键生成策略**：部分场景需要做数据的合并，要保证一条记录全局唯一，比如：表进入 hive 时
 
