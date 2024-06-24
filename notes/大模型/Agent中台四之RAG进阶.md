@@ -1,3 +1,5 @@
+> 可先阅读：https://www.cnblogs.com/charlieroro/p/18087301
+
 # 一、RAG混合检索调研
 
 > RAG 的核心点：数据检索的准确性、prompt 增强的有效性、影响模型回答的正确性
@@ -51,9 +53,25 @@
 
 <img src="../../pics/llm/llm_25.png">
 
-## 4、框架--LLamaIndex
+## 4、混合检索方式
 
-### 4.1 简介
+### 4.1 向量检索
+
+
+
+
+
+### 4.2 词频检索
+
+
+
+
+
+
+
+## 5、框架--LLamaIndex
+
+### 5.1 简介
 
 **LlamaIndex** 是一个专注于与大型语言模型（LLMs）集成的数据索引和检索框架。其主要目的是通过智能数据索引和查询，使得大型语言模型可以更有效地访问和利用外部数据
 
@@ -64,33 +82,19 @@
 3. **查询优化**：通过优化查询，使得语言模型可以更高效地从大量数据中提取有用的信息。
 4. **应用场景**：通常用于需要与自然语言处理（NLP）模型紧密合作的应用，如智能问答系统、文档理解和分析等。
 
-### 4.2 详细研究
+### 5.2 详细研究
 
 github：https://github.com/run-llama/llama_index
 
 研究中，待完善。。。
 
-## 5、混合检索方式
-
-### 5.1 向量检索
-
-
-
-
-
-### 5.2 词频检索
-
-
-
-
-
-
-
 
 
 # 二、提高RAG效果的方案
 
-## 1、方案一：对query预处理再进行检索
+> 参看：https://baoyu.io/translations/rag/a-guide-on-12-tuning-strategies-for-production-ready-rag-applications#data-cleaning
+
+## 1、方案一：对query预处理再检索
 
 参考：https://liduos.com/how-to-improve-llm-rag-accuracy-and-recall.html
 
@@ -109,9 +113,8 @@ github：https://github.com/run-llama/llama_index
 > 首先在小文档块中进行粗略检索，然后在特定的源文档中进行更精确的检索，最后在中等文档块中进行最终的检索
 
 - 文档预处理阶段实现满足上下文窗口的原始文本分块
-    - **小文本块拆分**：以 `50 token`大小（可根据自身文档之间的组织规律动态调整粒度）对文本做首次分割
-    - **添加窗口**：以步长为 3，窗口大小为 6，将上述步骤的小块匹配到不同的上下文窗口
-    - **中等文本块**：以小文本块 3 倍（可动态配置），即`150 token`大小对文本做二次分割，形成中等文本块
+    - **小文本块拆分**：将长文档拆分为多个较小的段，每个段可以是固定长度的片段，也可以根据自然段落或句子进行拆分
+    - **添加窗口，生成中等文本块**：使用滑动窗口方法，将文档按一定的窗口大小和步长进行滑动，从而生成多个重叠的中等文本片段
 - 文档检索阶段实现文本的三次检索
     - **第一阶段：小分块检索**：
         - 使用小文档块(docs_index_small)和小嵌入块(embedding_chunks_small)初始化一个检索器(first_retriever)
@@ -137,68 +140,143 @@ github：https://github.com/run-llama/llama_index
 
 **不足**：整体的响应效率需要优化
 
+# 三、RAG评估
+
+## 1、评估方向(检索&生成)
+
+### 1.1 检索方面
+
+- **检索准确率**：评估模型检索到的文档中，相关文档所占的比例
+
+    >  高准确率意味着检索到的文档大多数是与查询相关的
+    >
+    > - 计算方法：**检索到的相关文档数量 / 检索到的总文档数量**
+
+- **召回率**：评估模型能够检索到的所有相关文档的比
+
+    > 高召回率意味着模型能够找到大多数与查询相关的文档
+    >
+    > - 计算方法：**检索到的相关文档数量 / 所有相关的文档数量**
+
+- **F1 分数**：综合考虑准确率和召回率，给出一个整体的性能评估
+
+    > F1分数是准确率和召回率的调和平均数
+    >
+    > - 计算方法：**2 * (Precision * Recall) / (Precision + Recall)**
+
+- **平均检索排名(MRR)**：评估第一个相关文档在检索结果中的平均排名位置
+
+    > MRR越高，表示相关文档出现在前列的可能性越大
+    >
+    > - 计算方法：对每个查询，计算第一个相关文档在检索结果中的排名的倒数，然后对所有查询取平均值
+    >     $$
+    >     MRR = \frac{1}{|Q|}\sum^{|Q|}_{i=1}\frac{1}{rank_i}
+    >     $$
+    >     $|Q|$ 是查询的总数，$rank_i$ 是第 $i$ 个查询的第一个相关文档的排名
+
+- **标准化折扣累积增益(NDCG)**：评估检索结果中文档的相关性和排序质量
+
+    > NDCG考虑了文档在检索结果中的位置，排名越靠前的相关文档贡献越大
+    >
+    > - 计算方法：考虑文档在检索结果中的位置和相关性，通过特定的计算方式得出
+
+### 1.2 生成方面
+
+- **生成质量**：
+
+    - **准确性**：生成的回答是否准确反映输入查询和检索到的信息，即衡量生成回答与参考答案的相似度，从而评估生成文本的质量
+
+        > 使用BLEU、ROUGE、METEOR等指标来评估生成文本与参考答案的相似度
+        >
+        > - **BLEU**：衡量生成文本与参考文本之间的 n-gram 重合度
+        > - **ROUGE**：衡量生成文本与参考文本之间的重叠度，包括 ROUGE-N（n-gram）、ROUGE-L（最长公共子序列）
+        > - **METEOR**：考虑词义、词形变化的相似度指标
+
+    - **流利度**：生成的回答是否语法正确、连贯流畅
+
+        > 通过语言模型的困惑度（Perplexity）或人工评估来衡量
+
+- **相关性**：评估生成的回答与输入查询的相关性，确保生成内容紧密结合输入查询和检索到的文档
+
+    >  评估方法：人工评估或基于语义相似度的计算方法
+
+- **覆盖率**：评估生成的回答是否全面涵盖了输入查询中的所有重要信息点
+
+    > 评估方法：人工评估或基于信息抽取和对比的自动化方法
+
+- **多样性**：评估生成回答的多样性，确保模型在不同查询下生成丰富多样的回答，而不是重复或过于单一
+
+    > **评估方法**：使用 Self-BLEU 评估生成回答的多样性，Self-BLEU 低值表示生成内容多样性高。
+
+- **一致性**：评估生成的回答是否在内容和逻辑上与检索到的文档一致，避免生成虚假的或自相矛盾的内容
+
+    > 评估方法：基于逻辑推理或语义一致性的自动化评估方法
+
+## 2、评估需具备的能力
+
+### 2.1 检索需具备的能力
+
+- **高准确性和高召回率**：准确找到相关文档（高准确性），尽可能多地找到所有相关文档（高召回率）
+
+- **鲁棒性**：在面对不同类型的查询时表现稳定，包括拼写错误、语法错误和非标准查询
+
+    > 处理用户输入时，模型需要适应多样性和噪声
+
+- **上下文敏感性**：根据上下文调整检索结果，理解查询背后的意图
+
+    > 确保检索结果与用户需求高度相关
+
+### 2.2 生成需具备的能力
+
+- **噪声鲁棒性**：在输入包含噪声（如拼写错误、语法错误等）时仍能生成合理的回答，即与问题相关但不包含任何相关信息的文档
+
+    > 采用 accurary 来评估该指标的好坏：如果生成的文本包含与答案完全匹配的文本，则将其视为正确答案
+
+- **否定拒绝**：当检索到的文档不包含回答问题所需的知识时，模型应拒绝回答问题
+
+    > 采用 rejection rate 评估该指标的好坏：当只提供嘈杂的文档时，LLM 应输出“由于文档中的信息不足，我无法回答问题”
+
+- **信息整合**：评估模型能否回答需要整合多个文档信息的复杂问题
+
+    > 采用accurary来评估该指标的好坏：如果生成的文本包含与答案完全匹配的文本，则将其视为正确答案
+
+- **反事实鲁棒性**：当通过指令向 LLMs 发出关于检索信息中潜在风险的警告时，模型能否识别检索文档中已知事实错误的风险
+
+    > 采用两个率来衡量该指标：Error detection rate和Error correction rate
+    >
+    > - `Error detection rate`：衡量模型是否能够检测文档中的事实错误，以实现反事实的稳健性
+    > - `Error correction rate`：纠错率衡量模型在识别错误后是否能够提供正确的答案，以实现反事实的鲁棒性
+
+<img src="../../pics/llm/llm_32.png">
 
 
-# 三、RAG评估调研
 
-## 1、论文
+## 3、评估类型(黑盒&白盒)
 
-[《在 RAG 中对大语言模型进行基准测试》](https://arxiv.org/abs/2304.09848)
-
-## 2、评估方法
-
-### 2.1 黑盒评估
-
-#### (1) 简述
+### 3.1 黑盒评估
 
 黑盒方式是一种端到端的评估方式，看不到 RAG 应用的内部，只能从输入给 RAG 应用的信息和返回的信息来评估 RAG 的效果
 
-- 用户提问（User's query）
-- RAG 系统召回的引用上下文（retrieved contexts）
-- RAG 系统的回答（RAG's response）
-
-<img src="../../pics/llm/llm_27.png">
-
-三个对应的指标得分：
-
-- **Context Relevance**：衡量召回的 Context 能够支持 Query 的程度，该得分低表示召回太多与 Query 问题无关的内容
-- **Faithfulness**：衡量生成的答案在给定的上下文中的事实一致性，该得分低表示 LLM 的回答不遵从召回的知识，那么回答出现幻觉的可能就越大
-- **Answer Relevance**：侧重评估生成的答案与给定查询提示的相关性，该得分低表示答案不完整或包含冗余信息
-
-#### (2) 如何定量计算这些指标
-
-参考论文：[LLM-as-a-Judge](https://arxiv.org/abs/2306.05685) ，即使用 LLM 作为裁判来进行打分
-
-案例：使用 GPT-4 进行打分
-
-- 提问：
-
-    ```shell
-    There is an existing knowledge base chatbot application. I asked it a question and got a reply. Do you think this reply is a good answer to the question? Please rate this reply. The score is an integer between 0 and 10. 0 means that the reply cannot answer the question at all, and 10 means that the reply can answer the question perfectly.
-    
-    Question: Where is France and what is it’s capital?
-    Reply: France is in western Europe and Paris is its capital.
-    ```
-
-- 答案：
-
-    ```
-    10
-    ```
-
-#### (3) 生成 question 和 ground-truth
-
-> ground-truth 是人类写好的可以回答对应提问的标准回答
-
-**Answer Correctness**：定义 Ground-truth 和 Response 之间指标，用来衡量 RAG 回答的正确性
+- 用户提问（User's query）、RAG 系统召回的引用上下文（retrieved contexts）、RAG 系统的回答（RAG's response）
 
 <img src="../../pics/llm/llm_28.png">
 
-可以使用 **ragas 的 Synthetic Test Data generation 和 llama-index 的 QuestionGeneration** 来生成 question 和 ground-truth
+三个对应的指标得分：
 
-<img src="../../pics/llm/llm_29.png">
+- **Context Relevance(上下文相关性)**：衡量召回的 Context 支持 Query 的程度，该得分低表示召回太多与 Query 问题无关的内容
+- **Faithfulness(答案真实性)**：衡量生成的答案在给定的上下文中的事实一致性，该得分低表示 LLM 的回答不遵从召回的知识，那么回答出现幻觉的可能就越大
+- **Answer Relevance(答案相关性)**：侧重评估生成的答案与给定查询提示的相关性，该得分低表示答案不完整或包含冗余信息
+- **Answer Correctness**：定义 Ground-truth 和 Response 之间指标，用来衡量 RAG 回答的正确性
 
-### 2.2 白盒评估
+---
+
+- 结果评估：
+
+    - **使用 LLM 作为裁判来进行打分**：参考论文：[LLM-as-a-Judge](https://arxiv.org/abs/2306.05685) 
+
+    - **生成 question 和 ground-truth**：**ragas 的 Synthetic Test Data generation 和 llama-index 的 QuestionGeneration** 可以生成 question 和 ground-truth
+
+### 3.2 白盒评估
 
 <img src="../../pics/llm/llm_30.png">
 
@@ -224,18 +302,6 @@ github：https://github.com/run-llama/llama_index
     - **上下文召回率(Context Recall)**：系统完整地检索到了所有必要的文档的程度
     - **上下文精确率(Context Precision)**：系统检索到的信号（与噪音相比）的程度
 
----
-
-##### MTEB
-
-- [MTEB的论文](https://arxiv.org/abs/2210.07316)
-
-- MTEB 涵盖了 8 个嵌入任务，包括双语挖掘(Bitext Mining)、分类、聚类、成对分类、重新排序、检索、语义文本相似度(STS)、摘要
-
-- 对于 Embedding 模型，`NDCG` 是最重要的指标
-
-    对于 Rerank 模型，`MAP` 是最重要的指标
-
 #### (2) 评估 LLM
 
 生成过程可以直接使用上文介绍过的由 Context 到 Response 这一步的 LLM-based 的指标，即 **Faithfulness 来评估**
@@ -244,13 +310,11 @@ github：https://github.com/run-llama/llama_index
     - `ROUGE-L Precision`：测量生成的答案和检索到的上下文之间的最长公共子序列
     - `Token Overlap Precision`：计算生成的答案和检索到的上下文之间 token overlap 的精度
 
+# 四、评估框架
 
+## 1、RAGAs
 
-## 3、评估框架
-
-### 3.1 RAGAs
-
-#### (1) 简介
+### 1.1 简介
 
 **RAGAs** 是一种架构，它结合了信息检索（IR）和生成模型（如GPT-4），以增强生成模型的性能。其主要目的是通过从外部知识库中检索相关信息，并将其与生成模型结合，使生成的文本更准确和有信息量
 
@@ -260,7 +324,7 @@ github：https://github.com/run-llama/llama_index
 2. **结合检索和生成模型**：RAGAs 典型地包括两个主要组件：一个信息检索模块和一个生成模块。检索模块负责从大规模知识库中找到相关信息，生成模块则利用这些信息生成最终的输出。
 3. **应用场景**：广泛应用于需要高准确性和丰富内容的生成任务，如复杂问答系统、对话系统、内容创作等
 
-#### (2)详细研究
+### 1.2 详细研究
 
 github：https://github.com/explodinggradients/ragas
 
@@ -269,3 +333,8 @@ RAGAs使用案例：
 - https://www.luxiangdong.com/2024/02/22/advrag3/
 
 - https://liduos.com/how-to-evaluate-rag-application.html
+
+
+
+## 2、LangSmith
+
