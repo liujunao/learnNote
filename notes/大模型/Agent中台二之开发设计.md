@@ -237,6 +237,14 @@ String run = executor.run(query);
 System.out.println(run);
 ```
 
+## 6、token 相关
+
+默认采用 openai 提供的 tiktoken 计算方法，其支持三种编码方式：
+
+- `cl100k_base`：适合的模型 gpt-4,  gpt-3.5-turbo, text-embedding-ada-002
+- `p50k_base`：适合的模型 Codex模型, `text-davinci-002`, `text-davinci-003`
+- `r50k_base`：像 `davinci` 这样的GPT-3模型
+
 
 
 # 二、整体框架搭建

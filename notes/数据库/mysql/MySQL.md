@@ -3059,11 +3059,15 @@ LIMIT <limit_number>
 
 ### (2) 7 种 Join 查询
 
-![](../../../pics/mysql/mysqlG2_2.png) ![](../../../pics/mysql/mysqlG2_3.png) ![](../../../pics/mysql/mysqlG2_4.png)
+ ![](../../../pics/mysql/mysqlG2_3.png) ![](../../../pics/mysql/mysqlG2_4.png)
 
 ​                ![](../../../pics/mysql/mysqlG2_5.png)                                    ![](../../../pics/mysql/mysqlG2_6.png) 
 
 ![](../../../pics/mysql/mysqlG2_7.png) ![](../../../pics/mysql/mysqlG2_8.png)
+
+
+
+
 
 ## 3、索引简介
 
