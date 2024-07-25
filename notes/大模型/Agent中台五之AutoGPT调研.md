@@ -116,7 +116,7 @@ class AfterExecute(AgentComponent):
 
 # 二、agent protocol
 
-## 1、openAI 规范
+## 1、openAPI 规范
 
 官方文档：https://github.com/OAI/OpenAPI-Specification/blob/main/versions/3.1.0.md
 

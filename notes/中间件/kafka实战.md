@@ -6,7 +6,8 @@
 
 ```java
 @KafkaListener(topics = {"bg_action"}, containerFactory = "bgActionContainerFactory")
-public void listenerBgAction(List<ConsumerRecord<String, Object>> records) throws Exception {
+public void listenerBgAction(List<ConsumerRecord<String, Object>> records) 
+    															throws Exception {
 }
 
 @Bean(value = "bgActionContainerFactory")
