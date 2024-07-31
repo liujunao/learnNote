@@ -6,8 +6,13 @@
 
 ```java
 @KafkaListener(topics = {"bg_action"}, containerFactory = "bgActionContainerFactory")
-public void listenerBgAction(List<ConsumerRecord<String, Object>> records) 
-    															throws Exception {
+public void listenerBgAction(List<ConsumerRecord<String, Object>> records, 
+                             Acknowledgment acknowledgment) throws Exception {
+    try {
+            //。。。
+        } finally {
+            acknowledgment.acknowledge(); //手动提交
+        }
 }
 
 @Bean(value = "bgActionContainerFactory")
@@ -18,6 +23,8 @@ public KafkaListenerContainerFactory<ConcurrentMessageListenerContainer<String, 
     factory.setConsumerFactory(bgActionConsumer());
     factory.setConcurrency(15);
     factory.setBatchListener(true);
+    factory.getContainerProperties()
+        .setAckMode(ContainerProperties.AckMode.MANUAL_IMMEDIATE); //设置手动提交
     return factory;
 }
 
@@ -25,10 +32,17 @@ public KafkaListenerContainerFactory<ConcurrentMessageListenerContainer<String, 
 private ConsumerFactory<String, String> bgActionConsumer() {
     Map<String, Object> properties = new HashMap<String, Object>();
     properties.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, bg_action_server);
-    properties.put(ConsumerConfig.GROUP_ID_CONFIG, "arc-four-" + springUtils.getActiveProfile());
-    properties.put(ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG, "true");
+    properties.put(ConsumerConfig.GROUP_ID_CONFIG, "xxx");
+    properties.put(ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG, false);
     properties.put(ConsumerConfig.AUTO_COMMIT_INTERVAL_MS_CONFIG, "1000");
     properties.put(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "latest");
+    
+    properties.put(ConsumerConfig.FETCH_MAX_WAIT_MS_CONFIG, "500");
+    properties.put(ConsumerConfig.MAX_POLL_RECORDS_CONFIG, "2000");
+    properties.put(ConsumerConfig.FETCH_MIN_BYTES_CONFIG, "10");
+    //100MB(默认为50MB)
+    properties.put(ConsumerConfig.FETCH_MAX_BYTES_CONFIG, "104857600"); 
+    
     properties.put(ConsumerConfig.SESSION_TIMEOUT_MS_CONFIG, "30000");
     properties.put(ConsumerConfig.MAX_POLL_RECORDS_CONFIG, "100");
     properties.put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class);
