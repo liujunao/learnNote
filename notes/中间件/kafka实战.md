@@ -44,7 +44,6 @@ private ConsumerFactory<String, String> bgActionConsumer() {
     properties.put(ConsumerConfig.FETCH_MAX_BYTES_CONFIG, "104857600"); 
     
     properties.put(ConsumerConfig.SESSION_TIMEOUT_MS_CONFIG, "30000");
-    properties.put(ConsumerConfig.MAX_POLL_RECORDS_CONFIG, "100");
     properties.put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class);
     properties.put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class);
     properties.put("security.protocol", "SASL_PLAINTEXT");
