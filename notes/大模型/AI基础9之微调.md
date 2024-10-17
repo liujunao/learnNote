@@ -1,255 +1,3 @@
-# 一、工程侧
-
-## 1、agent 系统
-
-- 详见 agent 中台
-
-
-
-
-
-
-
-
-
-## 2、RAG(milvus)
-
-- 简介：
-
-    - https://blog.csdn.net/weixin_47336776/article/details/123994038
-    - https://blog.51cto.com/liguodong/5110587
-
-- 索引：
-
-    - 数据写入&索引构建：https://blog.51cto.com/liguodong/5110583
-    - 索引性能说明：https://blog.csdn.net/weixin_44839084/article/details/103471083
-    - 各个索引的详细简介：https://blog.csdn.net/weixin_47336776/article/details/123994584
-    - **nlist和nprobe**：nlist 是调用 create_index 时设置的参数，nprobe 则是调用 search 时设置的参数
-
-        > IVFLAT 和 SQ8 索引都是通过聚类算法把大量的向量划分成很多‘簇’（也叫‘桶’)
-        >
-        > - nlist 指的就是聚类时划分桶的总数。通过索引查询时，第一步先找到和目标向量最接近的若干个桶，第二步在这若干个桶里通过比较向量距离查找出最相似的 k 条向量
-        > - nprobe 指的就是第一步若干个桶的数量
-        >
-        > ---
-        >
-        > - 增大 nlist 会使得桶数量变多，每个桶里的向量数量减少，所需的向量距离计算量变小，因此搜索性能提升，但由于比对的向量数变少，有可能会遗漏正确的结果，因此准确率下降；
-        > - 增大 nprobe 就是搜索更多的桶数，因此计算量变大，搜索性能降低，但准确率上升
-        >
-        > 推荐的 nlist 值为4 * sqrt(n)，其中 n 为数据的向量总数；
-        >
-        > 而 nprobe 的值则需要综合考虑在可接受的准确率条件下兼顾效率，比较好的做法是通过多次实验确定一个合理的值
-        >
-        > 详情见：https://cloud.tencent.com/developer/article/1607298
-
-- 性能优化：https://developer.aliyun.com/article/1375747
-
-# 二、模型基础知识
-
-## 1、数学基础
-
-可参看：https://www.huaxiaozhuan.com/
-
-- 线性代数
-- 概率论
-- 数值计算
-
-
-
-## 2、机器学习&深度学习
-
-可参看：https://www.yuque.com/zhaoluyang/igcyav
-
-- 机器学习：
-    - 线性回归&逻辑回归
-    - 假设函数、损失函数、梯度下降、特征缩放
-    - 学习率、过拟合&欠拟合、正则化
-    - 神经元、神经网络、前向传播、反向传播
-    - 无监督学习：聚类、降维
-    - 随机梯度下降
-- 深度学习：
-    - 激活函数：sigmod、tanh、ReLu
-    - 参数、超参数、神经网络正则化
-    - 梯度消失/梯度爆炸、梯度的数值逼近、反向传播的梯度校验
-
-
-
-## 3、pytorch
-
-### 3.1 核心函数
-
-potorch 核心函数：https://zhuanlan.zhihu.com/p/557253923
-
-
-
-### 3.2 模型示例
-
-```python
-import torch
-import torch.nn as nn
-import torch.nn.functional as F
-
-class Net(nn.Module):
-    def __init__(self):
-        super(Net, self).__init__()
-        # 输入图像channel：1；输出channel：6；5x5卷积核
-        self.conv1 = nn.Conv2d(1, 6, 5)
-        self.conv2 = nn.Conv2d(6, 16, 5)
-        # an affine operation: y = Wx + b
-        self.fc1 = nn.Linear(16 * 5 * 5, 120)
-        self.fc2 = nn.Linear(120, 84)
-        self.fc3 = nn.Linear(84, 10)
-
-    def forward(self, x):
-        # 2x2 Max pooling
-        x = F.max_pool2d(F.relu(self.conv1(x)), (2, 2))
-        # 如果是方阵,则可以只使用一个数字进行定义
-        x = F.max_pool2d(F.relu(self.conv2(x)), 2)
-        x = x.view(-1, self.num_flat_features(x))
-        x = F.relu(self.fc1(x))
-        x = F.relu(self.fc2(x))
-        x = self.fc3(x)
-        return x
-
-    def num_flat_features(self, x):
-        size = x.size()[1:]  # 除去批处理维度的其他所有维度
-        num_features = 1
-        for s in size:
-            num_features *= s
-        return num_features
-
-net = Net()
-print(net)
-```
-
-输出：
-
-```shell
-Net(
-  (conv1): Conv2d(1, 6, kernel_size=(5, 5), stride=(1, 1))
-  (conv2): Conv2d(6, 16, kernel_size=(5, 5), stride=(1, 1))
-  (fc1): Linear(in_features=400, out_features=120, bias=True)
-  (fc2): Linear(in_features=120, out_features=84, bias=True)
-  (fc3): Linear(in_features=84, out_features=10, bias=True)
-)
-```
-
-
-
-### 3.3 完整教程
-
-- pytorch 教程：https://pytorch.zhangxiann.com/
-- potorch 备选教程：https://datawhalechina.github.io/thorough-pytorch/index.html
-
-
-
-## 4、AI 算法
-
-https://easyai.tech/ai-knowledge-hub/
-
-### 4.1 CNN
-
-https://easyai.tech/ai-definition/cnn/
-
-- 特点：
-    - 卷积层
-    - 池化层
-    - 全连接层
-
-- 缺点：卷积神经网络 CNN 是一个输入得到一个输出，不同的输入之间没有联系
-
-### 4.2 RNN
-
-https://easyai.tech/ai-definition/rnn/
-
-- 优点：RNN 能够有效的处理序列数据
-
-- 特点：RNN 跟传统神经网络最大的区别在于每次都会将前一次的输出结果，带到下一次的隐藏层中，一起训练
-
-- 缺点：有短期记忆问题，无法处理很长的输入序列，且训练 RNN 需要投入极大的成本
-
-    > 短期的记忆影响较大，但是长期的记忆影响就很小
-
----
-
-### 4.3 LSTM(长短期记忆网络)
-
-https://easyai.tech/ai-definition/lstm/
-
-- 特点：打破死板逻辑，只保留重要的信息，即**可以保留较长序列数据中的“重要信息”，忽略不重要的信息**
-
-    > RNN 是一种死板的逻辑，越晚的输入影响越大，越早的输入影响越小，且无法改变这个逻辑
-
-
-
-### 4.4 Word embedding
-
-https://easyai.tech/ai-definition/word-embedding/
-
-2 种主流的 word embedding 算法：
-
-- Word2vec：https://easyai.tech/ai-definition/word2vec/
-- GloVe：https://www.fanyeong.com/2018/02/19/glove-in-detail/
-
-
-
-### 4.5 Encoder-Decoder 和 Seq2Seq
-
-https://easyai.tech/ai-definition/encoder-decoder-seq2seq/
-
-
-
-### 4.6 Attention 机制
-
-https://easyai.tech/ai-definition/attention/
-
-- 特点：
-    - Attention机制每一步计算不依赖于上一步的计算结果，因此可以和CNN一样并行处理
-    - Attention 是挑重点，就算文本比较长，也能从中间抓住重点，不丢失重要的信息
-
----
-
-Attention 类型总结：https://zhuanlan.zhihu.com/p/35739040
-
-
-
-### 4.7 Self-Attention 机制
-
-- 介绍：https://juejin.cn/post/7125629962769399838
-
-- 图解：https://zhuanlan.zhihu.com/p/686560602
-
----
-
-更完善的解释：https://imzhanghao.com/2021/09/15/self-attention-multi-head-attention/
-
-
-
-### 4.8 transfomer
-
-https://easyai.tech/ai-definition/transformer/
-
-- transfomer 工具包：https://huggingface.co/docs/transformers/main/zh/index
-
-- transformer 模型及应用：https://transformers.run/
-
-## 5、模型结构
-
-### 5.1 llama 模型结构
-
-- 详解：https://flowus.cn/kmno4/share/527055be-464f-4f0f-98c5-8b8f72a1fc2e
-- 源码解析：https://www.cnblogs.com/huaweiyun/p/17881295.html
-
-
-
-### 5.2 BCEmbedding 与 BCE Rerank模型结构
-
-https://www.cnblogs.com/tgzhu/p/18096769
-
-https://zhuanlan.zhihu.com/p/681370855
-
-
-
 # 三、微调侧
 
 ## 1、大模型微调的主要步骤
@@ -376,7 +124,7 @@ https://www.huaxiaozhuan.com/%E5%B7%A5%E5%85%B7/huggingface_transformer/chapters
 
     > 通过添加特殊标记、处理序列对、生成位置和类型嵌入、处理溢出和填充等步骤，确保分词后的结果符合模型的输入要求
 
-<img src="../../pics/model/model_1.png">
+<img src="data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 706"></svg>">
 
 ```python
 from tokenizers import pre_tokenizers
@@ -1074,9 +822,9 @@ tokenizer = AutoTokenizer.from_pretrained(
 
 1. `pretrained_model_name_or_path (str)`：指定要加载的预训练模型的名称或路径
 
-2.  `inputs (additional positional arguments, *optional*)`：表示额外的位置参数，这些参数会传递给标记器（Tokenizer）的`__init__()`方法，允许进一步自定义标记器的初始化
+2. `inputs (additional positional arguments, *optional*)`：表示额外的位置参数，这些参数会传递给标记器（Tokenizer）的`__init__()`方法，允许进一步自定义标记器的初始化
 
-3.  `config ([PretrainedConfig], *optional*)`：用于确定要实例化的分词器类
+3. `config ([PretrainedConfig], *optional*)`：用于确定要实例化的分词器类
 
 4. `cache_dir (str, optional)`：用于缓存模型文件的目录路径
 
@@ -1086,9 +834,9 @@ tokenizer = AutoTokenizer.from_pretrained(
 
 7. `proxies(Dict[str, str], *optional*)`：可选参数，用于指定代理服务器的设置
 
-   ``` 
-   proxies = { "http": "http://your_http_proxy_url", "https": "https://your_https_proxy_url" }
-   ```
+    ``` 
+    proxies = { "http": "http://your_http_proxy_url", "https": "https://your_https_proxy_url" }
+    ```
 
 8. `revision(str, optional)`：指定要加载的模型的 Git 版本（通过提交哈希）
 
@@ -1124,15 +872,15 @@ config = AutoConfig.from_pretrained(model_to_load, **config_kwargs)
 
 5. `proxies(Dict[str, str], *optional*)`：（可选参数）：这是一个字典，用于指定代理服务器的设置
 
-   ```
-   proxies = { "http": "http://your_http_proxy_url", "https": "https://your_https_proxy_url" }
-   ```
+    ```
+    proxies = { "http": "http://your_http_proxy_url", "https": "https://your_https_proxy_url" }
+    ```
 
 6. `revision(str, optional)`：指定要加载的模型的 Git 版本（通过提交哈希）
 
 7. `return_unused_kwargs(bool, optional, 默认值为 False)`：设置为 True 将返回未使用的配置参数
 
-   > 这对于识别和检查传递给函数的不受支持或未识别的参数很有用
+    > 这对于识别和检查传递给函数的不受支持或未识别的参数很有用
 
 8. `trust_remote_code(bool, *optional*, defaults to False)`：
 
@@ -1157,19 +905,20 @@ model = AutoModelForCausalLM.from_pretrained(
 
 2. `model_args`：直接传参的方式，传入配置项
 
-   - 将编码器层数改为3层
+    - 将编码器层数改为3层
 
-       ```python
-       model = AutoModel.from_pretrained("./models/bert-base-chinese", num_hidden_layers=3)
-       ```
+        ```python
+        model = AutoModel.from_pretrained("./models/bert-base-chinese", num_hidden_layers=3)
+        ```
 
-   - 加载模型时，指定配置类实例
+    - 加载模型时，指定配置类实例
 
-       ```python
-       model = AutoModel.from_pretrained("./models/bert-base-chinese", config=config)
-       ```
+        ```python
+        model = AutoModel.from_pretrained("./models/bert-base-chinese", config=config)
+        ```
 
 3. `trust_remote_code*(bool, *optional*, defaults to False)`：
+
     - 默认为 True 将下载来自 Hugging Face 模型中心或其他在线资源的配置文件
     - 设置为 False 表示加载本地的配置文件
 
@@ -1348,26 +1097,3 @@ if training_args.do_train:
 
 
 #### (8) 创建 data_collator
-
-
-
-
-
-# 五、其他知识
-
-## 1、kafka
-
-- https://github.com/wangzhiwubigdata/God-Of-BigData/blob/master/%E9%9D%A2%E8%AF%95%E7%B3%BB%E5%88%97/Kafka%E9%9D%A2%E8%AF%95%E9%A2%98%E6%95%B4%E7%90%86/Kafka%EF%BC%88%E4%B8%80%EF%BC%89.md
-
-
-
-## 2、spark
-
-- https://www.cnblogs.com/crazymakercircle/p/17539112.html
-- https://github.com/wangzhiwubigdata/God-Of-BigData/blob/master/%E9%9D%A2%E8%AF%95%E7%B3%BB%E5%88%97/Spark%E9%9D%A2%E8%AF%95%E9%A2%98%E6%95%B4%E7%90%86/Spark%EF%BC%88%E4%B8%80%EF%BC%89.md
-
-
-
-## 3、hbase
-
-- https://github.com/wangzhiwubigdata/God-Of-BigData/blob/master/%E9%9D%A2%E8%AF%95%E7%B3%BB%E5%88%97/HBase%E9%9D%A2%E8%AF%95%E9%A2%98%E6%95%B4%E7%90%86/HBase.md

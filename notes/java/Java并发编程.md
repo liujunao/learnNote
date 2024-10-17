@@ -4577,227 +4577,232 @@ public class Point {
 
 # 六、并发工具模型
 
-## 1、倒计时器 CountDownLatch
+## 1、案例--按序打印
 
-### (1) 简介
-
-> 在完成一组正在其他线程中执行的操作之前，允许一个或多个线程一直等待
-
-![](../../pics/concurrent/concurrent_45.png)
-
-CountDownLatch 通过计数器来实现：
-
-- 计数器值表示线程的数量，每当一个线程完成自己的任务后，计数器的值就会减 1
-- 当计数器的值变为 0 时，表示所有的线程均已完成任务，然后就可以恢复等待的线程继续执行
-
-### (2) 案例
-
-- **场景**：
-
-    ```java
-    while(存在未对账订单){
-        pos = getPOrders(); // 查询未对账订单
-        dos = getDOrders(); // 查询派送单
-        diff = check(pos, dos); // 执行对账操作
-        save(diff); // 差异写入差异库
-    } 
-    ```
-
-- **优化一**：利用多线程并行处理
-
-    ```java
-    while(存在未对账订单){
-        // 查询未对账订单
-        Thread T1 = new Thread(() -> pos = getPOrders());
-        T1.start();
-        
-        // 查询派送单
-        Thread T2 = new Thread(() -> dos = getDOrders());
-        T2.start();
-        
-        // 等待 T1、T2 结束
-        T1.join();
-        T2.join();
-        
-        diff = check(pos, dos); // 执行对账操作
-        save(diff); // 差异写入差异库
-    } 
-    ```
-
-- **优化二**：用 CountDownLatch 实现线程等待
-
-    - 使用线程池后无法实现等待
-
-        ```java
-        Executor executor =  Executors.newFixedThreadPool(2); // 创建2个线程的线程池
-        
-        while(存在未对账订单){
-          executor.execute(() -> pos = getPOrders()); // 查询未对账订单
-          executor.execute(() -> dos = getDOrders()); // 查询派送单
-          
-          /* ？？如何实现等待？？*/
-          
-          diff = check(pos, dos); // 执行对账操作
-          save(diff); // 差异写入差异库
-        }   
-        ```
-
-    - **使用 CountDownLatch 来实现等待**
-
-        ```java
-        Executor executor = Executors.newFixedThreadPool(2); // 创建2个线程的线程池
-        
-        while(存在未对账订单){
-            CountDownLatch latch = new CountDownLatch(2); // 计数器初始化为 2
-            // 查询未对账订单
-            executor.execute(() -> {
-                pos = getPOrders();
-                latch.countDown();
-            });
-            // 查询派送单
-            executor.execute(() -> {
-                dos = getDOrders();
-                latch.countDown();
-            });
-            latch.await(); // 等待两个查询操作结束
-            diff = check(pos, dos); // 执行对账操作
-            save(diff); // 差异写入差异库
-        }
-        ```
-
-- **优化三**：用 CyclicBarrier 实现线程同步
-
-    ```java
-    Vector<P> pos; // 订单队列
-    Vector<D> dos; // 派送单队列
-    Executor executor = Executors.newFixedThreadPool(1); // 执行回调的线程池 
-    
-    final CyclicBarrier barrier = new CyclicBarrier(2, () -> executor.execute(() -> check()));
-      
-    void check(){
-        P p = pos.remove(0);
-        D d = dos.remove(0);
-    
-        diff = check(p, d); // 执行对账操作
-        save(diff); // 差异写入差异库
-    }
-      
-    void checkAll(){
-        // 循环查询订单库
-        Thread T1 = new Thread(() -> {
-            while(存在未对账订单){
-                pos.add(getPOrders()); // 查询订单库
-                barrier.await(); // 等待
-            }
-        });
-        T1.start();  
-    
-        // 循环查询运单库
-        Thread T2 = new Thread(()->{
-            while(存在未对账订单){
-                dos.add(getDOrders()); // 查询运单库
-            }
-        });
-        T2.start();
-    }
-    ```
-
-## 2、循环栅栏 CyclicBarrier
-
-> 让一组线程到达一个屏障时被阻塞，直到最后一个线程到达屏障时，屏障才会开门，所有被屏障拦截的线程才会继续干活
-
-![](../../pics/concurrent/concurrent_44.png)
-
-通过上图可以看到 CyclicBarrier 内部使用重入锁 ReentrantLock 和 Condition，有两个构造函数：
-
-- `CyclicBarrier(int parties)`：将在给定数量的参与者(线程)处于等待状态时启动，但不会在启动 barrier 时执行预定义的操作
-- `CyclicBarrier(int parties, Runnable barrierAction)`：将在给定数量的参与者(线程)处于等待状态时启动，并在启动 barrier 时执行给定的屏障操作，该操作由最后一个进入 barrier 的线程执行
-
----
-
-- `parties` 表示拦截线程的数量
-
-- `barrierAction` 接收的 Runnable 命令，用于在线程到达屏障时，优先执行 barrierAction，用于处理更加复杂的业务场景
-
----
-
-**应用场景**： CyclicBarrier 试用与多线程结果合并的操作，用于多线程计算数据，最后合并计算结果的应用场景
-
-- 比如： 需要统计多个 Excel 中的数据，然后等到一个总结果，可以通过多线程处理每一个 Excel，执行完成后得到相应的结果，最后通过 barrierAction 来计算这些线程的计算结果，得到所有 Excel 的总和
-
----
-
-**CyclicBarrier 与 CountDownlatch 区别**：
-
-- CountDownLatch 允许 1 或 N 个线程等待其他线程完成执行；而 CyclicBarrier 允许 N 个线程相互等待
-
-- CountDownLatch 的计数器无法被重置；CyclicBarrier 的计数器可以被重置后使用
-
-    > CyclicBarrier 的计数器有自动重置的功能，当减到 0 时会自动重置为初始值
-
-## 3、信号量 Semaphore
-
-### (1) 原理
-
-信号量模型可以概括为：**一个计数器，一个等待队列，三个方法**
-
-- `init()`：设置计数器的初始值
-- `down()`：计数器的值减 1；若此时计数器的值小于 0，则当前线程将被阻塞，否则当前线程可以继续执行
-- `up()`：计数器的值加 1；若此时计数器的值小于或等于 0，则唤醒等待队列中的一个线程，并将其从等待队列中移除
-
-> JDK 实现中：down() 和 up() 分别对应 `acquire()` 和 `release()`
-
-<img src="../../pics/concurrent/concurrent_91.png" align=left>
-
-### (2) JDK 实现
-
-Semaphore 只对可用许可的号码进行计数，并采取相应的行动：
-
-> 信号量维护了一个许可集
-
-- 在许可可用前会阻塞每一个 acquire()，然后再获取该许可
-- 每个 release() 添加一个许可，从而可能释放一个正在阻塞的获取者
-
-Semaphore 提供了两个构造函数：
-
-- `Semaphore(int permits)`：创建具有给定的许可数和非公平的公平设置的 Semaphore
-
-- `Semaphore(int permits, boolean fair)`：创建具有给定的许可数和给定的公平设置的 Semaphore
-
-<img src="../../pics/concurrent/concurrent_46.png" align=left>
-
-> 上图，Semaphore 内部包含公平锁(FairSync)和非公平锁(NonfairSync)，继承内部类 Sync，Sync 继承AQS
-
-### (3) 案例分析
+### 1.1 单次打印
 
 ```java
-static int count;
-static final Semaphore s = new Semaphore(1); //初始化信号量
-//用信号量保证互斥    
-static void addOne() {
-    s.acquire();
-    try {
-        count += 1;
-    } finally {
-        s.release();
+public void test2() {
+    Thread t1 = new Thread(new Runnable() {
+        @Override
+        public void run() {
+            System.out.println(Thread.currentThread().getName() + ":线程执行");
+        }
+    }, "t1");
+
+    Thread t2 = new Thread(new Runnable() {
+        @Override
+        public void run() {
+            try {
+                /**
+                 * join方法,底层是wait方法.
+                 * t2线程调用t1.join()方法,等价于调用t1.wait()方法
+                 * join()方法是被synchronized修饰的,作用于当前this对象锁,也就是t1对象锁,
+                 * 本质是t2线程的锁对象是t1,调用t1.join()方法,使t2线程释放t1对象锁,t2变为阻塞状态
+                 * t2线程进入t1锁对象的阻塞队列中.
+                 */
+                t1.join();
+            } catch (InterruptedException e) {
+                e.printStackTrace();
+            }
+            System.out.println(Thread.currentThread().getName() + ":线程执行");
+        }
+    }, "t2");
+    Thread t3 = new Thread(new Runnable() {
+        @Override
+        public void run() {
+            try {
+                t2.join();
+            } catch (InterruptedException e) {
+                e.printStackTrace();
+            }
+            System.out.println(Thread.currentThread().getName() + ":线程执行");
+        }
+    }, "t3");
+
+    /**
+     * t1,t2,t3三个线程同时执行
+     *
+     * t2线程执行时,由于调用了t1.join()方法,t2线程阻塞,
+     * t3线程执行时,由于调用了t2.join()方法,t3线程阻塞,
+     *
+     * t1线程执行完成后,在底层jvm虚拟机中t1锁对象调用notifyAll()方法,
+     * 唤醒t1锁对象阻塞队列中的所有线程,t2线程开始执行.
+     */
+    t1.start();
+    t2.start();
+    t3.start();
+}
+
+//结果
+t1:线程执行
+t2:线程执行
+t3:线程执行
+```
+
+### 1.2 循环打印
+
+```java
+Lock lock = new ReentrantLock();
+    Condition t1Condition = lock.newCondition();
+Condition t2Condition = lock.newCondition();
+Condition t3Condition = lock.newCondition();
+int state = 1; // 用于控制线程的执行顺序
+
+@Test
+public void test22() {
+    Thread t1 = new Thread(() -> print(1, t1Condition, t2Condition), "t1");
+    Thread t2 = new Thread(() -> print(2, t2Condition, t3Condition), "t2");
+    Thread t3 = new Thread(() -> print(3, t3Condition, t1Condition), "t3");
+
+    t1.start();
+    t2.start();
+    t3.start();
+}
+
+private void print(int targetState, Condition currCondition, Condition nextCondition) {
+    while (true) {
+        lock.lock();
+        try {
+            while (state != targetState) {
+                currCondition.await();
+            }
+            System.out.println(Thread.currentThread().getName() + ":线程执行");
+            state = state % 3 + 1;
+            nextCondition.signal();
+        } catch (Exception e) {
+            Thread.currentThread().interrupt();
+        } finally {
+            lock.unlock();
+        }
     }
 }
 ```
 
-**信号量如何保证互斥**：假设两个线程 T1 和 T2 同时访问 addOne() 方法
+## 2、信号量 Semaphore
 
-- 当它们同时调用 acquire() 时，由于 acquire() 是一个原子操作，所以只能有一个线程(假设 T1)把信号量里的计数器减为 0，另外一个线程(T2)则是将计数器减为 -1
+参考阅读：https://cloud.tencent.com/developer/article/1770201
 
-- 对于线程 T1，信号量中的计数器值是 0(>= 0)，所以线程 T1 会继续执行；对于线程 T2，信号量中的计数器的值是 -1(< 0)
-- 按照信号量模型里对 down() 操作的描述，线程 T2 将被阻塞，所以此时只有线程 T1 会进入临界区执行 count += 1
+- **功能**：控制多个线程对共享资源的访问，类似于操作系统中的信号量机制。
 
-- 当线程 T1 执行 release() 操作(即 up() 操作)时，信号量里计数器的值加 1 后为 0(>= 0)
+    **使用场景**：限制同一时刻对某些资源的访问量，例如限制对数据库连接池的访问数量
 
-- 按照信号量模型里对 up() 操作的描述，此时等待队列中的 T2 将会被唤醒
+### 2.1 原理
 
-    于是 T2 在 T1 执行完临界区代码之后，才获得了进入临界区执行的机会，从而保证了互斥性
+信号量的四要素为：
 
-### (4) 案例：快速实现一个限流器
+- **最大许可数**：表示公共资源最多可以多少个线程同时访问
+- **公平模式**：获取许可时是否使用公平模式
+- **acquire方法**：用于获取许可，不足许可的话则进入等待状态（信号量 `-1`）
+- **release方法**：用于释放许可（信号量 `+1`）
+
+---
+
+创建时，可以指定信号量个数，比如 `Semaphre semaphore = new Semaphore(2)` 表示有2个信号量
+
+> 这个信号量可以比作是车道，每一个时刻每条车道只能允许一辆汽车通过
+
+<img src="../../pics/concurrent/concurrent_128.png" align=left>
+
+
+
+### 2.2 公平模式与非公平模式
+
+Semaphore 基于AQS同步器实现
+
+- 公平模式：需要判断AQS等待队列是否有人在等待
+- 非公平模式：如果剩余可用资源remaining >= 0，则直接CAS去争抢资源，成功则返回，失败则重试
+
+<img src="../../pics/concurrent/concurrent_129.png" align=left>
+
+### 2.3 案例--按序打印(单次)
+
+```java
+public void test3() {
+    Semaphore seam_first_second = new Semaphore(0);
+    Semaphore seam_second_third = new Semaphore(0);
+
+    Thread t1 = new Thread(() -> {
+        System.out.println(Thread.currentThread().getName() + ":线程执行");
+        seam_first_second.release();//释放,信号量+1
+    }, "t1");
+
+    Thread t2 = new Thread(() -> {
+        try {
+            seam_first_second.acquire();//请求,信号量-1.  若请求时信号量为0,不足以-1,则会挂起
+        } catch (InterruptedException e) {
+            throw new RuntimeException(e);
+        }
+        System.out.println(Thread.currentThread().getName() + ":线程执行");
+        seam_second_third.release();
+    }, "t2");
+
+    Thread t3 = new Thread(() -> {
+        try {
+            seam_second_third.acquire();
+        } catch (InterruptedException e) {
+            throw new RuntimeException(e);
+        }
+        System.out.println(Thread.currentThread().getName() + ":线程执行");
+    }, "t3");
+
+    t1.start();
+    t2.start();
+    t3.start();
+}
+```
+
+### 2.4 案例--按序打印(循环)
+
+```java
+public void test33() {
+    Semaphore seam_first_second = new Semaphore(0);
+    Semaphore seam_second_third = new Semaphore(0);
+    Semaphore seam_third_first = new Semaphore(1);
+
+    Thread t1 = new Thread(() -> {
+        while (true) {
+            try {
+                seam_third_first.acquire();
+            } catch (InterruptedException e) {
+                throw new RuntimeException(e);
+            }
+            System.out.println(Thread.currentThread().getName() + ":线程执行");
+            seam_first_second.release();//释放,信号量+1
+        }
+    }, "t1");
+
+    Thread t2 = new Thread(() -> {
+       while (true) {
+           try {
+               seam_first_second.acquire();
+           } catch (InterruptedException e) {
+               throw new RuntimeException(e);
+           }
+           System.out.println(Thread.currentThread().getName() + ":线程执行");
+           seam_second_third.release();
+       }
+    }, "t2");
+
+    Thread t3 = new Thread(() -> {
+        while (true) {
+            try {
+                seam_second_third.acquire();
+            } catch (InterruptedException e) {
+                throw new RuntimeException(e);
+            }
+            System.out.println(Thread.currentThread().getName() + ":线程执行");
+            seam_third_first.release();
+        }
+    }, "t3");
+
+    t1.start();
+    t2.start();
+    t3.start();
+}
+```
+
+### 2.5 案例--实现一个限流器
 
 > 注：Semaphore 可以允许多个线程访问一个临界区
 
@@ -4835,7 +4840,7 @@ pool.exec(t -> {
 });
 ```
 
-### (5) 信号量与管程相比
+### 2.6 信号量与管程相比
 
 - 信号量可以同时允许多个线程进入临界区，但信号量不能同时唤醒多个线程去争抢锁，只能唤醒一个阻塞中的线程
 
@@ -4845,7 +4850,187 @@ pool.exec(t -> {
 
 - 正因为缺失了Condition，所以用信号量来实现阻塞队列就很麻烦，因为要自己实现类似Condition的逻辑
 
-## 4、数据交换 Exchanger
+## 3、倒计时器 CountDownLatch
+
+参看文档：https://www.cnblogs.com/Andya/p/12925634.html
+
+- **功能**：允许一个或多个线程等待其他线程完成操作（或达到某个状态）
+
+- **使用场景**：用于实现一次性初始化，或等待多线程任务全部完成后再继续主线程的操作
+
+- **注意**：初始化后计数器值递减到 0 时，不能再复原
+
+    > 这一点区别于`Semaphore`，`Semaphore` 可以通过 `release` 操作恢复信号量
+
+### 3.1 原理
+
+1. 创建CountDownLatch并设置计数器值
+2. 启动多线程并且调用 CountDownLatch 实例的 countDown() 方法
+3. 主线程调用 `await()` 方法，这样主线程的操作就会在这个方法上阻塞，直到其他线程完成各自的任务，count值为0，停止阻塞，主线程继续执行
+
+![](../../pics/concurrent/concurrent_45.png)
+
+### 3.2 案例--按序打印
+
+```java
+public void test4() {
+    CountDownLatch countDownLatchA = new CountDownLatch(1);
+    CountDownLatch countDownLatchB = new CountDownLatch(1);
+    CountDownLatch countDownLatchC = new CountDownLatch(1);
+
+    Thread t1 = new Thread(() -> {
+        try {
+            countDownLatchA.await();
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        }
+        System.out.println(Thread.currentThread().getName() + ":线程执行");
+        countDownLatchB.countDown();
+    }, "t1");
+
+    Thread t2 = new Thread(() -> {
+        try {
+            countDownLatchB.await();
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        }
+        System.out.println(Thread.currentThread().getName() + ":线程执行");
+        countDownLatchC.countDown();
+    },"t2");
+
+    Thread t3 = new Thread(() -> {
+        try {
+            countDownLatchC.await();
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        }
+        System.out.println(Thread.currentThread().getName() + ":线程执行");
+        countDownLatchC.countDown();
+    },"t3");
+
+    t1.start();
+    t2.start();
+    t3.start();
+
+    countDownLatchA.countDown(); //重点。。。
+}
+```
+
+## 4、循环栅栏 CyclicBarrier
+
+参看链接：https://pdai.tech/md/java/thread/java-thread-x-juc-tool-cyclicbarrier.html
+
+- **功能**：让一组线程在某个点互相等待，直到所有线程都到达这个点，然后继续执行
+
+- **使用场景**：适用于需要在某些固定的同步点上同步一组线程的场景
+
+### 4.1 原理
+
+让一组线程到达一个屏障（也可以叫同步点）时被阻塞，直到最后一个线程到达屏障时，会触发自己运行，运行完后，屏障又会开门，所有被屏障拦截的线程又可以继续运行
+
+<img src="../../pics/concurrent/concurrent_132.png" align=left>
+
+**构造方法**
+
+- `public CyclicBarrier(int parties)`：创建`parties`个线程任务的循环`CyclicBarrier`
+- `public CyclicBarrier(int parties, Runnable barrierAction)`： 当`parties`个线程到到屏障出，自己执行任务`barrierAction`
+
+**常用API**
+
+- `int await()`：线程调用 `await` 方法通知 `CyclicBarrier` 本线程已经到达屏障
+
+### 4.2 案例--按序打印
+
+```java
+public void test5() {
+    CyclicBarrier cy1 = new CyclicBarrier(2);
+    CyclicBarrier cy2 = new CyclicBarrier(2);
+
+    Thread t1 = new Thread(() -> {
+        System.out.println(Thread.currentThread().getName() + ":线程执行");
+        try {
+            cy1.await();
+        } catch (BrokenBarrierException | InterruptedException e) {
+            e.printStackTrace();
+        }
+    }, "t1");
+
+    Thread t2 = new Thread(() -> {
+        try {
+            cy1.await();
+            System.out.println(Thread.currentThread().getName() + ":线程执行");
+            cy2.await();
+        } catch (BrokenBarrierException | InterruptedException e) {
+            e.printStackTrace();
+        }
+    }, "t2");
+
+    Thread t3 = new Thread(() -> {
+        try {
+            cy2.await();
+        } catch (BrokenBarrierException | InterruptedException e) {
+            e.printStackTrace();
+        }
+        System.out.println(Thread.currentThread().getName() + ":线程执行");
+    }, "t3");
+
+    t3.start();
+    t2.start();
+    t1.start();
+}
+```
+
+### 4.3 案例--按序打印(循环)
+
+```java
+public void test55() {
+    CyclicBarrier cy1 = new CyclicBarrier(2); // t1 和 t2 同步点
+    CyclicBarrier cy2 = new CyclicBarrier(2); // t2 和 t3 同步点
+    CyclicBarrier cy3 = new CyclicBarrier(2); // t3 和 t1 同步点
+
+    Thread t1 = new Thread(() -> {
+        while (true) {
+            System.out.println(Thread.currentThread().getName() + ":线程执行");
+            try {
+                cy1.await(); // 等待 t2
+                cy3.await(); // 等待 t3，开始新一轮
+            } catch (BrokenBarrierException | InterruptedException e) {
+                e.printStackTrace();
+            }
+        }
+    }, "t1");
+
+    Thread t2 = new Thread(() -> {
+        while (true) {
+            try {
+                cy1.await(); // 等待 t1
+                System.out.println(Thread.currentThread().getName() + ":线程执行");
+                cy2.await(); // 等待 t3
+            } catch (BrokenBarrierException | InterruptedException e) {
+                e.printStackTrace();
+            }
+        }
+    }, "t2");
+
+    Thread t3 = new Thread(() -> {
+        while (true) {
+            try {
+                cy2.await(); // 等待 t2
+                System.out.println(Thread.currentThread().getName() + ":线程执行");
+                cy3.await(); // 等待 t1
+            } catch (BrokenBarrierException | InterruptedException e) {
+                e.printStackTrace();
+            }
+        }
+    }, "t3");
+
+    t1.start();
+    t2.start();
+    t3.start();
+}
+```
+
+## 5、数据交换 Exchanger
 
 > 允许在并发任务之间交换数据，即 Exchanger 类允许在两个线程之间定义同步点，当两个线程都到达同步点时，交换数据结构
 

@@ -1,6 +1,24 @@
 > 完整知识推荐：https://www.huaxiaozhuan.com/
 >
-> 机器学习&深度学习推荐：https://www.yuque.com/zhaoluyang/igcyav
+> 吴恩达机器学习&深度学习推荐：https://www.yuque.com/zhaoluyang/igcyav
+
+# 核心点
+
+可参看：https://www.yuque.com/zhaoluyang/igcyav
+
+- 机器学习：
+    - 线性回归&逻辑回归
+    - 假设函数、损失函数、梯度下降、特征缩放
+    - 学习率、过拟合&欠拟合、正则化
+    - 神经元、神经网络、前向传播、反向传播
+    - 无监督学习：聚类、降维
+    - 随机梯度下降
+- 深度学习：
+    - 激活函数：sigmod、tanh、ReLu
+    - 参数、超参数、神经网络正则化
+    - 梯度消失/梯度爆炸、梯度的数值逼近、反向传播的梯度校验
+
+
 
 # 一、机器学习
 
