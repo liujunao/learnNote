@@ -2,6 +2,16 @@
 >
 > transformer 推荐：https://transformers.run/
 
+---
+
+https://easyai.tech/ai-definition/transformer/
+
+- transfomer 工具包：https://huggingface.co/docs/transformers/main/zh/index
+
+- transformer 模型及应用：https://transformers.run/
+
+---
+
 # 一、简介
 
 ### 1.1 基本概念
