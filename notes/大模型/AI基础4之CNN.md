@@ -1,6 +1,6 @@
 > 参看：https://easyai.tech/ai-knowledge-hub/
 
-# 一、CNN
+# 一、概念认知
 
 ## 1、快速认知
 
@@ -83,7 +83,17 @@
 
 <img src="../../pics/neural/neural_11.png" width="1000" align="left">
 
-## 4、手写 CNN
+# 二、实践结合
+
+参看：
+
+- https://zh.d2l.ai/chapter_convolutional-neural-networks/index.html
+
+- https://github.com/ShusenTang/Dive-into-DL-PyTorch/tree/master/docs/chapter05_CNN
+
+
+
+# 三、手写 CNN
 
 - 参考：https://www.cnblogs.com/charlotte77/p/7783261.html
 
@@ -499,29 +509,7 @@ if __name__ == "__main__":
     test()
 ```
 
-# 二、RNN
+# 四、常用 CNN
 
-https://easyai.tech/ai-definition/rnn/
-
-- 优点：RNN 能够有效的处理序列数据
-
-- 特点：RNN 跟传统神经网络最大的区别在于每次都会将前一次的输出结果，带到下一次的隐藏层中，一起训练
-
-- 缺点：有短期记忆问题，无法处理很长的输入序列，且训练 RNN 需要投入极大的成本
-
-    > 短期的记忆影响较大，但是长期的记忆影响就很小
-
-
-
-# 三、LSTM(长短期记忆网络)
-
-https://easyai.tech/ai-definition/lstm/
-
-- 特点：打破死板逻辑，只保留重要的信息，即**可以保留较长序列数据中的“重要信息”，忽略不重要的信息**
-
-    > RNN 是一种死板的逻辑，越晚的输入影响越大，越早的输入影响越小，且无法改变这个逻辑
-
-
-
-# 四、门循环神经网络
+参看：https://zh.d2l.ai/chapter_convolutional-modern/index.html
 

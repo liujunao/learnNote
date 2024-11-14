@@ -1,18 +1,147 @@
-> 完整知识推荐：https://www.huaxiaozhuan.com/
+> Attention Is All You Need 论文原文：https://arxiv.org/html/1706.03762v7/#bib.bib7
 >
-> transformer 推荐：https://transformers.run/
+> 博客参看：https://imzhanghao.com/2021/09/18/transformer/
+
+# 一、概述
+
+## 1、模型架构
+
+<img src="../../pics/neural/neural_82.png" width="800" align=left>
+
+## 2、Transformer 的三个优势
+
+- **模型并行度高，使得训练时间大幅度降低**：
+
+    - **循环模型**：对输入和输出序列的符号位置进行因子计算，通过在计算期间将位置与步骤对齐，根据前一步的隐藏状态 $h_{t-1}$ 和输入位置 $t$ 来计算隐藏状态序列 $h_t$
+
+        > 这种固有的顺序特性阻碍样本训练的并行化，这在更长的序列长度上变得至关重要，因为有限的内存限制样本的批次大小
+
+    - **Transformer架构**：避免使用循环神经网络并完全依赖于 attention 机制来绘制输入和输出之间的全局依赖关系，允许进行更多的并行化
+
+- **可以直接捕获序列中的长距离依赖关系**：注意力机制允许对依赖关系进行建模，而不考虑它们在输入或输出序列中的距离
+
+    > 对比LSTM，Attention能够更好的解决长距离依赖问题（Long-Term Dependencies Problem）
+
+- **自注意力可以产生更具可解释性的模型**：可以从模型中检查注意力分布，并且各个注意头可以学会执行不同的任务
+
+# 二、架构详解
+
+## 1、Encoder and Decoder
+
+### 1.1 Encoder
+
+编码器由 `N=6` 个相同的 layer 组成，layer 指的就是上图左侧的单元，最左边有个“Nx”，这里是x6个，每个 Layer 由两个子层(Sub-Layer)组成：
+
+- 第一个子层是：Multi-head Self-attention Mechanism
+- 第二个子层是：Fully Connected Feed-Forward Network
+
+其中每个子层都加了残差连接(Residual Connection)和层归一化(Layer Normalisation)
+
+因此可以将子层的输出表示为： `LayerNorm(x + SubLayer⁡(x))` 
+
+### 1.2 Decoder
+
+解码器同样由 `N=6` 个相同 layer 组成：
+
+- 因为编码器是并行计算一次性将结果直接输出，而解码器是一个词一个词输入，所以解码器除了每个编码器层中的两个子层之外，还插入第三子层，其对编码器堆栈的输出执行 multi-head attention
+
+- 每个子层也都加了残差连接(Residual Connection)和层归一化(Layer Normalisation)
+
+解码器中对 self-attention 子层进行了修改，以防止引入当前时刻的后续时刻输入，这种屏蔽与输出嵌入偏移一个位置的事实相结合，确保了位置 `i` 的预测仅依赖于小于 `i` 的位置处的已知输出
+
+## 2、Attention
+
+- attention函数可以被描述为将query和一组key-value对映射到输出，其中query，key，value和输出都是向量
+
+- 输出被计算为值的加权求和，其中分配给每个值的权重由query与对应key的兼容性函数计算
+
+### 2.1 Scaled Dot-Product Attention(缩放点积Attention)
+
+- 输入由维度为 $d_k$ 的 query 和 key 以及维度为 $d_v$ 的 value 组成
+
+- 用所有 key 计算 query 的点积，然后将每个点积结果除以 $d_k$，并应用 softmax 函数来获得 value 的权重
+
+实践中，同时在一组 query 上计算 attention 函数，并打包在一起形成矩阵 Q，key 和 value 也一起打包成矩阵 K 和 V
 
 ---
 
-https://easyai.tech/ai-definition/transformer/
+计算输出矩阵为：
+$$
+Attention(Q, K, V) = softmax(\frac{QK^T}{\sqrt{d_k}})V
+$$
+<img src="../../pics/neural/neural_83.png" width="500" align=left>
 
-- transfomer 工具包：https://huggingface.co/docs/transformers/main/zh/index
+### 2.2 Multi-Head Attention
 
-- transformer 模型及应用：https://transformers.run/
+- 利用多个查询，来平行计算从输入信息中选取多个信息
 
----
+- 每个注意力关注输入信息的不同部分，然后再进行拼接
 
-# 一、简介
+<img src="../../pics/neural/neural_80.png" width="800" align="left">
+
+<img src="../../pics/neural/neural_84.png" width="500" align=left>
+
+### 2.3 Attention 中的 mask 操作
+
+整个 Transformer 中包含三种类型的 attention，且目的并不相同：
+
+- **Encoder 的 self-attention**：考虑到 batch 的并行化，通常会进行 padding，因此会对序列中 `mask=0` 的 token 进行 mask 后在进行 attention score 的 softmax 归一化
+- **Decoder 中的 self-attention**：为了避免预测时后续 tokens 的影响，所以必须令后 续tokens 的 mask=0，其具体做法为构造一个三角矩阵
+- **Decoder 中的 encode-decoder attention**：涉及到 decoder 中当前 token 与整个 encoder 的 sequence 的计算，所以 encoder 仍然需要考虑 mask
+
+综上，无论对于哪个类型的 attention 在进行 sotmax 归一化前，都需要考虑 mask 操作
+
+## 3、Position-wise Feed-Forward Networks
+
+- 在编码器和解码器中的每层都包含一个完全连接的前馈网络，该网络分别相同地应用于每个位置，主要是提供非线性变换
+
+- 之所以是 position-wise，是因为过线性层时每个位置 `i` 的变换参数一样
+
+该前馈网络包含两个线性变换，并在第一个的最后使用 `ReLU` 激活函数
+$$
+FFN(x) = max(0, xW_1 + b_1)W_2 + b_2
+$$
+虽然线性变换在不同位置上相同，但它们在层与层之间使用不同的参数，描述这种情况的另一种方式是两个内核大小为 `1` 的卷积
+
+## 4、Embeddings 和 Softmax
+
+Embeddings 和 Softmax 跟在常规的序列转换模型中起到的作用相同
+
+- Embeddings 将输入符号和输出符号转换为固定长的向量
+- 线性变换和 softmax 函数将解码器输出转换为预测的下一个字符的概率
+
+在这个模型中，两个嵌入层和 pre-softmax 线性变换之间共享相同的权重矩阵
+
+## 5、Layer Normalization
+
+Layer Normalization 是作用于每个时序样本的归一化方法，其作用主要体现在：
+
+- 作用于非线性激活函数前，能够将输入拉离激活函数非饱(防止梯度消失)和非线性区域(保证非线性)
+- 保证样本输入的同分布
+
+## 6、Positional Encoding
+
+- 由于模型不包含递归和卷积，为了让模型利用序列的顺序，必须注入一些关于标记在序列中的相对或绝对位置的信息
+
+- 为此，将“位置编码”添加到编码器和解码器堆栈底部的输入嵌入中
+
+    > 位置编码具有与词嵌入相同的维度，因此可以将两者相加
+
+在这项工作中，使用不同频率的正弦和余弦函数：$pos$ 是位置，$i$ 是维度
+$$
+PE_{(pos, 2i)} = sin(pos/10000^{2i/d_{model}}) \\
+PE_{(pos, 2i+1)} = cos(pos/10000^{2i/d_{model}})
+$$
+参考链接：
+
+- [Transformer Architecture: The Positional Encoding](https://kazemnejad.com/blog/transformer_architecture_positional_encoding/)
+- [如何理解Transformer论文中的positional encoding，和三角函数有什么关系？](https://www.zhihu.com/question/347678607)
+
+# 三、Transformer 应用(可选)
+
+参看：https://transformers.run/
+
+## 1、简介
 
 ### 1.1 基本概念
 
@@ -82,7 +211,7 @@ Transformer 模型本来是为了翻译任务而设计：
 
 <img src="../../pics/turn_transformer/turn_3.png" width=600 align=left>
 
-# 二、注意力机制
+## 2、注意力机制
 
 > Transformer 模型之所以如此强大，是因为抛弃了循环网络和卷积网络，而采用了注意力机制 (Attention) 来建模文本
 
@@ -419,7 +548,7 @@ tensor([[[26.8082,    -inf,    -inf,    -inf,    -inf],
        grad_fn=<MaskedFillBackward0>)
 ```
 
-# 三、pipelines
+## 3、pipelines
 
 ### 3.1 简介
 
@@ -484,157 +613,10 @@ print(result)
 
 > 对输入文本的预处理需要与模型自身预训练时的操作完全一致，只有这样模型才可以正常地工作
 
-
-
-
-
-
-
 #### (2) 将预处理好的输入送入模型
 
 
 
-
-
-
-
 #### (3) 对模型输出进行后处理
-
-
-
-
-
-
-
-### 3.3 pipeline 函数
-
-#### (1) 情感分析 pipeline
-
-
-
-
-
-#### (2) 零训练样本分类 pipeline
-
-
-
-
-
-#### (3) 文本生成 pipeline
-
-
-
-
-
-#### (4) 遮盖词填充 pipeline
-
-
-
-
-
-
-
-#### (5) 命名实体识别 pipeline
-
-
-
-
-
-
-
-#### (6) 自动问答 pipeline
-
-
-
-
-
-
-
-#### (7) 自动摘要 pipeline
-
-
-
-
-
-# 四、模型与分词器
-
-### 4.1 模型
-
-
-
-
-
-
-
-### 4.2 分词器
-
-
-
-
-
-
-
-### 4.3 处理多段文本
-
-
-
-
-
-
-
-### 4.4 添加 Token
-
-
-
-
-
-
-
-### 4.5 Token Embedding 初始化
-
-
-
-
-
-
-
-# 五、任务案例
-
-### 5.1 序列标注任务
-
-
-
-
-
-### 5.2 抽取式问答任务
-
-
-
-
-
-### 5.3 翻译任务
-
-
-
-
-
-
-
-### 5.4 文本摘要任务
-
-
-
-
-
-
-
-### 5.5 情感分析任务
-
-
-
-
-
-
-
 
 

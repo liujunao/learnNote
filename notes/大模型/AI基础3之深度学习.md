@@ -278,7 +278,33 @@ $$
 
 <img src="../../pics/turn_machine/turn_93.png" align=left width=700>
 
-# 二、pytorch 案例
+# 二、线性神经网络实践
+
+参看：https://zh.d2l.ai/chapter_linear-networks/index.html
+
+
+
+# 三、多层感知机实践
+
+参看：
+
+- https://zhishu.zhipin.com/docs/96j3iZ0g2T5
+
+- https://github.com/ShusenTang/Dive-into-DL-PyTorch/tree/master/docs/chapter03_DL-basics
+
+
+
+# 四、深度学习计算实践
+
+参看：
+
+- https://zh.d2l.ai/chapter_deep-learning-computation/index.html
+
+- https://github.com/ShusenTang/Dive-into-DL-PyTorch/tree/master/docs/chapter04_DL_computation
+
+
+
+# 五、pytorch 案例
 
 参考：https://datawhalechina.github.io/thorough-pytorch/%E7%AC%AC%E4%B8%89%E7%AB%A0/index.html
 
