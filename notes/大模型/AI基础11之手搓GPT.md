@@ -1,1 +1,1 @@
-AI基础10之手写GPT
+> 参看：https://github.com/datawhalechina/llms-from-scratch-cn/blob/main/Translated_Book/ch04/4.1%20%E4%BB%8E%E5%A4%B4%E5%BC%80%E5%A7%8B%E5%AE%9E%E7%8E%B0%20GPT%20%E6%A8%A1%E5%9E%8B%E4%BB%A5%E7%94%9F%E6%88%90%E6%96%87%E6%9C%AC.ipynb
