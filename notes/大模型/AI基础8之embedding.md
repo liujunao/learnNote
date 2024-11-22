@@ -483,3 +483,342 @@ GPT 模型：用单向 Transformer 代替 ELMo 的 LSTM 来完成预训练任务
 - **利用额外模块进行微调**：
     - 微调的主要缺点：其参数的低效性，即每个下游模型都有其自己微调好的参数
     - 更好的解决方案：将一些微调好的适配模块注入到 PTMs 中，同时固定原始参数
+
+# 六、实战
+
+## 1、使用滑动窗口进行数据采样
+
+> 在创建 LLM 的 Embedding 之前，需要生成训练 LLM 所需的**输入-目标 `input-target` 对**
+
+### 1.1 简介
+
+给定一个文本样本，提取输入块作为 LLM 的输入子样本，LLM 在训练期间的任务是预测输入块之后的下一个单词，在训练过程中，屏蔽掉目标词之后的所有单词
+
+> 在 LLM 处理文本之前，该文本已经进行 token 化
+
+<img src="../../pics/neural/neural_94.jpeg" width="800" align=left>
+
+### 1.2 获取输入-目标对
+
+下面流程为：实现了一个数据加载器，**使用滑动窗口方法从训练数据集中获取输入-目标对**
+
+- 前期准备：加载数据、选择分词器
+
+    ```python
+    import requests
+    import re
+    import tiktoken
+    
+    #加载数据集
+    url="https://raw.githubusercontent.com/rasbt/LLMs-from-scratch/main/ch02/01_main-chapter-code/the-verdict.txt"
+    response = requests.get(url)
+    raw_text = response.text
+    
+    #对训练集应用 BPE 分词器后获得 5145 个 tokens
+    tokenizer = tiktoken.get_encoding("gpt2")
+    enc_text = tokenizer.encode(raw_text)
+    print(len(enc_text))
+    
+    #从数据集中剔除前 50 个 toekns，以便在后续步骤中展示更吸引人的文本段落
+    enc_sample = enc_text[50:]
+    
+    #输出
+    5145
+    ```
+
+- 在创建下一个单词预测任务的输入-目标对时，一种简单直观的方法是创建两个变量 x 和 y
+
+    - `x` 用于存储输入的 token 序列，而 `y` 则用于存放目标 token 序列
+    - 目标序列由输入序列中的每个 token 向右移动一个位置构成，从而形成了输入-目标对
+
+    ```python
+    context_size = 4 #A
+    x = enc_sample[:context_size]
+    y = enc_sample[1:context_size+1]
+    print(f"x: {x}")
+    print(f"y:      {y}")
+    
+    #输出
+    x: [290, 4920, 2241, 287]
+    y:      [4920, 2241, 287, 257]
+    ```
+
+- 通过将输入数据向右移动一个位置来生成对应的目标数据后，按照以下步骤创建下一个单词的预测任务
+
+    ```python
+    for i in range(1, context_size + 1):
+        context = enc_sample[:i]
+        desired = enc_sample[i]
+        #左边的内容指的是 LLM 接收到的输入，箭头右边的 token ID 代表 LLM 应该预测的目标 token ID
+        print(context, "---->", desired)
+    
+    #输出
+    [290] ----> 4920
+    [290, 4920] ----> 2241
+    [290, 4920, 2241] ----> 287
+    [290, 4920, 2241, 287] ----> 257
+        
+    #重复之前的代码，但这次将 token ID 转换回文本
+    for i in range(1, context_size + 1):
+        context = enc_sample[:i]
+        desired = enc_sample[i]
+        print(tokenizer.decode(context), "---->", tokenizer.decode([desired]))
+        
+    #输出
+    and ---->  established
+    and established ---->  himself
+    and established himself ---->  in
+    and established himself in ---->  a
+    ```
+
+### 1.3 实现一个高效的数据加载器
+
+高效的数据加载器：遍历输入数据集并返回输入-目标对，这些输入和目标都是 PyTorch 张量，可以理解为多维数组
+
+希望返回两个张量：
+
+- 一个是输入张量，包含 LLM 看到的文本
+- 另一个是目标张量，包含 LLM 要预测的目标
+
+---
+
+为了实现高效的数据加载器：
+
+- 将所有输入存存储到一个名为 `x` 的张量中，其中每一行都代表一个输入上下文
+
+- 同时，创建另一个名为 `y` 的张量，用于存储对应的预测目标(即下一个单词)，这些目标通过将输入内容向右移动一个位置得到
+
+<img src="../../pics/neural/neural_95.jpeg" width="800" align=left>
+
+> 上图显示的是字符串格式的 token，但在代码实现中，将直接操作 token ID
+>
+> 这是因为 BPE 分词器的 `encode` 方法将分词和转换为 token ID 两个步骤合并为一步
+
+- 用于批处理输入和目标的数据集：
+
+    ```python
+    #用于批处理输入和目标的数据集
+    import torch
+    from torch.utils.data import Dataset, DataLoader
+    
+    #此类规定了如何从数据集中抽取单个样本，每个样本包含一定数量的 tokenID，其存储在input_chunk张量中(数量由max_length决定)
+    #并用target_chunk张量保存与输入相对应的目标
+    class GPTDatasetV1(Dataset):
+        def __init__(self, txt, tokenizer, max_length, stride):
+            self.tokenizer = tokenizer
+            self.input_ids = []
+            self.target_ids = []
+            token_ids = tokenizer.encode(txt)
+            for i in range(0, len(token_ids) - max_length, stride):
+                input_chunk = token_ids[i: i + max_length]
+                target_chunk = token_ids[i + 1: i + max_length + 1]
+                self.input_ids.append(torch.tensor(input_chunk))
+                self.target_ids.append(torch.tensor(target_chunk))
+        
+        def __len__(self):
+            return len(self.input_ids)
+        
+        def __getitem__(self, idx):
+            return self.input_ids[idx], self.target_ids[idx]
+    ```
+
+- 用于生成输入-目标对的批次数据加载器
+
+    ```python
+    def create_dataloader_v1(txt, batch_size=4, max_length=256, stride=128, shuffle=True, drop_last=True):
+        tokenizer = tiktoken.get_encoding("gpt2")
+        dataset = GPTDatasetV1(txt, tokenizer, max_length, stride)
+        dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=shuffle, drop_last=drop_last)
+        return dataloader
+    ```
+
+- 在上下文大小(context size)为 4 的 LLM 中测试批量大小(batch size)为 1 的数据加载器
+
+    ```python
+    dataloader = create_dataloader_v1(raw_text, batch_size=1, max_length=4, stride=1, shuffle=False)
+    data_iter = iter(dataloader)
+    
+    ##first_batch变量包含两个张量：第一个张量存储输入的 token ID，第二个张量存储目标的 token ID
+    #由于max_length为4，因此这两个张量都只包含 4 个 toekn ID
+    #需要注意的是，这里的输入大小 4 是相对较小的，仅用于演示。在实际训练语言模型时，输入大小通常至少为 256。
+    first_batch = next(data_iter)
+    print(first_batch)
+    #输出
+    [tensor([[  40,  367, 2885, 1464]]), tensor([[ 367, 2885, 1464, 1807]])]
+    
+    
+    #stride参数决定了输入在各批次之间移动的位置数，这模拟了滑动窗口的概念
+    second_batch = next(data_iter)
+    print(second_batch)
+    #输出
+    [tensor([[ 367, 2885, 1464, 1807]]), tensor([[2885, 1464, 1807, 3619]])]
+    ```
+
+在从输入数据集创建多个批次的过程中，会在文本上滑动一个输入窗口
+
+- 如果步长设定为 1，那么在生成下一个批次时，会将输入窗口向右移动 1 个位置
+- 如果步长设定为输入窗口的大小，那么就可以避免批次之间的重叠
+
+<img src="../../pics/neural/neural_96.jpeg" width="800" align=left>
+
+## 2、构建词嵌入
+
+### 2.1 简介
+
+- 使用嵌入层将 token 嵌入到连续的向量表示中
+
+    > 需要将 token 映射到一个连续向量空间，才可以进行后续运算，映射结果就是该token对应的embedding
+
+- 通常，这些用来转换词符的嵌入层是大语言模型（LLM）的一部分，并且在模型训练的过程中会不断调整和优化
+
+<img src="../../pics/neural/neural_97.jpeg" width="700" align=left>
+
+### 2.2 实践
+
+- 假设词汇表大小为 6，并创建大小为3的嵌入
+
+    ```python
+    vocab_size=6
+    output_dim = 3
+    
+    torch.manual_seed(123)
+    embedding_layer = torch.nn.Embedding(vocab_size, output_dim)
+    print(embedding_layer.weight) #会生成一个6x3的权重矩阵
+    
+    #输出
+    Parameter containing:
+    tensor([[ 0.3374, -0.1778, -0.1690],
+            [ 0.9178,  1.5810,  1.3010],
+            [ 1.2753, -0.2010, -0.1606],
+            [-0.4015,  0.9666, -1.1481],
+            [-1.1589,  0.3255, -0.6315],
+            [-2.8400, -0.7849, -1.4096]], requires_grad=True)
+    ```
+
+- 将ID为3的词符转换为一个3维向量
+
+    ```python
+    print(embedding_layer(torch.tensor([3])))
+    print(embedding_layer(torch.tensor([2, 3, 5, 1])))
+    
+    #输出--注意对比上一步的输出
+    tensor([[-0.4015,  0.9666, -1.1481]], grad_fn=<EmbeddingBackward0>)
+    tensor([[ 1.2753, -0.2010, -0.1606],
+            [-0.4015,  0.9666, -1.1481],
+            [-2.8400, -0.7849, -1.4096],
+            [ 0.9178,  1.5810,  1.3010]], grad_fn=<EmbeddingBackward0>)
+    ```
+
+### 2.3 总结
+
+总结：嵌入层本质上是一种查找操作
+
+<img src="../../pics/neural/neural_98.jpeg" width="700" align=left>
+
+## 3、词位置编码
+
+参看：https://github.com/datawhalechina/llms-from-scratch-cn/blob/main/Translated_Book/ch02/2.8%E8%AF%8D%E4%BD%8D%E7%BD%AE%E7%BC%96%E7%A0%81.ipynb
+
+> LLM 的一个缺点是自注意力机制**不包含序列中的 token 位置或顺序信息**
+>
+> 上一节的 embedding 层生成方式：相同的 token ID 总是被映射成相同的向量表示，不会在乎 token ID 在输入序列中的位置
+
+### 3.1 简介
+
+由于LLM的自注意力机制本身也不关注位置，因此将额外的位置信息注入到LLM中是有帮助的
+
+> 为了实现这一点，有两种常用的位置编码方式：相对位置编码和绝对位置编码
+>
+> 两种类型的位置编码旨在**增强 LLM 理解 token 顺序和关系的能力，确保更准确和更具上下文意识的预测**
+>
+> 它们的选择通常取决于具体的应用程序和正在处理的数据的性质
+
+- **绝对位置编码**：与序列中的特定位置相关联
+
+    > 对于输入序列中的每个位置，都会添加唯一的位置编码到 token 中，来表示其确切位置
+    >
+    > <img src="../../pics/neural/neural_99.jpg" width="700" align=left>
+
+- **相对位置编码**：不专注 token 的绝对位置，而是侧重于 token 之间的相对位置或距离
+
+    > 这意味着模型学习的是 “彼此之间有多远” 而不是 “在哪个确切位置”的关系
+    >
+    > 好处：即使模型在训练过程中没有看到这样的长度，也可以更好地推广到不同长度的序列
+
+### 3.2 实践
+
+- 假设 tokenID 由 BPE 创建，其词汇量大小为 50,257，同时输入 token 编码为 256 维向量
+
+    ```python
+    output_dim = 256
+    vocab_size = 50257
+    token_embedding_layer = torch.nn.Embedding(vocab_size, output_dim)
+    ```
+
+- 实例化“使用滑动窗口进行数据采样” 的 dataloader
+
+    > 假设批次大小为8，每个批次有四个 token，则结果将是一个8 x 4 x 256的张量
+
+    ```python
+    max_length = 4
+    dataloader = create_dataloader_v1(raw_text, batch_size=8, max_length=max_length, stride=1)
+    data_iter = iter(dataloader)
+    inputs, targets = next(data_iter)
+    print("Token IDs:\n", inputs)
+    print("\nInputs shape:\n", inputs.shape)
+    
+    #输出
+    Token IDs:
+     tensor([[  438, 18108,   407, 11196],
+            [  655,  6687,   284,   766],
+            [  438, 14363,  1986,   373],
+            [  887,   645,   438,  1640],
+            [14263,   276,  5118,    11],
+            [  336,  8375,   503,  4291],
+            [   40,   423,  4750,   326],
+            [  465,  5101, 11061,   340]])
+    
+    Inputs shape:
+     torch.Size([8, 4])
+    ```
+
+- 使用 token_embedding_layer 将这些 token ID 嵌入为 256 维的向量
+
+    ```python
+    token_embeddings = token_embedding_layer(inputs)
+    print(token_embeddings.shape)
+    
+    #输出
+    torch.Size([8, 4, 256])
+    ```
+
+- 对于GPT模型的绝对嵌入方法，只需要创建另一个具有与 token_embedding_layer 相同维度的嵌入层
+
+    ```python
+    #在实践中，输入文本可以比支持的上下文长度长，这种情况必须截断文本
+    context_length = max_length #表示 LLM 支持的输入大小
+    pos_embedding_layer = torch.nn.Embedding(context_length, output_dim)
+    pos_embeddings = pos_embedding_layer(torch.arange(context_length))
+    print(pos_embeddings.shape) #位置嵌入张量由四个 256 维向量组成
+    
+    #输出
+    torch.Size([4, 256])
+    ```
+
+- 在每个 8 批次中的每个 4x256 维标记嵌入张量中添加 4x256 维的 pos_embeddings 张量
+
+    ```python
+    input_embeddings = token_embeddings + pos_embeddings
+    print(input_embeddings.shape)
+    
+    #输出
+    torch.Size([8, 4, 256])
+    ```
+
+### 3.3 总结
+
+- 输入文本首先被分解为单个 token
+- 然后使用词汇表将这些标记转换为 token ID
+- 将 token ID 转换为编码向量，然后添加相似大小的位置编码，生成用作主要 LLM 层的输入编码
+
+<img src="../../pics/neural/neural_100.jpg" width="700" align=left>

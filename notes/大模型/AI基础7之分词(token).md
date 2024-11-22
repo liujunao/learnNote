@@ -1,4 +1,4 @@
-参看：https://cloud.tencent.com/developer/article/2317900
+<img src="../../pics/neural/neural_93.jpeg" width="700" align=left>
 
 # 一、基础
 
@@ -391,3 +391,183 @@ normalizer_spec {
 }
 ```
 
+# 四、实战
+
+参看：https://github.com/datawhalechina/llms-from-scratch-cn/blob/main/Translated_Book/ch02/2.2%E6%96%87%E6%9C%AC%E5%88%86%E8%AF%8D%EF%BC%88%E5%BA%8F%E5%88%97%E5%8C%96%EF%BC%89.ipynb
+
+## 1、文本分词
+
+- **加载数据**：
+
+    ```python
+    #加载数据
+    import requests
+    
+    url="https://raw.githubusercontent.com/rasbt/LLMs-from-scratch/main/ch02/01_main-chapter-code/the-verdict.txt"
+    response = requests.get(url)
+    raw_text = response.text
+    print("Total number of characters: ", len(raw_text))
+    print(raw_text[:99])
+    
+    #输出
+    Total number of characters:  20479
+    I HAD always thought Jack Gisburn rather a cheap genius--though a good fellow enough--so it was no 
+    ```
+
+- **分词**：
+
+    ```python
+    import re
+    
+    preprocessed = re.split(r'([,.?_!"()\']|--|\s)', raw_text)
+    preprocessed = [item.strip() for item in preprocessed if item.strip()]
+    print(len(preprocessed))
+    print(preprocessed[:30])
+    
+    #输出
+    4649
+    ['I', 'HAD', 'always', 'thought', 'Jack', 'Gisburn', 'rather', 'a', 'cheap', 'genius', '--', 'though', 'a', 'good', 'fellow', 'enough', '--', 'so', 'it', 'was', 'no', 'great', 'surprise', 'to', 'me', 'to', 'hear', 'that', ',', 'in']
+    ```
+
+## 2、将token转换为token ID
+
+- **创建词汇表**：创建一个包含所有独特token的列表，并按字母顺序排序以确定词汇表的大小
+
+    ```python
+    all_words = sorted(list(set(preprocessed)))
+    vocab_size = len(all_words)
+    
+    #打印
+    print(vocab_size)
+    
+    vocab = {token:integer for integer,token in enumerate(all_words)}
+    for i, item in enumerate(vocab.items()):
+        print(item)
+        if i > 50:
+            break
+            
+    #输出
+    1159
+    ('!', 0)
+    ('"', 1)
+    ("'", 2)
+    ('(', 3)
+    (')', 4)
+    (',', 5)
+    ('--', 6)
+    ...
+    ```
+
+- **实现一个完整的分词器类**：encode将文本分割成token并通过词汇表映射为token ID，decode将token ID 转换回文本
+
+    ```python
+    class SimpleTokenizerV1:
+        def __init__(self, vocab):
+            self.str_to_int = vocab
+            self.int_to_str = {i:s for s,i in vocab.items()}
+            
+        def encode(self, text):
+            preprocessed = re.split(r'([,.?_!"()\']|--|\s)', text)
+            preprocessed = [item.strip() for item in preprocessed if item.strip()]
+            ids = [self.str_to_int[s] for s in preprocessed]
+            return ids
+        
+        def decode(self, ids):
+            text = " ".join([self.int_to_str[i] for i in ids])
+            text = re.sub(r'\s+([,.?!"()\'])', r'\1', text)
+            return text
+        
+    #测试
+    tokenizer = SimpleTokenizerV1(vocab)
+    text = """It's the last he painted, you know," Mrs. Gisburn said with pardonable pride."""
+    ids = tokenizer.encode(text)
+    print(ids)
+    tokenizer.decode(ids)
+    
+    #输出
+    [58, 2, 872, 1013, 615, 541, 763, 5, 1155, 608, 5, 1, 69, 7, 39, 873, 1136, 773, 812, 7]
+    'It\' s the last he painted, you know," Mrs. Gisburn said with pardonable pride.'
+    ```
+
+## 3、添加特殊字符
+
+- 修改词表，添加特殊token，其中<|UNK|> token表示新的和未知的单词，<|endoftext|>tokens表示一个特定段落的开始和结束
+
+    ```python
+    all_tokens = sorted(list(set(preprocessed)))
+    all_tokens.extend(["<|endoftext|>", "<|unk|>"])
+    
+    #打印
+    vocab = {token:integer for integer,token in enumerate(all_tokens)}
+    print(len(vocab.items()))
+    
+    for i,item in enumerate(list(vocab.items())[-5:]):
+        print(item)
+        
+    #输出
+    1161
+    ('younger', 1156)
+    ('your', 1157)
+    ('yourself', 1158)
+    ('<|endoftext|>', 1159)
+    ('<|unk|>', 1160)
+    ```
+
+- 修改分词器：处理未知单词
+
+    ```python
+    class SimpleTokenizerV2:
+        def __init__(self, vocab):
+            self.str_to_int = vocab
+            self.int_to_str = {i:s for s,i in vocab.items()}
+            
+        def encode(self, text):
+            preprocessed = re.split(r'([,.?_!"()\']|--|\s)', text)
+            preprocessed = [item.strip() for item in preprocessed if item.strip()]
+            preprocessed = [item if item in self.str_to_int else "<|unk|>" for item in preprocessed]
+            ids = [self.str_to_int[s] for s in preprocessed]
+            return ids
+        
+        def decode(self, ids):
+            text = " ".join([self.int_to_str[i] for i in ids])
+            text = re.sub(r'\s+([,.?!"()\'])', r'\1', text)
+            return text
+        
+    #测试
+    text1 = "Hello, do you like tea?"
+    text2 = "In the sunlit terraces of the palace."
+    text = " <|endoftext|> ".join((text1, text2))
+    print(text)
+    
+    tokenizer = SimpleTokenizerV2(vocab)
+    print(tokenizer.encode(text))
+    print(tokenizer.decode(tokenizer.encode(text)))
+    
+    #输出
+    Hello, do you like tea? <|endoftext|> In the sunlit terraces of the palace.
+    [1160, 5, 362, 1155, 642, 1000, 10, 1159, 57, 1013, 981, 1009, 738, 1013, 1160, 7]
+    <|unk|>, do you like tea? <|endoftext|> In the sunlit terraces of the <|unk|>.
+    ```
+
+## 4、使用 BPE
+
+- 使用 BPE(采用 tiktoken 的实现)
+
+    - BPE使用的算法会将不在预定义词表里的单词分解为更小的子单词单元或者甚至是独立的字母，使BPE可以处理词表外的单词
+    - 所以，基于这种算法，如果分词器在分词时遇到了不熟悉的单词，他会使用一系列的子单词词元或者字母来替换它
+
+    ```python
+    import tiktoken
+    
+    tokenizer = tiktoken.get_encoding("gpt2")
+    text = "Hello, do you like tea? <|endoftext|> In the sunlit terraces of some"
+    integers = tokenizer.encode(text, allowed_special={"<|endoftext|>"})
+    print(integers)
+    print(tokenizer.decode(integers))
+    
+    #输出
+    [15496, 11, 466, 345, 588, 8887, 30, 220, 50256, 554, 262, 4252, 18250, 8812, 2114, 286, 617]
+    Hello, do you like tea? <|endoftext|> In the sunlit terraces of some
+    ```
+
+    
