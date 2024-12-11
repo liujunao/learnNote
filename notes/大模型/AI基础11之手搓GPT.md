@@ -647,42 +647,220 @@ Output shape:  torch.Size([2, 4, 768])
 
 > 编码GPT模型：https://github.com/datawhalechina/llms-from-scratch-cn/blob/main/Translated_Book/ch04/4.6%20%E7%BC%96%E7%A0%81GPT%E6%A8%A1%E5%9E%8B.ipynb
 
+## 1、简介
 
+<img src="../../pics/neural/neural_130.webp" width="900" align=left>
 
+## 2、实现
 
+### 2.1 GPTModel
+
+```python
+class GPTModel(nn.Module):
+    def __init__(self, cfg):
+        super().__init__()
+        self.tok_emb = nn.Embedding(cfg["vocab_size"], cfg["emb_dim"])
+        self.pos_emb = nn.Embedding(cfg["context_length"], cfg["emb_dim"])
+        self.drop_emb = nn.Dropout(cfg["drop_rate"])
+        self.trf_blocks = nn.Sequential(*[TransformerBlock(cfg) for _ in range(cfg["n_layers"])])
+        self.final_norm = LayerNorm(cfg["emb_dim"])
+        self.out_head = nn.Linear(cfg["emb_dim"], cfg["vocab_size"], bias=False)
+        
+    def forward(self, in_idx):
+        bath_size, seq_len = in_idx.shape
+        tok_embeds = self.tok_emb(in_idx)
+        pos_embeds = self.pos_emb(torch.arange(seq_len, device=in_idx.device))
+        x = tok_embeds + pos_embeds
+        x = self.drop_emb(x)
+        x = self.trf_blocks(x)
+        x = self.final_norm(x)
+        logits = self.out_head(x)
+        return logits
+```
+
+### 2.2 测试
+
+```python
+import tiktoken
+
+tokenizer = tiktoken.get_encoding("gpt2")
+batch = []
+txt1 = "Every effort moves you"
+txt2 = "Every day holds a"
+
+batch.append(torch.tensor(tokenizer.encode(txt1)))
+batch.append(torch.tensor(tokenizer.encode(txt2)))
+batch = torch.stack(batch, dim=0)
+print("Input batch: \n", batch)
+
+torch.manual_seed(123)
+model = GPTModel(GPT_CONFIG_124M)
+
+out = model(batch)
+print("Output shape: \n", out.shape)
+print(out)
+
+#输出
+Input batch: 
+ tensor([[6109, 3626, 6100,  345],
+        [6109, 1110, 6622,  257]])
+Output shape: 
+ torch.Size([2, 4, 50257])
+tensor([[[-0.4951,  0.0072, -0.1250,  ..., -0.1630,  0.2258, -0.1407],
+         [ 0.2212, -0.4967, -0.6871,  ..., -0.1243,  0.2723, -0.3598],
+         [ 0.4388, -0.4323,  0.1700,  ..., -0.3842, -0.5383, -0.2056],
+         [-0.6681,  0.6383, -0.6495,  ...,  0.9237,  0.3066, -0.6380]],
+
+        [[-0.5551,  0.6212, -0.1689,  ...,  0.1731,  0.0441, -0.4258],
+         [-0.3826, -0.0989,  0.2625,  ...,  0.5762,  0.0284,  0.0810],
+         [ 0.3067,  0.9567, -0.2802,  ...,  0.5102,  0.2142,  0.0762],
+         [-0.1258,  0.0551,  0.3588,  ...,  0.9048, -0.6084, -0.3507]]],
+       grad_fn=<UnsafeViewBackward0>)
+```
+
+**参数量**：
+
+```python
+total_params = sum(p.numel() for p in model.parameters())
+print(f"Total number of parameters: {total_params}")
+
+#输出
+Total number of parameters: 163009536
+```
+
+- 标记嵌入层将50,257维的独热编码输入标记投影到768维的嵌入表示
+- 输出层将768维的嵌入投影回50,257维的表示
+
+```python
+print("Token embedding layer shape: ", model.tok_emb.weight.shape)
+print("Output layer shape: ", model.out_head.weight.shape)
+
+#输出
+Token embedding layer shape:  torch.Size([50257, 768])
+Output layer shape:  torch.Size([50257, 768])
+```
+
+GPT-2将标记嵌入矩阵作为输出矩阵重新使用，因此 124M 参数的模型如下：
+
+```python
+total_params_gpt2 = total_params - sum(p.numel() for p in model.out_head.parameters())
+print(f"Number of trainable parameters considering weight typing: {total_params_gpt2}")
+
+#输出
+Number of trainable parameters considering weight typing: 124412160
+```
+
+按如下方式计算模型的内存需求：
+
+```python
+total_size_bytes = total_params * 4
+total_size_mb = total_size_bytes / (1024 * 1024)
+print(f"Total size of the model: {total_size_mb:.2f} MB")
+
+#输出
+Total size of the model: 621.83 MB
+```
 
 # 八、生成文本
 
 > 参看：https://github.com/datawhalechina/llms-from-scratch-cn/blob/main/Translated_Book/ch04/4.7%20%E7%94%9F%E6%88%90%E6%96%87%E6%9C%AC.ipynb
 
+## 1、简介
 
+> 上面实现的GPT模型等LLMs（大型语言模型）被用来一次生成一个单词
 
+### 1.1 模型如何生成
 
+<img src="../../pics/neural/neural_131.webp" width="900" align=left>
 
+### 1.2 模型数据流转
 
+> 下图展示了GPT模型在给定输入上下文时如何生成下一个词标记
 
+<img src="../../pics/neural/neural_132.webp" width="1000" align=left>
 
+## 2、实现贪婪解码
 
+`generate_text_simple`函数实现了贪婪解码，这是一种简单且快速的文本生成方法
 
+- 在贪婪解码中，每一步，模型都会选择概率最高的词(或标记)作为下一个输出
 
+    > 最高的对数值对应于最高的概率，因此甚至不必显式计算softmax函数
 
+```python
+def generate_text_simple(model, idx, max_new_token, context_size):
+    #idx is (batch, n_tokens) array of indices in the current context
+    for _ in range(max_new_token):
+        #Crop current context if it exceeds the supported context size
+        #E.g., if LLM supports only 5 tokens,
+        #and the context size is 10 then only the last 5 tokens are used as context
+        idx_cond = idx[:, -context_size:]
+        
+        #Get the predictions
+        with torch.no_grad():
+            logits = model(idx_cond)
+            
+        #Focus only on the last time step
+        #(batch, n_tokens, vocab_size) becomes (batch, vocab_size)
+        logits = logits[:, -1, :]
+        
+        #Apply softmax to get probabilities
+        probas = torch.softmax(logits, dim=-1) # (batch, vocab_size)
+        
+        #Get the idx of the vocab entry with the highest probability value
+        idx_next = torch.argmax(probas, dim=-1, keepdim=True) #(batch, 1)
+        
+        #Append sampled index to the running sequence
+        idx = torch.cat((idx, idx_next), dim=-1) #(batch, n_tokens+1)
+    return idx
+```
 
+- 准备一个输入示例：
 
+    ```python
+    start_context = "Hello, I am"
+    encoded = tokenizer.encode(start_context)
+    print("encoded: ", encoded)
+    
+    encoded_tensor = torch.tensor(encoded).unsqueeze(0)
+    print("encoded_tensor.shape: ", encoded_tensor.shape)
+    
+    #输出
+    encoded:  [15496, 11, 314, 716]
+    encoded_tensor.shape:  torch.Size([1, 4])
+    ```
 
+- 测试：
 
+    ```python
+    model.eval() #disable dropout
+    
+    out = generate_text_simple(model=model, idx=encoded_tensor, max_new_token=6, 
+                               context_size=GPT_CONFIG_124M["context_length"])
+    
+    print("Output: ", out)
+    print("Output length: ", len(out[0]))
+    
+    #输出
+    Output:  tensor([[15496,    11,   314,   716, 27018, 24086, 47843, 30961, 14838, 15635]])
+    Output length:  10
+    ```
 
+- 移除批次维度并转换回文本：
 
+    ```python
+    decoded_text = tokenizer.decode(out.squeeze(0).tolist())
+    print(decoded_text)
+    
+    #输出 -- 注意模型未经过训练；因此上述输出文本是随机的
+    Hello, I am Featureiman Byeswick unlockedometer
+    ```
 
+<img src="../../pics/neural/neural_133.webp" width="1000" align=left>
 
+# 九、完整代码
 
-
-
-
-
-
-
-
-
+> 参看：https://github.com/datawhalechina/llms-from-scratch-cn/blob/main/Codes/ch04/01_main-chapter-code/gpt.py
 
 
 
