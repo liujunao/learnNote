@@ -20,8 +20,6 @@
 
     > 如 BERT + Prompt 的范式相比于第三范式，模型训练所需的训练数据显著减少
 
-
-
 | 范式     | 范式一和范式二(全监督学习)       | 范式三(预训练+微调)                                          | 范式四(预训练+提示学习)                                      |
 | -------- | -------------------------------- | ------------------------------------------------------------ | ------------------------------------------------------------ |
 | 训练数据 | 目标任务数据集                   | 大规模生语料，目标任务数据集                                 | 大规模生语料，目标任务数据集                                 |
@@ -53,6 +51,8 @@
 
 <img src="../../pics/neural/neural_158.png" align=left width=600>
 
+
+
 ### 3.1 Level 1. Prompt Learning 角度
 
 Prompt Learning 使得所有的 NLP 任务成为一个语言模型的问题：
@@ -64,6 +64,8 @@ Prompt Learning 使得所有的 NLP 任务成为一个语言模型的问题：
 
 <img src="../../pics/neural/neural_159.png" align=left width=600>
 
+
+
 ### 3.2 Level 2. Prompt Learning 和 Fine-tuning 的区别
 
 Prompt Learning 和 Fine-tuning 的范式区别
@@ -72,6 +74,8 @@ Prompt Learning 和 Fine-tuning 的范式区别
 - Prompting 是将下游任务进行任务重定义，使得其利用预训练语言模型的能力，即**适配语言模型**
 
 <img src="../../pics/neural/neural_160.png" align=left width=800>
+
+
 
 ### 3.3 Level 3. 现代 NLP 历史
 
@@ -87,6 +91,8 @@ Prompting 方法是现在NLP的第四范式，其中现在NLP的发展史包含
 可以发现：在四个范式中，预训练语言模型和下游任务之间的距离变得越来越近，直到 Prompt Learning 直接完全利用 LM 能力
 
 <img src="../../pics/neural/neural_161.png" align=left width=800>
+
+
 
 ### 3.4 Level 4. 超越 NLP
 
@@ -325,6 +331,10 @@ Prompt 可以作为连接多模态的一个契机，例如 CLIP 模型，连接�
 <img src="../../pics/neural/neural_143.png" align=left width=600>
 
 ### 5.4 Expanding the paradigm(multi prompt)
+
+> 旨在突破现有 prompt learning 的局限，开拓新的应用场景和研究方向
+>
+> 除了自然语言处理外，扩展范式还应用于计算机视觉、多模态学习、跨领域数据挖掘等领域
 
 如何对已有的 Prompt 进行任务增强以及拓展，具体可以从以下几个方面进行探讨：
 
