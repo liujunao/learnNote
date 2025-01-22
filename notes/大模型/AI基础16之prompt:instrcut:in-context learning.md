@@ -806,6 +806,8 @@ $$
 # 三、In-content learning(上下文学习/语境学习/ICL)
 
 > In-Context Learning(又称上下文学习/语境学习/ICL)：并不需要调整模型参数，仅用几条下游任务的示例就可以取得极佳的结果
+>
+> 参看：https://www.cnblogs.com/ting1/p/18254665
 
 ## 1、概述
 

@@ -1,3 +1,5 @@
+> 参看：https://www.cnblogs.com/ting1/p/18247259
+
 # 一、思维链概述
 
 ## 1、背景
