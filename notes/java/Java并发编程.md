@@ -2884,10 +2884,12 @@ public class AtomicDemo {
 
         > 通过park()阻塞线程、unpark()唤醒线程，响应中断
 
-    - **Condition**：对象 Object 只能拥有一个同步队列和一个等待队列，而并发包中的 Lock 拥有**一个同步队列和多个等待队列**
+    - **Condition(等待队列)**：对象 Object 只能拥有一个同步队列和一个等待队列，而 Lock 拥有**一个同步队列和多个等待队列**
+
+        > 等待队列：单向链表
 
         - await()： 调用 Condition 的 await() 方法会**使当前线程进入等待状态**，同时会加入到 Condition 等待队列同时释放锁
-
+        
         - signal/signalAll： 唤醒等待队列中等待最长时间的节点，在唤醒节点前，会将节点移到CLH同步队列中
 
 - **独占式与共享式**：
