@@ -2873,7 +2873,7 @@ public class AtomicDemo {
     > - volatile 变量规则：由于 state = 1 先读取 state，则线程 T1 的 unlock() 操作 Happens-Before 线程 T2 的 lock() 操作
     > - 传递性规则：线程 T1 的 value+=1 Happens-Before 线程 T2 的 lock() 操作
 
-- **CLH 等待队列**：是一个 FIFO 双向队列，AQS 依赖它来完成同步状态的管理
+- **CLH 同步队列**：是一个 FIFO 双向队列，AQS 依赖它来完成同步状态的管理
 
     - **FIFO双向队列**：通过`Node`节点构成的队列管理等待线程，每个节点包含线程引用及状态（如`CANCELLED`、`SIGNAL`）
     - **无锁入队/出队**：使用`CAS`操作维护队列的头部（`head`）和尾部（`tail`），避免锁竞争
