@@ -71,12 +71,12 @@ WebRTC && webSocket
 BM25 的核心思想来源于 TF-IDF，但它针对 TF（词频）和 IDF（逆文档频率）做了一些改进：
 
 - 改进 TF（词频）计算
-    - 采用**饱和函数**调整词频，防止高频词对得分产生过大的影响。
-    - 通过参数 k1 控制词频的影响。
+    - 采用**饱和函数**调整词频，防止高频词对得分产生过大的影响
+    - 通过参数 k1 控制词频的影响
 - 引入文档长度归一化
-    - 通过参数 b 调整文档长度对得分的影响，避免长文档由于包含更多关键词而被错误地赋予更高的相关性。
+    - 通过参数 b 调整文档长度对得分的影响，避免长文档由于包含更多关键词而被错误地赋予更高的相关性
 - 优化 IDF 计算
-    - 传统 IDF 计算方式可能导致某些词 IDF 过大，而 BM25 采用了**平滑化处理**，使 IDF 更稳定。
+    - 传统 IDF 计算方式可能导致某些词 IDF 过大，而 BM25 采用了**平滑化处理**，使 IDF 更稳定
 
 核心点：
 
@@ -85,3 +85,68 @@ BM25 的核心思想来源于 TF-IDF，但它针对 TF（词频）和 IDF（逆�
 3. **引入平滑的逆文档频率（IDF）**：BM25对IDF进行了平滑处理，降低极端值的影响，使得IDF计算更加稳定
 
 <img src="../../pics/llm/llm_77.png" align=left>
+
+## 6、MCP(模型通信协议)
+
+MCP 主要解决的问题是：
+
+1. **模型与外部世界之间的结构化通信**
+2. **多个模型或 Agent 之间高效协同和任务转发**
+3. **让模型“理解”任务规范、返回可解析结果**
+
+### 6.1 核心组成部分
+
+- **请求协议(Request Format)**：标明任务类型、调用目标（function/tool/agent）、参数结构
+
+    ```json
+    {
+      "type": "function_call",
+      "name": "search_web",
+      "parameters": {
+        "query": "current weather in Tokyo"
+      }
+    }
+    ```
+
+- **响应协议(Response Format)**：结构化返回结果，方便上层程序处理
+
+    ```json
+    {
+      "result": {
+        "type": "function_result",
+        "name": "search_web",
+        "content": "Currently 22°C in Tokyo, partly cloudy."
+      }
+    }
+    ```
+
+- **能力声明(Schema / Capability Declaration)**：模型注册时，声明其可调用的函数、接口，类似 `function_schema`
+
+    ```json
+    {
+      "name": "translate",
+      "description": "Translate text between languages.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "text": { "type": "string" },
+          "target_language": { "type": "string" }
+        },
+        "required": ["text", "target_language"]
+      }
+    }
+    ```
+
+- **调用状态管理(State Management)**：多轮调用过程中的上下文管理：如 Agent A 请求 Agent B 后的状态同步
+
+    > 类似于对话状态、FSM（有限状态机）、甚至 DAG 调度
+
+### 6.2 应用场景
+
+- **多模型协作系统**：多个 LLMs 之间根据能力分工，像子模块一样协作
+
+    > 例：一个 Agent 负责规划，一个 Agent 执行网页抓取，一个负责总结
+
+- **Tool/Plugin 调用**：MCP 结构是 Function Calling 的通信基础，工具调用接口规范、参数校验、返回值解析都基于 MCP
+
+- **模型编排框架(如 LangGraph / AgentVerse)**：MCP 用于构造模型节点之间的通信协议，每个模型模块是一个 MCP 节点，处理标准协议输入，返回标准协议输出
